@@ -1,0 +1,266 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model
+model User {
+  id            String    @id @default(cuid())
+  githubId      String?   @unique
+  name          String
+  email         String    @unique
+  avatar        String?
+  githubLogin   String?
+  githubBio     String?
+  githubLocation String?
+  githubBlog    String?
+  // Email/password authentication fields
+  passwordHash  String?   // Nullable for OAuth-only users
+  emailVerified DateTime? // When email was verified
+  resetPasswordToken String? @unique  // Password reset token
+  resetPasswordExpires DateTime?  // Reset token expiration
+  failedLoginAttempts Int @default(0)  // Track failed login attempts
+  lockUntil    DateTime?  // Account lockout after failed attempts
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  goals         Goal[]
+  settings      Settings?
+  messages      Message[]
+  chats         ChatState[]
+}
+
+// Settings model
+model Settings {
+  id        String   @id @default(cuid())
+  theme     String   @default("miami-vice")
+  chatModel String   @default("gpt-4")
+  displayName String @default("User")
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Base Goal model (using polymorphism via type field)
+model Goal {
+  id          String        @id @default(cuid())
+  type        GoalType
+  title       String
+  description String
+  status      GoalStatus    @default(active)
+  deadline    DateTime?     // Optional deadline for goal completion
+  threadId    String?       // OpenAI thread ID for continuing conversation
+  parentGoalId String?      // For subgoals - references parent goal
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  userId      String
+
+  // Relations
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  chats       ChatState[]
+
+  // Subgoal relations (self-referential)
+  parentGoal  Goal?         @relation("GoalSubgoals", fields: [parentGoalId], references: [id], onDelete: Cascade)
+  subgoals    Goal[]        @relation("GoalSubgoals")
+
+  // One-to-one relations for goal-specific data
+  itemData    ItemGoalData?
+  financeData FinanceGoalData?
+  actionData  ActionGoalData?
+
+  // Scrape jobs for this goal
+  scrapeJobs  ScrapeJob[]
+
+  @@index([userId, type])
+  @@index([userId, status])
+  @@index([threadId])
+  @@index([parentGoalId])
+  @@index([deadline])
+}
+
+// ItemGoal specific fields (using one-to-one relation)
+model ItemGoalData {
+  id               String               @id @default(cuid())
+  goalId           String               @unique
+  goal             Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  productImage     String
+  bestPrice        Float
+  currency         String               @default("USD")
+  retailerUrl      String
+  retailerName     String
+  statusBadge      ItemStatusBadge
+
+  // Optional search results (stored as JSONB)
+  searchResults    Json?
+
+  // Search term for scraping (optimized search query)
+  searchTerm       String?
+
+  // Item category for specialized handling
+  category         ItemCategory?
+
+  // Candidate stack for Tinder-style swiping (array of ProductCandidate objects)
+  candidates           Json?  // Active candidates user can swipe through
+  selectedCandidateId  String?
+  deniedCandidates     Json?  // Full ProductCandidate objects user swiped left on
+
+  // Card stacking support (for grouping related goals created by scraper)
+  stackId          String?
+  stackOrder       Int?
+
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([stackId])
+  @@index([category])
+}
+
+// FinanceGoal specific fields
+model FinanceGoalData {
+  id               String               @id @default(cuid())
+  goalId           String               @unique
+  goal             Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  institutionIcon  String
+  accountName      String
+  currentBalance   Float
+  targetBalance    Float
+  currency         String               @default("USD")
+  progressHistory   Float[]
+  lastSync         DateTime?
+
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+}
+
+// ActionGoal specific fields
+model ActionGoalData {
+  id                    String               @id @default(cuid())
+  goalId                String               @unique
+  goal                  Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  completionPercentage Int                  @default(0)
+  motivation            String?              @db.Text
+
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  // Relations
+  tasks                 Task[]
+}
+
+// Task model for ActionGoals
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  completed   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  actionGoal  ActionGoalData @relation(fields: [actionGoalId], references: [id], onDelete: Cascade)
+  actionGoalId String
+
+  @@index([actionGoalId, completed])
+}
+
+// Chat messages
+model Message {
+  id        String   @id @default(cuid())
+  role      String   // "user" | "assistant" | "system"
+  content   String   @db.Text
+  threadId  String?  // OpenAI thread ID for conversation persistence
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  goalId    String?
+  chat      ChatState? @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId    String?
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([chatId])
+  @@index([threadId])
+}
+
+// Chat state for tracking conversations
+model ChatState {
+  id        String   @id @default(cuid())
+  type      String   // "creation" | "goal"
+  isLoading Boolean  @default(false)
+
+  // Relations
+  goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  goalId    String?
+  messages  Message[]
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([goalId])
+  @@index([userId, type])
+}
+
+// Scrape Jobs
+model ScrapeJob {
+  id        Int      @id @default(autoincrement())
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  status    String   // 'pending', 'running', 'completed', 'failed'
+  attempts  Int      @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([goalId])
+}
+
+// Enums
+enum GoalType {
+  item
+  finance
+  action
+}
+
+enum GoalStatus {
+  active
+  completed
+  archived
+}
+
+enum ItemStatusBadge {
+  in_stock
+  price_drop
+  pending_search
+}
+
+// Item categories for specialized scraping/handling
+enum ItemCategory {
+  vehicle          // Cars, trucks, motorcycles, etc.
+  vehicle_parts    // Car parts, accessories, etc.
+  technology       // Computers, phones, electronics
+  electronics      // Deprecated - use technology
+  sporting_goods   // Sports equipment, fitness gear
+  clothing         // Apparel, shoes, accessories
+  apparel          // Deprecated - use clothing
+  pets            // Pet supplies, equipment
+  furniture       // Home furniture, decor
+  general         // Other items
+}

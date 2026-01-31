@@ -1,0 +1,67 @@
+# Zhipu AI API Configuration
+
+## Important: All Z.AI endpoints must include "coding" in the route
+
+**Correct endpoint format:**
+```
+https://api.z.ai/api/coding/paas/v4/chat/completions
+```
+
+**Incorrect endpoint format:**
+```
+https://api.z.ai/api/paas/v4/chat/completions
+```
+
+The `/coding/` segment is required for GLM-4.7 API access.
+
+## Available Models
+
+As of January 2026, the available models are:
+- `glm-4.5`
+- `glm-4.5-air`
+- `glm-4.6`
+- `glm-4.7`
+
+## API Key Format
+
+The API key format is: `{id}.{secret}`
+
+Example from `.env`:
+```
+GLM_API_KEY=d19a9b14b0804f76a1af9bbedd82c66a.DD5Lgl2NehzdLo8R
+```
+
+## Testing the Endpoint
+
+List available models:
+```bash
+curl "https://open.bigmodel.cn/api/paas/v4/models" \
+  -H "Authorization: Bearer $GLM_API_KEY"
+```
+
+Test chat completion:
+```bash
+curl -X POST "https://api.z.ai/api/coding/paas/v4/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $GLM_API_KEY" \
+  -d '{
+    "model": "glm-4.7",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
+```
+
+## Common Issues
+
+1. **Model not found (error 1211)**: Using wrong model name. Use `glm-4.7`, not `glm-4-flash`
+2. **Rate limit (error 429)**: Too many requests. Add delays between calls
+3. **Insufficient balance (error 1113)**: API key needs recharge
+4. **Unknown endpoint**: Missing `/coding/` in the URL path
+
+## Related Files
+
+- `/src/modules/ai/ai.service.ts` - General AI chat service
+- `/src/modules/ai/ai-goal-creation.service.ts` - Goal creation flow service
+- `/src/modules/ai/ai.controller.ts` - REST endpoints for AI chat
+- `/src/modules/ai/ai-goal-creation.controller.ts` - REST endpoints for goal creation
