@@ -44,95 +44,193 @@ async def scrape_kbb(query: str, max_results: int = 10):
             # Structured URL provided (with filters)
             search_url = query
         else:
-            # Fallback to text search
+            # Fallback to text search with nationwide radius
             search_terms = query.replace(' ', '%20')
-            search_url = f"https://www.kbb.com/cars-for-sale/all?searchRadius=75&city=San%20Mateo&state=CA&zip=94401&allListingType=all&keywords={search_terms}"
+            search_url = f"https://www.kbb.com/cars-for-sale/all?searchRadius=500&city=San%20Mateo&state=CA&zip=94401&allListingType=all&keywords={search_terms}"
 
         logging.error(f"[KBB] Searching: {search_url}")
         await page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
 
-        # Wait for listings to load
-        await asyncio.sleep(5)
+        # Wait for listings to load - KBB can take longer to load
+        await asyncio.sleep(8)
+
+        # Wait for at least one listing link to appear
+        try:
+            await page.wait_for_selector('a[href*="/cars-for-sale/vehicle/"]', timeout=10000)
+        except:
+            logging.error(f"[KBB] Timeout waiting for listing links")
+            pass
+
+        # Check for "No results found" condition
+        page_text = await page.inner_text('body')
+        no_results_indicators = [
+            'No matching vehicles',
+            'No results found',
+            '0 results',
+            'No cars found',
+            'Try changing your search',
+            'No exact matches'
+        ]
+        if any(indicator in page_text for indicator in no_results_indicators):
+            logging.error(f"[KBB] No results found - returning empty")
+            return []
 
         # KBB listings are links containing vehicle details
-        # Based on chrome-devtools analysis, listings contain text like:
-        # "New 2026 GMC Sierra 3500 Denali Ultimate $103,615 Dublin Buick GMC"
-        # with URL pattern: /cars-for-sale/vehicledetails.xhtml/?listingId=...
-        listings = await page.query_selector_all('a[href*="/cars-for-sale/vehicledetails.xhtml/"]')
+        # URL pattern: /cars-for-sale/vehicle/{id}
+        listings = await page.query_selector_all('a[href*="/cars-for-sale/vehicle/"]')
         logging.error(f"[KBB] Found {len(listings)} listing links")
 
         for i, listing in enumerate(listings[:max_results]):
             try:
-                # Get all text from the link
-                all_text = await listing.inner_text()
-
                 # Get URL
                 url = await listing.get_attribute('href') or ''
                 if not url.startswith('http'):
                     url = f"https://www.kbb.com{url}"
 
-                # Parse the listing text to extract components
-                # Format: "New 2026\nGMC Sierra 3500 Denali Ultimate\n$103,615\nDublin Buick GMC"
-                lines = [line.strip() for line in all_text.split('\n') if line.strip()]
-                logging.error(f"[KBB] Listing text lines: {lines}")
+                # Skip non-vehicle links (like "No Accidents" badge links)
+                if 'purchaseConfidence' in url or 'clickType=ncb' in url:
+                    continue
 
-                # Extract condition + year (e.g., "New 2026")
-                condition = ""
-                year = 0
-                title = ""
+                # Extract basic info from the link text itself
+                link_text = await listing.inner_text()
 
-                # Extract price (format: "$103,615")
-                price = 0
-                for line in lines:
-                    price_match = re.search(r'\$?([\d,]+)', line)
-                    if price_match and ',' in price_match.group(1):
-                        price = extract_number(line)
-                        break
+                # Skip if link text doesn't start with a year (indicates it's not a main vehicle link)
+                if not re.search(r'^20\d{2}', link_text.strip()):
+                    continue
 
-                # Extract vehicle name (make/model/trim)
-                # Skip lines that are condition/year, price, or dealer names
-                for line in lines:
-                    # Skip price lines, dealer lines, condition lines
-                    if re.search(r'(New|Used|Certified)\s+\d{4}', line):
-                        # Extract year from condition line
-                        year_match = re.search(r'\d{4}', line)
-                        if year_match:
-                            year = int(year_match.group(0))
-                        condition = line.split()[0]  # "New", "Used", etc
-                    elif not re.search(r'\$[\d,]+', line) and not re.search(r'(Buick|GMC|Dealer|Availability)', line, re.IGNORECASE):
-                        # This is likely the vehicle name
-                        if not title and len(line) > 5:  # Minimum reasonable name length
-                            title = line
-                            break
+                # Extract year from link text (e.g., "2022 GMC Sierra 3500")
+                year_match = re.search(r'\b(20\d{2})\b', link_text)
+                year = int(year_match.group(1)) if year_match else 0
 
-                # If we didn't find a proper title, use query
-                if not title:
-                    title = query
+                # Vehicle name from link text
+                title = link_text.strip()
 
-                # Extract dealer name (usually appears near "Confirm Availability" button text)
-                dealer = 'KBB Dealer'
-                for line in lines:
-                    # Look for dealer names (multi-word, often contains GMC/Buick/etc)
-                    if re.search(r'(Buick|GMC|Chevrolet|Ford|Toyota|Honda|Dealer)', line, re.IGNORECASE):
-                        if not line.startswith('Confirm') and not line.startswith('New'):
-                            dealer = line
-                            break
-
-                # Get image if present
-                img_elem = await listing.query_selector('img')
+                # Get image - the image is in an ancestor element, not a sibling
                 image = ''
-                if img_elem:
-                    image = await img_elem.get_attribute('src') or ''
+                try:
+                    # Try to find the image by going up the ancestor tree
+                    img_src = await listing.evaluate('''
+                        el => {
+                            // Go up the tree and look for vehicle images in ancestors
+                            for (let level = 1; level <= 8; level++) {
+                                let ancestor = el;
+                                for (let i = 0; i < level; i++) {
+                                    if (ancestor) ancestor = ancestor.parentElement;
+                                }
 
-                # For new vehicles, mileage is typically 0
+                                if (!ancestor) continue;
+
+                                // Look for images in this ancestor
+                                const images = ancestor.querySelectorAll('img');
+                                for (const img of images) {
+                                    // Check if this is a vehicle image (kbb.com domain and reasonable size)
+                                    if (img.src && img.src.includes('http') && img.src.includes('kbb.com')) {
+                                        // Skip ad images and small images
+                                        if (!img.src.includes('116x49') && !img.src.includes('favicon')) {
+                                            // Check image size if available
+                                            if (img.width > 200 || img.naturalWidth > 200 || !img.width) {
+                                                return img.src;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            return '';
+                        }
+                    ''')
+                    if img_src:
+                        image = img_src
+                except:
+                    pass
+
+                # Now get the price and mileage from sibling elements
+                # The listing card structure has the link and price as separate elements
+                # We need to get the full listing card text
+                price = 0
                 mileage = 0
-                if condition.lower() == 'used':
-                    # Try to extract mileage from text (format: "60K mi" or "3 mi")
-                    mileage_match = re.search(r'(\d+[,\d]*)\s*(K|k)?\s*mi', all_text, re.IGNORECASE)
-                    if mileage_match:
-                        mileage = extract_number(mileage_match.group(1))
-                        if 'K' in mileage_match.group(0) or 'k' in mileage_match.group(0):
-                            mileage = mileage * 1000
+
+                # Try to get the listing card container (go up several levels)
+                try:
+                    # The link is inside a card, we need to get the card's parent
+                    card_text = ''
+                    for ancestor_level in range(1, 6):
+                        try:
+                            ancestor = await listing.evaluate(f'el => {{ let p = el; for(let i=0; i<{ancestor_level}; i++) p = p?.parentElement; return p?.innerText; }}')
+                            if ancestor and len(ancestor) > 50:
+                                card_text = ancestor
+                                break
+                        except:
+                            continue
+
+                    if card_text:
+                        logging.error(f"[KBB] Card text (first 300 chars): {card_text[:300]}")
+
+                        # Find price - KBB often has price as just a number with commas
+                        # Look for patterns like: "55,778" after mileage, before "See payment"
+                        # First try with $ sign
+                        price_match = re.search(r'\$\s*([\d,]+)', card_text)
+                        if not price_match:
+                            # Try without $ sign - look for number with commas (e.g., "55,778")
+                            # It's typically after mileage and before "See payment" or "Great Price"
+                            price_match = re.search(r'\n\s*([\d,]+)\s*\n\s*(?:See payment|Great Price|Good Price)', card_text)
+                        if not price_match:
+                            # Fallback: just find a large number with commas that looks like a price
+                            # Prices are typically 5-6 digits (10,000 to 999,999)
+                            price_match = re.search(r'\b([\d,]{5,})\b', card_text)
+
+                        if price_match:
+                            price = extract_number(price_match.group(1))
+
+                        # Find mileage pattern like "70K mi" or "34,000 mi"
+                        mileage_match = re.search(r'(\d+[Kk]?\s*mi|[\d,]+\s*mi)', card_text, re.IGNORECASE)
+                        if mileage_match:
+                            mileage_text = mileage_match.group(1)
+                            # Handle K notation (70K = 70000)
+                            if 'K' in mileage_text.upper():
+                                mileage = extract_number(mileage_text) * 1000
+                            else:
+                                mileage = extract_number(mileage_text)
+
+                        logging.error(f"[KBB] Extracted: price=${price}, mileage={mileage}")
+                except Exception as e:
+                    logging.error(f"[KBB] Error extracting price/mileage: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    pass
+
+                # Get location/dealer name from the card text
+                location = 'KBB'
+                try:
+                    # Look for dealer names in card text (typically appears after price/mileage)
+                    # Common patterns: "Kendall Ford of Bend", "Covina Volkswagen", etc.
+                    for ancestor_level in range(1, 5):
+                        try:
+                            ancestor_text = await listing.evaluate(f'''
+                                el => {{
+                                    let p = el;
+                                    for(let i=0; i<{ancestor_level}; i++) p = p?.parentElement;
+                                    return p?.innerText || '';
+                                }}
+                            ''')
+                            if ancestor_text and len(ancestor_text) > 100:
+                                # Look for dealer names (multi-word, often contains brand names)
+                                # Skip lines with "mi." (distance) or "delivery"
+                                lines = ancestor_text.split('\n')
+                                for line in lines:
+                                    line = line.strip()
+                                    # Look for dealer names with brand names
+                                    if re.search(r'(GMC|Buick|Ford|Toyota|Honda|Volkswagen|Chevrolet|Dealer|Motors)', line, re.IGNORECASE):
+                                        # Skip if it's a distance line or contains "mi." or "delivery"
+                                        if not any(x in line.lower() for x in ['mi.', 'away', 'delivery', 'request info', 'more actions']):
+                                            if len(line) > 5 and len(line) < 50:
+                                                location = line
+                                                break
+                                if location != 'KBB':
+                                    break
+                        except:
+                            continue
+                except:
+                    pass
 
                 if price > 0:
                     results.append({
@@ -142,9 +240,9 @@ async def scrape_kbb(query: str, max_results: int = 10):
                         'image': image,
                         'retailer': 'KBB',
                         'url': url,
-                        'location': dealer
+                        'location': location
                     })
-                    logging.error(f"[KBB] {title[:40]} - ${price:,} - {dealer[:20]}")
+                    logging.error(f"[KBB] {title[:40]} - ${price:,} - {mileage:,} mi")
 
             except Exception as e:
                 logging.error(f"[KBB] Error extracting listing {i}: {e}")

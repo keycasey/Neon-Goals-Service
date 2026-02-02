@@ -46,10 +46,10 @@ async def scrape_cars(query: str, max_results: int = 3):
     browser = None
 
     try:
-        # Launch Camoufox in headless mode
+        # Launch Camoufox - headless=False to avoid crashes
         logging.error(f"Launching Camoufox for query: {query}")
         browser = await AsyncCamoufox(
-            headless=True,   # Headless for production
+            headless=False,   # VISIBLE mode - headless crashes on CarGurus
             humanize=True,   # Human-like mouse movements
         ).__aenter__()
 
@@ -89,6 +89,19 @@ async def scrape_cars(query: str, max_results: int = 3):
         # Get page content for debugging
         content = await page.content()
         logging.error(f"Page loaded, content length: {len(content)}")
+
+        # Check for "No results found" condition
+        page_text = await page.inner_text('body')
+        no_results_indicators = [
+            'No matching vehicles',
+            'No results found',
+            '0 results',
+            'No cars found',
+            'Try changing your search'
+        ]
+        if any(indicator in page_text for indicator in no_results_indicators):
+            logging.error(f"[CarGurus] No results found - returning empty")
+            return []
 
         # Try multiple selectors for listings
         selectors = [

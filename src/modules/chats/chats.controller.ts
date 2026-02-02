@@ -2,9 +2,11 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Body,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ChatsService } from './chats.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -18,6 +20,19 @@ export class ChatsController {
   @Get('creation')
   async getCreationChat(@CurrentUser('userId') userId: string) {
     return this.chatsService.getOrCreateCreationChat(userId);
+  }
+
+  @Get('overview')
+  async getOverviewChat(@CurrentUser('userId') userId: string) {
+    return this.chatsService.getOrCreateOverviewChat(userId);
+  }
+
+  @Get('category/:categoryId')
+  async getCategoryChat(
+    @Param('categoryId') categoryId: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.chatsService.getOrCreateCategoryChat(userId, categoryId);
   }
 
   @Get('goal/:goalId')
@@ -49,6 +64,6 @@ export class ChatsController {
 
   @Get()
   async getAllChats(@CurrentUser('userId') userId: string) {
-    return this.chatsService.getChats(userId);
+    return this.chatsService.getChatsStructured(userId);
   }
 }

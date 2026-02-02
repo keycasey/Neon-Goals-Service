@@ -46,12 +46,16 @@ async def scrape_truecar_graphql(search_filters: Dict[str, Any], max_results: in
     query_parts = []
     if search_filters.get('make'):
         query_parts.append(search_filters['make'])
-    if search_filters.get('model'):
-        query_parts.append(search_filters['model'])
+
+    model = search_filters.get('model', '')
+    series = search_filters.get('series', '')
+
+    # Use model directly (series will be appended to model_slug below if needed)
+    if model:
+        query_parts.append(model)
+
     if search_filters.get('year'):
         query_parts.append(str(search_filters['year']))
-    if search_filters.get('series'):
-        query_parts.append(search_filters['series'])
 
     search_query = ' '.join(query_parts) if query_parts else None
 
@@ -140,45 +144,62 @@ async def scrape_truecar_camoufox(search_filters: Dict[str, Any], max_results: i
 
     results = []
 
-    # Build TrueCar URL with filters using mmt[] parameter
-    # mmt format: make_model-series_trim (e.g., gmc_sierra-3500hd_denali-ultimate)
     make = search_filters.get('make', '').lower() if search_filters.get('make') else ''
-    model = search_filters.get('model', '').lower().replace(' ', '-') if search_filters.get('model') else ''
-    series = search_filters.get('series', '').lower() if search_filters.get('series') else ''
+    model = search_filters.get('model', '') or ''
+    series = search_filters.get('series', '')
 
-    # Build mmt value with proper underscores
-    # Format: make_model or make_model-series or make_model-series_trim
-    mmt_parts = [f'{make}_{model}' if make and model else '']
+    # Build model_slug: make_model
+    # If series is provided (like "HD"), append it to model
+    # Example: "Sierra 3500" + series "HD" -> "sierra-3500hd"
+    import re
+    model_slug = model.lower().replace(' ', '-') if model else ''
 
-    if series:
-        # Append series with hyphen: make_model-series
-        mmt_parts[0] = f'{mmt_parts[0]}-{series}'
+    # Append series if it's a suffix like "HD" and not already in model_slug
+    if series and series.upper() not in model_slug.upper():
+        series_lower = series.lower()
+        # For series like "HD", append directly to the last number
+        # sierra-3500 + HD = sierra-3500hd
+        model_slug = f'{model_slug}{series_lower}'
 
-    # Add first trim if available
-    trims = search_filters.get('trims', [])
-    if trims and len(trims) > 0:
-        trim_slug = trims[0].lower().replace(' ', '-')
-        mmt_parts[0] = f'{mmt_parts[0]}_{trim_slug}'
+    # Build mmt value - make_modelslug
+    base_model = f'{make}_{model_slug}' if make and model_slug else ''
 
-    mmt_value = mmt_parts[0] if mmt_parts[0] else ''
+    mmt_value = base_model
+
+    # Add trim if specified (e.g., _denali-ultimate)
+    if search_filters.get('trims'):
+        trims = search_filters.get('trims', [])
+        if trims and len(trims) > 0:
+            trim = trims[0]
+            trim_clean = trim.lower().replace(' ', '-') if trim else ''
+            if trim_clean:
+                mmt_value = f'{mmt_value}_{trim_clean}'
 
     # Build URL parameters
     params = []
     if mmt_value:
         params.append(f'mmt[]={mmt_value}')
 
-    # Add search radius (required for results to show)
+    # Add search radius (use maximum - 5000 = nationwide)
     params.append('searchRadius=5000')
 
     # Add location (default to CA for broader results)
     params.append('state=ca')
     params.append('city=south-san-francisco')
 
-    # Add year range
-    year = search_filters.get('year')
-    if year:
-        params.append(f'yearHigh={year}')
-        params.append(f'yearLow={year}')
+    # Add year range - support startYear/endYear for "4 years or newer"
+    # If no year specified, use a broad range to get results
+    start_year = search_filters.get('startYear')
+    end_year = search_filters.get('endYear')
+    single_year = search_filters.get('year')
+
+    if single_year:
+        params.append(f'yearHigh={single_year}')
+        params.append(f'yearLow={single_year}')
+    elif start_year and end_year:
+        params.append(f'yearHigh={end_year}')
+        params.append(f'yearLow={start_year}')
+    # If no year info at all, don't add year filter to get broader results
 
     # Add price range if budget specified
     budget = search_filters.get('budget')
@@ -240,6 +261,12 @@ async def scrape_truecar_camoufox(search_filters: Dict[str, Any], max_results: i
         page = await browser.new_page()
         await page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
         await asyncio.sleep(5)
+
+        # Check for "No exact matches" condition - don't return similar cars
+        page_text = await page.inner_text('body')
+        if '0 Listings' in page_text or 'No exact matches' in page_text or 'Oops!' in page_text:
+            logging.error(f"[TrueCar] No exact matches found - returning empty results")
+            return []
 
         listings = await page.query_selector_all('[data-test="vehicleListingCard"]')
         logging.error(f"[TrueCar] Found {len(listings)} listings")

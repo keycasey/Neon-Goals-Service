@@ -56,6 +56,20 @@ async def scrape_carvana(query: str, max_results: int = 10):
         # Wait for listings to load
         await asyncio.sleep(5)
 
+        # Check for "No results found" condition
+        page_text = await page.inner_text('body')
+        no_results_indicators = [
+            'No matching vehicles',
+            'No results found',
+            '0 results',
+            'No cars found',
+            'Try changing your search',
+            'No exact matches'
+        ]
+        if any(indicator in page_text for indicator in no_results_indicators):
+            logging.error(f"[Carvana] No results found - returning empty")
+            return []
+
         # Carvana listings are links to /vehicle/ pages
         listings = await page.query_selector_all('a[href*="/vehicle/"]')
         logging.error(f"[Carvana] Found {len(listings)} listing links")

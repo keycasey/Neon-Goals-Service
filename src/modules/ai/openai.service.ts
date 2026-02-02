@@ -88,19 +88,28 @@ export class OpenAIService implements OnModuleInit {
 
   /**
    * Save conversation messages to database
+   * Note: This is a legacy method for messages saved via threadId only.
+   * New code should save messages through ChatsService.
    */
   private async saveMessages(
     threadId: string,
     userId: string,
     messages: Array<{ role: string; content: string }>,
+    chatId?: string,
   ): Promise<void> {
     await this.prisma.message.createMany({
-      data: messages.map(msg => ({
-        threadId,
-        userId,
-        role: msg.role,
-        content: msg.content,
-      })),
+      data: messages.map(msg => {
+        const data: any = {
+          threadId,
+          userId,
+          role: msg.role,
+          content: msg.content,
+        };
+        if (chatId) {
+          data.chatId = chatId;
+        }
+        return data;
+      }),
     });
   }
 
@@ -756,7 +765,8 @@ CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","bud
 - "Want a Honda CR-V" → {category:"vehicle",make:"Honda",model:"CR-V",searchTerm:"Honda CR-V"}
 - "Just want a Denali truck" → {category:"vehicle",make:"GMC",model:"Sierra",trims:["Denali"],searchTerm:"GMC Sierra Denali"}
 - "Need a red or black truck" → {category:"vehicle",colors:["red","black"],searchTerm:"red or black truck"}
-- "Looking for a diesel dually" → {category:"vehicle",fuelType:"Diesel",bodyStyle:"Dually"}
+- "Looking for a diesel dually" → {category:"vehicle",fuelType:"Diesel",bodyStyle:"Dually",series:"3500HD"}
+- "GMC Sierra Denali Dually" → {category:"vehicle",make:"GMC",model:"Sierra 3500",trims:["Denali"],series:"3500HD",bodyStyle:"Dually",searchTerm:"GMC Sierra Denali 3500 dually"}
 - "MacBook Pro with 16GB RAM" → {category:"technology",brands:["Apple"],minRam:"16GB",searchTerm:"MacBook Pro 16GB RAM"}
 
 **Inference rules:**

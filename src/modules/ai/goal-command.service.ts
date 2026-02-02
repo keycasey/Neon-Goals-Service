@@ -75,10 +75,11 @@ export class GoalCommandService {
    * Create a new main goal from command data
    */
   async createGoal(userId: string, data: any) {
-    const { type, title, description, tasks, deadline } = data;
+    const { type, title, description, tasks, deadline, targetDate } = data;
 
-    // Convert deadline string to Date object if provided
-    const deadlineDate = deadline ? new Date(deadline) : null;
+    // Convert deadline or targetDate string to Date object if provided
+    // AI prompt uses targetDate, but we accept both for compatibility
+    const deadlineDate = deadline ? new Date(deadline) : (targetDate ? new Date(targetDate) : null);
 
     if (type === 'action') {
       return this.prisma.goal.create({
@@ -132,6 +133,7 @@ export class GoalCommandService {
               statusBadge: 'pending_search',
               searchTerm: data.searchTerm || null,
               category: data.category || null,
+              searchFilters: data.searchFilters || null,
             },
           },
         },
@@ -180,10 +182,11 @@ export class GoalCommandService {
    * parentGoalId can be either an actual ID or a title (will be looked up)
    */
   async createSubgoal(userId: string, data: any) {
-    const { parentGoalId, type, title, description, deadline } = data;
+    const { parentGoalId, type, title, description, deadline, targetDate } = data;
 
-    // Convert deadline string to Date object if provided
-    const deadlineDate = deadline ? new Date(deadline) : null;
+    // Convert deadline or targetDate string to Date object if provided
+    // AI prompt uses targetDate, but we accept both for compatibility
+    const deadlineDate = deadline ? new Date(deadline) : (targetDate ? new Date(targetDate) : null);
 
     // Find parent goal - try by ID first, then by title (for recently created goals)
     let parentGoal = await this.prisma.goal.findFirst({
@@ -271,6 +274,7 @@ export class GoalCommandService {
               statusBadge: 'pending_search',
               searchTerm: data.searchTerm || null,
               category: data.category || null,
+              searchFilters: data.searchFilters || null,
             },
           },
         },

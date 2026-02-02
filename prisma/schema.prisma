@@ -66,7 +66,6 @@ model Goal {
 
   // Relations
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages    Message[]
   chats       ChatState[]
 
   // Subgoal relations (self-referential)
@@ -194,33 +193,50 @@ model Message {
   // Relations
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
-  goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  goalId    String?
   chat      ChatState? @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  chatId    String?
+  chatId    String?  // Required: Always has a ChatState (nullable during migration)
 
   @@index([userId])
-  @@index([goalId])
   @@index([chatId])
   @@index([threadId])
+}
+
+// Conversation summaries for context window management
+model ConversationSummary {
+  id          String   @id @default(cuid())
+  chatId      String
+  summary     String   @db.Text
+  messageCount Int
+  createdAt   DateTime @default(now())
+
+  chat        ChatState @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
 }
 
 // Chat state for tracking conversations
 model ChatState {
   id        String   @id @default(cuid())
-  type      String   // "creation" | "goal"
+  type      String   // "overview" | "category" | "goal"
+  categoryId String?  // For type="category": "items" | "finances" | "actions"
+  goalId    String?
   isLoading Boolean  @default(false)
+
+  // Summary tracking for context window management
+  lastSummaryId String?  // Points to most recent summary
+  summaryCursor  Int?     // How many messages are summarized (offset)
 
   // Relations
   goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  goalId    String?
   messages  Message[]
+  summaries ConversationSummary[]
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([userId, type, categoryId, goalId])
   @@index([goalId])
   @@index([userId, type])
 }
