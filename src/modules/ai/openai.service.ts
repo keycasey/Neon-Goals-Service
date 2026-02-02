@@ -1362,4 +1362,248 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
     }
   }
+
+  /**
+   * Category specialist chat - non-streaming
+   * Used for category-specific conversations (items, finances, actions)
+   */
+  async categoryChat(
+    userId: string,
+    categoryId: string,
+    message: string,
+    categoryGoals: any[],
+    chatId: string,
+  ): Promise<{ content: string; commands?: any[] }> {
+    const threadId = `category_${categoryId}_${userId}`;
+
+    // Check if we need to summarize before processing this message
+    const shouldSummarize = await this.summaryService.shouldSummarize(chatId);
+    if (shouldSummarize) {
+      this.logger.log(`Triggering summarization for chat ${chatId}`);
+      await this.summaryService.summarizeChat(chatId);
+      this.threadHistories.delete(threadId);
+    }
+
+    // Load conversation history
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    try {
+      // Add user message
+      history.messages.push({ role: 'user', content: message });
+
+      // Get specialist prompt
+      const { SPECIALIST_PROMPTS } = await import('./specialist-prompts');
+      const specialistPrompt = SPECIALIST_PROMPTS[categoryId as keyof typeof SPECIALIST_PROMPTS] || SPECIALIST_PROMPTS.items;
+
+      // Create system prompt with category goals context
+      const systemPrompt = `${specialistPrompt}
+
+## User's ${categoryId.toUpperCase()} Goals
+
+${this.formatGoalList(categoryGoals)}
+
+You can reference and modify these goals through conversational commands. Reference them by title when discussing.`;
+
+      // Create messages
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...history.messages,
+      ];
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        temperature: 0.7,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from OpenAI');
+      }
+
+      // Add assistant response to history
+      history.messages.push({ role: 'assistant', content });
+
+      // Save messages to database with chatId
+      await this.saveMessages(threadId, userId, [
+        { role: 'user', content: message },
+        { role: 'assistant', content },
+      ], chatId);
+
+      // Parse structured commands
+      const commands = this.parseCommands(content);
+
+      return {
+        content: this.cleanCommandsFromContent(content),
+        commands,
+      };
+    } catch (error) {
+      this.logger.error(`Category chat error (${categoryId}):`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Category specialist chat - streaming
+   * Used for category-specific conversations with real-time streaming
+   */
+  async *categoryChatStream(
+    userId: string,
+    categoryId: string,
+    message: string,
+    categoryGoals: any[],
+    chatId: string,
+  ): AsyncGenerator<{ content: string; done: boolean }, void, unknown> {
+    const threadId = `category_${categoryId}_${userId}`;
+    const streamKey = `category_${categoryId}_${userId}_${Date.now()}`;
+
+    // Check if we need to summarize before processing this message
+    const shouldSummarize = await this.summaryService.shouldSummarize(chatId);
+    if (shouldSummarize) {
+      this.logger.log(`Triggering summarization for chat ${chatId}`);
+      await this.summaryService.summarizeChat(chatId);
+      this.threadHistories.delete(threadId);
+    }
+
+    // Load conversation history
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    // Create abort controller for this stream
+    const controller = new AbortController();
+    this.activeStreams.set(streamKey, controller);
+
+    try {
+      // Add user message
+      history.messages.push({ role: 'user', content: message });
+
+      // Get specialist prompt
+      const { SPECIALIST_PROMPTS } = await import('./specialist-prompts');
+      const specialistPrompt = SPECIALIST_PROMPTS[categoryId as keyof typeof SPECIALIST_PROMPTS] || SPECIALIST_PROMPTS.items;
+
+      // Create system prompt with category goals context
+      const systemPrompt = `${specialistPrompt}
+
+## User's ${categoryId.toUpperCase()} Goals
+
+${this.formatGoalList(categoryGoals)}
+
+You can reference and modify these goals through conversational commands. Reference them by title when discussing.`;
+
+      // Create messages
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...history.messages,
+      ];
+
+      const stream = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        temperature: 0.7,
+        stream: true,
+      }, {
+        signal: controller.signal,
+      });
+
+      let fullContent = '';
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        if (delta) {
+          fullContent += delta;
+          yield { content: delta, done: false };
+        }
+      }
+
+      // Parse commands from the full response
+      const commands = this.parseCommands(fullContent);
+
+      // Prepare final chunk
+      const finalChunk: { content: string; done: true; commands?: any[] } = {
+        content: '',
+        done: true,
+      };
+
+      if (commands.length > 0) {
+        finalChunk.commands = commands;
+      }
+
+      // Add assistant response to history
+      history.messages.push({ role: 'assistant', content: fullContent });
+
+      // Save messages to database with chatId
+      await this.saveMessages(threadId, userId, [
+        { role: 'user', content: message },
+        { role: 'assistant', content: fullContent },
+      ], chatId);
+
+      yield finalChunk;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.logger.log('Category stream aborted by user');
+        yield { content: '', done: true };
+        return;
+      }
+      this.logger.error(`Category stream error (${categoryId}):`, error);
+      throw error;
+    } finally {
+      this.activeStreams.delete(streamKey);
+    }
+  }
+
+  /**
+   * Format goal list for inclusion in system prompt
+   */
+  private formatGoalList(goals: any[]): string {
+    if (!goals || goals.length === 0) {
+      return 'No goals set yet in this category.';
+    }
+
+    return goals.map((goal, index) => {
+      let goalText = `${index + 1}. **${goal.title}**`;
+
+      if (goal.description) {
+        goalText += `\n   ${goal.description}`;
+      }
+
+      if (goal.type === 'item' && goal.itemData) {
+        const data = goal.itemData;
+        if (data.budget) goalText += `\n   Budget: $${data.budget}`;
+        if (data.targetPrice) goalText += `\n   Target Price: $${data.targetPrice}`;
+        if (data.currentPrice) goalText += `\n   Current Price: $${data.currentPrice}`;
+      }
+
+      if (goal.type === 'finance' && goal.financeData) {
+        const data = goal.financeData;
+        if (data.targetBalance) goalText += `\n   Target: $${data.targetBalance}`;
+        if (data.currentBalance) goalText += `\n   Current: $${data.currentBalance}`;
+      }
+
+      if (goal.type === 'action' && goal.actionData) {
+        const data = goal.actionData;
+        if (data.tasks && data.tasks.length > 0) {
+          goalText += `\n   Tasks: ${data.tasks.map((t: any) => t.title || t).join(', ')}`;
+        }
+      }
+
+      if (goal.targetDate) {
+        goalText += `\n   Target: ${new Date(goal.targetDate).toLocaleDateString()}`;
+      }
+
+      if (goal.status) {
+        goalText += `\n   Status: ${goal.status}`;
+      }
+
+      return goalText;
+    }).join('\n\n');
+  }
 }

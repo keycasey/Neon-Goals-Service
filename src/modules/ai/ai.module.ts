@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { AiGoalChatController, AiOverviewController } from './ai-goal-creation.controller';
+import { SpecialistController } from './specialist.controller';
 import { GoalCommandService } from './goal-command.service';
 import { OpenAIService } from './openai.service';
 import { ConversationSummaryService } from './conversation-summary.service';
@@ -12,7 +13,7 @@ import { ChatsModule } from '../chats/chats.module';
 
 @Module({
   imports: [ConfigModule, PrismaModule, ScraperModule, ChatsModule],
-  controllers: [AiController, AiGoalChatController, AiOverviewController],
+  controllers: [AiController, AiGoalChatController, AiOverviewController, SpecialistController],
   providers: [AiService, GoalCommandService, OpenAIService, ConversationSummaryService],
   exports: [AiService, GoalCommandService, OpenAIService, ConversationSummaryService],
 })
