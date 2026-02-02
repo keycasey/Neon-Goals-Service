@@ -44,6 +44,8 @@ export class OpenAIService implements OnModuleInit {
   private openai: OpenAI;
   private readonly apiKey: string;
   private threadHistories = new Map<string, ThreadHistory>();
+  // Track active streams for abort capability
+  private activeStreams = new Map<string, AbortController>();
 
   constructor(
     private configService: ConfigService,
@@ -1217,6 +1219,7 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
     goals: any[],
   ): AsyncGenerator<{ content: string; done: boolean }, void, unknown> {
     const threadId = `overview_${userId}`;
+    const streamKey = `overview_${userId}_${Date.now()}`;
 
     // Load conversation history
     let history = this.threadHistories.get(threadId);
@@ -1225,6 +1228,10 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       history = { messages };
       this.threadHistories.set(threadId, history);
     }
+
+    // Create abort controller for this stream
+    const controller = new AbortController();
+    this.activeStreams.set(streamKey, controller);
 
     try {
       // Add user message
@@ -1241,6 +1248,8 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
         messages,
         temperature: 0.7,
         stream: true,
+      }, {
+        signal: controller.signal,
       });
 
       let fullContent = '';
@@ -1280,8 +1289,41 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
 
       yield finalChunk;
     } catch (error) {
+      if (error.name === 'AbortError') {
+        this.logger.log('Stream aborted by user');
+        yield { content: '', done: true };
+        return;
+      }
       this.logger.error('Overview chat stream error:', error);
       throw error;
+    } finally {
+      // Clean up abort controller
+      this.activeStreams.delete(streamKey);
+    }
+  }
+
+  /**
+   * Abort an active stream by stream key
+   */
+  abortStream(streamKey: string): boolean {
+    const controller = this.activeStreams.get(streamKey);
+    if (controller) {
+      controller.abort();
+      this.activeStreams.delete(streamKey);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Abort all active streams for a user
+   */
+  abortUserStreams(userId: string): void {
+    for (const [streamKey, controller] of this.activeStreams.entries()) {
+      if (streamKey.includes(userId)) {
+        controller.abort();
+        this.activeStreams.delete(streamKey);
+      }
     }
   }
 }

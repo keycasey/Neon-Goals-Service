@@ -260,4 +260,55 @@ export class ChatsService {
       })),
     };
   }
+
+  /**
+   * Edit a message and delete all subsequent messages
+   * When user edits a message, all messages after it become invalid
+   */
+  async editMessage(messageId: string, userId: string, newContent: string) {
+    // Fetch the message to verify ownership and get createdAt
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    if (message.userId !== userId) {
+      throw new Error('You can only edit your own messages');
+    }
+
+    // Get the message's chatId
+    const chatId = message.chatId;
+    if (!chatId) {
+      throw new Error('Cannot edit message without associated chat');
+    }
+
+    // Delete all messages after this one in the same chat
+    await this.deleteMessagesAfter(chatId, message.createdAt);
+
+    // Update the message content
+    const updated = await this.prisma.message.update({
+      where: { id: messageId },
+      data: { content: newContent },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Delete all messages in a chat after a specific timestamp
+   * Used when editing a message to invalidate subsequent messages
+   */
+  async deleteMessagesAfter(chatId: string, createdAt: Date) {
+    return this.prisma.message.deleteMany({
+      where: {
+        chatId,
+        createdAt: {
+          gt: createdAt,
+        },
+      },
+    });
+  }
 }

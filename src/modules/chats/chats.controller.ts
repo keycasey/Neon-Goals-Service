@@ -66,4 +66,16 @@ export class ChatsController {
   async getAllChats(@CurrentUser('userId') userId: string) {
     return this.chatsService.getChatsStructured(userId);
   }
+
+  @Put(':chatId/messages/:messageId')
+  async editMessage(
+    @Param('chatId') chatId: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser('userId') userId: string,
+    @Body() data: { content: string },
+  ) {
+    // Note: chatId is validated in the service method
+    const updatedMessage = await this.chatsService.editMessage(messageId, userId, data.content);
+    return updatedMessage;
+  }
 }

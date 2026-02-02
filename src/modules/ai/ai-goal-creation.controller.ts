@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Res, Param } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Res, Param, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
 import { OpenAIService } from './openai.service';
 import { PrismaService } from '../../config/prisma.service';
@@ -179,5 +179,23 @@ export class AiOverviewController {
       cancelled: true,
       message: `Goal creation cancelled: ${reason}`,
     };
+  }
+
+  /**
+   * Stop an active stream
+   * Frontend calls this when user clicks stop button during streaming
+   */
+  @Post('chat/stop')
+  async stopStream(
+    @CurrentUser('userId') userId: string,
+    @Res() res: Response,
+  ) {
+    // Abort all active streams for this user
+    this.openaiService.abortUserStreams(userId);
+
+    res.status(HttpStatus.OK).json({
+      stopped: true,
+      message: 'Stream stopped',
+    });
   }
 }
