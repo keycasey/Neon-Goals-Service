@@ -76,6 +76,19 @@ def run_scraper_and_callback(
                 "--instance-group", "scrapers",
                 python_bin, script_path, filters_json, "5"
             ]
+        elif scraper_name == "cargurus-camoufox" and vehicle_filters:
+            # CarGurus works better with searchFilters format
+            # Build searchFilters from vehicle_filters dict
+            import json as json_mod
+            filters_json = json_mod.dumps(vehicle_filters)
+            command = [
+                "env", "LD_PRELOAD=/lib/libpthread.so.0",
+                "kitty",
+                "--class", "scraper-window",
+                "--single-instance",
+                "--instance-group", "scrapers",
+                python_bin, script_path, filters_json, "5"
+            ]
         else:
             # Other scrapers expect plain query string
             command = [

@@ -39,15 +39,29 @@ def extract_number(text: str) -> int:
         return 0
 
 
-async def scrape_cars(query: str, max_results: int = 3):
-    """Scrape car listings from CarGurus using Camoufox"""
+async def scrape_cars(search_filters: dict, max_results: int = 3):
+    """Scrape car listings from CarGurus using Camoufox
+
+    Args:
+        search_filters: Dict with make, model, zip, etc.
+        max_results: Maximum number of results to return
+    """
 
     results = []
     browser = None
 
+    # Extract filters with defaults
+    make = search_filters.get('make', '')
+    model = search_filters.get('model', '')
+    zip_code = search_filters.get('zip', '94002')  # Default to user's area
+    distance = search_filters.get('distance', 100)
+    year_min = search_filters.get('yearMin', '')
+    year_max = search_filters.get('yearMax', '')
+    price_max = search_filters.get('maxPrice', '')
+
     try:
         # Launch Camoufox - headless=False to avoid crashes
-        logging.error(f"Launching Camoufox for query: {query}")
+        logging.error(f"Launching Camoufox for: {make} {model}")
         browser = await AsyncCamoufox(
             headless=False,   # VISIBLE mode - headless crashes on CarGurus
             humanize=True,   # Human-like mouse movements
@@ -59,7 +73,7 @@ async def scrape_cars(query: str, max_results: int = 3):
         # STEP 1: Visit homepage first to build session/trust
         await page.goto("https://www.cargurus.com", wait_until='domcontentloaded', timeout=30000)
         logging.error("Homepage loaded, waiting to simulate human behavior...")
-        await asyncio.sleep(3)  # Wait like a human reading the page
+        await asyncio.sleep(3)
 
         # Scroll a bit to look more human
         try:
@@ -70,10 +84,29 @@ async def scrape_cars(query: str, max_results: int = 3):
         except:
             pass
 
-        logging.error("Now navigating to search results...")
+        # STEP 2: Build searchFilters URL parameter
+        # Format: make|Toyota--model|Camry--yearMin|2020
+        filter_parts = []
+        if make:
+            filter_parts.append(f"make|{make}")
+        if model:
+            filter_parts.append(f"model|{model}")
+        if year_min:
+            filter_parts.append(f"yearMin|{year_min}")
+        if year_max:
+            filter_parts.append(f"yearMax|{year_max}")
+        if price_max:
+            filter_parts.append(f"maxPrice|{price_max}")
 
-        # STEP 2: Navigate to search results
-        search_url = f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?zip=90210&distance=50000&searchQuery={query.replace(' ', '+')}"
+        searchFilters = '--'.join(filter_parts) if filter_parts else ''
+
+        # Build URL with searchFilters
+        if searchFilters:
+            search_url = f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?zip={zip_code}&distance={distance}&searchFilters={searchFilters}"
+        else:
+            # Fallback to simple search
+            search_url = f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?zip={zip_code}&distance={distance}&searchQuery={make}+{model}"
+
         logging.error(f"Navigating to: {search_url}")
         await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
         logging.error("Search page loaded, waiting for content...")
@@ -241,20 +274,26 @@ async def scrape_cars(query: str, max_results: int = 3):
 async def main():
     """Main entry point"""
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: scrape-cars-camoufox.py <search query>"}))
+        print(json.dumps({"error": "Usage: scrape-cars-camoufox.py <JSON filters> [max_results]"}))
+        print(json.dumps({"example": '{"make": "GMC", "model": "Yukon Denali", "zip": "94002"}'}))
         sys.exit(1)
 
-    query = sys.argv[1]
+    arg = sys.argv[1]
     max_results = int(sys.argv[2]) if len(sys.argv) > 2 else 10
 
     try:
-        result = await scrape_cars(query, max_results)
+        # Parse JSON filters
+        filters = json.loads(arg) if isinstance(arg, str) else arg
+        result = await scrape_cars(filters, max_results)
 
         if not result:
             # Return descriptive error if no results
-            print(json.dumps({"error": f"No car listings found for '{query}'. The website may have blocked the request or changed its structure."}))
+            print(json.dumps({"error": f"No car listings found for {filters}. The website may have blocked the request or changed its structure."}))
         else:
             print(json.dumps(result, indent=2))
+    except json.JSONDecodeError:
+        print(json.dumps({"error": "Invalid JSON filters"}))
+        sys.exit(1)
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)
