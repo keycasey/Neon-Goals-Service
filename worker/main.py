@@ -67,7 +67,6 @@ def run_scraper_and_callback(
             "--class", "scraper-window",  # Tag window for i3 recognition
             "--single-instance",
             "--instance-group", "scrapers",
-            "--size", "120x25",  # Approx 1200x700 pixels (depends on font size)
             python_bin, script_path, f"'{query}'", "5"  # Query must be quoted, 5 = max results
         ]
 
