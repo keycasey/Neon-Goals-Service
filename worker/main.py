@@ -61,14 +61,32 @@ def run_scraper_and_callback(
         # --instance-group allows multiple Kitty windows to share the same process group
         # Use pyenv Python 3.12 which has camoufox installed
         python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
-        command = [
-            "env", "LD_PRELOAD=/lib/libpthread.so.0",
-            "kitty",
-            "--class", "scraper-window",  # Tag window for i3 recognition
-            "--single-instance",
-            "--instance-group", "scrapers",
-            python_bin, script_path, f"'{query}'", "5"  # Query must be quoted, 5 = max results
-        ]
+
+        # Different scrapers expect different parameter formats
+        if scraper_name in ["truecar", "carvana"]:
+            # TrueCar and Carvana expect JSON filters
+            # Build simple JSON from query
+            import json as json_mod
+            filters = {"search": query}
+            filters_json = json_mod.dumps(filters)
+            command = [
+                "env", "LD_PRELOAD=/lib/libpthread.so.0",
+                "kitty",
+                "--class", "scraper-window",
+                "--single-instance",
+                "--instance-group", "scrapers",
+                python_bin, script_path, filters_json, "5"
+            ]
+        else:
+            # Other scrapers expect plain query string
+            command = [
+                "env", "LD_PRELOAD=/lib/libpthread.so.0",
+                "kitty",
+                "--class", "scraper-window",
+                "--single-instance",
+                "--instance-group", "scrapers",
+                python_bin, script_path, f"'{query}'", "5"
+            ]
 
         logger.info(f"Running command: {' '.join(command)}")
 
