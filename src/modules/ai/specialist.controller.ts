@@ -4,8 +4,7 @@ import { OpenAIService } from './openai.service';
 import { PrismaService } from '../../config/prisma.service';
 import { GoalCommandService } from './goal-command.service';
 import { ChatsService } from '../chats/chats.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { ApiKeyGuard } from '../../common/guards/api-key.guard';
+import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 /**
@@ -17,7 +16,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
  * - Actions Specialist: Skills, habits, personal development
  */
 @Controller('ai/specialist')
-@UseGuards(JwtAuthGuard, ApiKeyGuard)  // Allow both JWT and API key auth
+@UseGuards(JwtOrApiKeyGuard)  // Allow either JWT or API key auth
 export class SpecialistController {
   constructor(
     private openaiService: OpenAIService,

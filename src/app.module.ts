@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -10,6 +10,7 @@ import { ChatsModule } from './modules/chats/chats.module';
 import { AiModule } from './modules/ai/ai.module';
 import { BrowserUseModule } from './modules/browser-use/browser-use.module';
 import { ScraperModule } from './modules/scraper/scraper.module';
+import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
   imports: [
@@ -31,4 +32,10 @@ import { ScraperModule } from './modules/scraper/scraper.module';
     ScraperModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(LoggerMiddleware)
+      .forRoutes('*'); // Apply to all routes
+  }
+}

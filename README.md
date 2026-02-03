@@ -250,80 +250,211 @@ scripts/
 
 ## Authentication
 
-The API supports two authentication methods for accessing protected endpoints:
+The API supports two authentication methods for accessing protected endpoints. Both methods provide equal access to endpoints but differ in user context.
 
 ### 1. JWT Authentication (User Access)
 
-For user-facing requests, authenticate via GitHub OAuth:
+For user-facing requests, authenticate via GitHub OAuth or email/password login.
+
+#### How JWT Works
+
+1. **Login**: User authenticates via OAuth or email/password
+2. **Token Issuance**: Server issues a JWT token valid for 7 days
+3. **Token Storage**: Client stores the token (localStorage, cookies, etc.)
+4. **Authenticated Requests**: Include token in `Authorization: Bearer <token>` header
+
+#### JWT Login Flow
 
 ```bash
-# Step 1: Initiate OAuth flow
+# Option 1: GitHub OAuth
 GET https://your-domain.com/auth/github
 
-# Step 2: After GitHub callback, you'll receive a JWT token
-# Store this token and include it in subsequent requests:
+# Option 2: Email/Password Login
+POST https://your-domain.com/auth/login
+{
+  "email": "user@example.com",
+  "password": "SecurePassword123"
+}
 
+# Response includes JWT token:
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": "user_id",
+    "name": "User Name",
+    "email": "user@example.com"
+  }
+}
+```
+
+#### Using JWT for Authenticated Requests
+
+```bash
+# Include JWT token in Authorization header
 curl -X GET https://your-domain.com/goals \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# The token identifies the user, so endpoints return user-specific data
+curl -X GET https://your-domain.com/chats \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+# Returns: User's chats with their messages
 ```
+
+#### JWT Authorization Behavior
+
+- **User Context**: JWT tokens contain user ID, email, name
+- **Data Scope**: Endpoints return data specific to the authenticated user
+- **Token Expiration**: 7 days from issuance
+- **Refresh**: Re-login to get a new token after expiration
+
+---
 
 ### 2. API Key Authentication (Agent Access)
 
-For agent-to-agent communication and automated integrations:
+For agent-to-agent communication, webhooks, and automated integrations.
 
-#### Generate an API Key
+#### How API Key Works
 
-Generate a secure random API key:
+1. **Key Generation**: Generate a secure random key (32-byte base64)
+2. **Configuration**: Add key to server's `AGENT_API_KEY` environment variable
+3. **Authenticated Requests**: Include key in `X-API-Key` header
+4. **Agent Context**: Server identifies requests as agent-originated
+
+#### Generate and Configure API Key
 
 ```bash
-# Generate a 32-byte random key (base64 encoded)
+# Step 1: Generate a secure random key
 openssl rand -base64 32
+# Output: Ce4QAMETH3m1pBf9yt8TCZY6ZkF8KQy0R+JbQH3K3Pk=
 
-# Or using Node.js
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# Step 2: Add to .env file
+echo "AGENT_API_KEY=Ce4QAMETH3m1pBf9yt8TCZY6ZkF8KQy0R+JbQH3K3Pk=" >> .env
+
+# Step 3: Restart server to load new environment variable
+npm run start:dev
 ```
 
-#### Configure API Key
-
-Add the generated key to your `.env` file:
-
-```env
-AGENT_API_KEY=your_generated_api_key_here
-```
-
-#### Use API Key in Requests
-
-Include the API key in the `X-API-Key` header:
+#### Using API Key for Authenticated Requests
 
 ```bash
-# Example: List chats as an agent
+# Include API key in X-API-Key header
 curl -X GET https://your-domain.com/chats \
-  -H "X-API-Key: your_generated_api_key_here"
+  -H "X-API-Key: Ce4QAMETH3m1pBf9yt8TCZY6ZkF8KQy0R+JbQH3K3Pk="
 
-# Example: Query goals
+# Query goals as an agent
 curl -X GET https://your-domain.com/goals \
-  -H "X-API-Key: your_generated_api_key_here"
+  -H "X-API-Key: Ce4QAMETH3m1pBf9yt8TCZY6ZkF8KQy0R+JbQH3K3Pk="
 
-# Example: Send message to overview specialist
+# Send message to overview specialist
 curl -X POST https://your-domain.com/ai/overview/chat \
-  -H "X-API-Key: your_generated_api_key_here" \
+  -H "X-API-Key: Ce4QAMETH3m1pBf9yt8TCZY6ZkF8KQy0R+JbQH3K3Pk=" \
   -H "Content-Type: application/json" \
   -d '{"message": "What should I work on today?"}'
 ```
 
-#### API Key Endpoints
+#### API Key Authorization Behavior
 
-All endpoints that support JWT also support API key authentication:
+- **Agent Context**: API key authenticates as a generic agent (userId: "agent")
+- **Data Scope**: Endpoints return agent-specific data (empty/neutral state)
+  - `/chats` returns empty structure (no user history)
+  - `/goals` returns empty array (agent has no goals)
+- **No Expiration**: API keys don't expire unless changed in server configuration
+- **Shared Access**: All API key users share the same "agent" identity
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /chats` | Discover user chats (structured response) |
-| `GET /chats/overview` | Get overview chat |
-| `GET /chats/category/:categoryId` | Get category specialist chat |
-| `GET /goals` | List/query goals |
-| `GET /goals/:id` | Get goal details |
-| `POST /ai/overview/chat` | Overview specialist chat |
-| `POST /ai/specialist/category/:categoryId/chat` | Category specialist chat |
+#### When to Use API Keys
+
+- **Automated Scripts**: Scheduled tasks, cron jobs
+- **Webhook Integration**: External services triggering actions
+- **Agent-to-Agent**: Multiple AI agents communicating
+- **Testing**: Automated tests that don't require user accounts
+
+---
+
+### Authorization Comparison
+
+| Aspect | JWT Authentication | API Key Authentication |
+|--------|-------------------|------------------------|
+| **User Identity** | Specific user (with id, email, name) | Generic agent (userId: "agent") |
+| **Data Access** | User's own data only | Agent-neutral/empty data |
+| **Use Case** | Interactive user sessions | Automated agents, scripts |
+| **Token Source** | Login endpoint | Environment variable |
+| **Expiration** | 7 days | No expiration (unless changed) |
+| **Header Name** | `Authorization: Bearer <token>` | `X-API-Key: <key>` |
+| **Rate Limits** | Per-user | Per-agent |
+
+---
+
+### Protected Endpoints
+
+All endpoints listed below accept **either** JWT **or** API Key authentication:
+
+#### Chat Endpoints
+| Endpoint | Description | JWT Returns | API Key Returns |
+|----------|-------------|-------------|-----------------|
+| `GET /chats` | Structured chat list | User's chats | Empty structure |
+| `GET /chats/overview` | Get overview chat | User's overview chat | New agent chat |
+| `GET /chats/category/:categoryId` | Get category specialist chat | User's category chat | New agent chat |
+| `POST /chats/:id/messages` | Add message to chat | Adds to user's chat | Adds to agent's chat |
+| `PUT /chats/:chatId/messages/:messageId` | Edit message | Edits user's message | Edits agent's message |
+
+#### Goal Endpoints
+| Endpoint | Description | JWT Returns | API Key Returns |
+|----------|-------------|-------------|-----------------|
+| `GET /goals` | List goals | User's goals | Empty array |
+| `GET /goals/:id` | Get goal details | User's goal (if owned) | 403 Forbidden |
+| `POST /goals/item` | Create item goal | Creates for user | Creates for agent |
+| `POST /goals/finance` | Create finance goal | Creates for user | Creates for agent |
+| `POST /goals/action` | Create action goal | Creates for user | Creates for agent |
+| `PATCH /goals/:id` | Update goal | Updates user's goal (if owned) | 403 Forbidden |
+| `DELETE /goals/:id` | Delete goal | Deletes user's goal (if owned) | 403 Forbidden |
+
+#### AI Specialist Endpoints
+| Endpoint | Description | JWT Context | API Key Context |
+|----------|-------------|-------------|-----------------|
+| `POST /ai/overview/chat` | Overview specialist chat | User's goal context | Agent context |
+| `POST /ai/specialist/category/:categoryId/chat` | Category specialist chat | User's category goals | Agent context |
+| `POST /ai/overview/chat/stream` | Streaming overview chat | User's goal context | Agent context |
+
+---
+
+### Error Responses
+
+#### No Authentication Provided
+```json
+{
+  "message": "No authentication provided",
+  "error": "Unauthorized",
+  "statusCode": 401
+}
+```
+
+#### Invalid JWT Token
+```json
+{
+  "message": "Invalid or expired JWT token",
+  "error": "Unauthorized",
+  "statusCode": 401
+}
+```
+
+#### Invalid API Key
+```json
+{
+  "message": "Invalid API key",
+  "error": "Unauthorized",
+  "statusCode": 401
+}
+```
+
+#### Accessing Other User's Data (JWT)
+```json
+{
+  "message": "Goal not found",
+  "error": "NotFound",
+  "statusCode": 404
+}
+```
+Note: For security, the API returns "not found" rather than "access denied" when accessing other users' resources.
 
 ## API Endpoints
 

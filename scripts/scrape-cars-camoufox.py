@@ -56,35 +56,20 @@ async def scrape_cars(query: str, max_results: int = 3):
         page = await browser.new_page()
         logging.error("Browser launched, navigating to CarGurus")
 
-        # Navigate to CarGurus
-        await page.goto("https://www.cargurus.com", wait_until='domcontentloaded', timeout=30000)
-        logging.error("CarGurus homepage loaded")
+        # Use direct search URL (more reliable than homepage search box)
+        search_url = f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?zip=90210&distance=50000&searchQuery={query.replace(' ', '+')}"
+        logging.error(f"Navigating to: {search_url}")
+        await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+        logging.error("Search page loaded, waiting for content...")
 
-        # Wait for page to settle
-        await asyncio.sleep(2)
+        # Wait longer for page to fully load
+        await asyncio.sleep(5)
 
-        # Find search box and search
-        search_input = await page.query_selector('input[placeholder*="Search"], input[name*="search"], input[type="search"]')
-
-        if search_input:
-            logging.error("Found search box, entering query")
-            await search_input.click()
-            await search_input.fill(query)
-            await asyncio.sleep(1)
-            await page.keyboard.press('Enter')
-            await asyncio.sleep(5)  # Wait for results
-            logging.error("Search submitted, waiting for results")
-        else:
-            logging.error("Search box not found, using direct URL")
-            # Fallback: direct search URL
-            search_url = f"https://www.cargurus.com/Cars/inventorylisting/viewDetailsFilterViewInventoryListing.action?zip=90210&distance=50000#searchText={query.replace(' ', '%20')}"
-            await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
-            await asyncio.sleep(5)
-
-        # Take screenshot for debugging (disabled for production)
-        # screenshot_path = '/tmp/cargurus-camoufox.png'
-        # await page.screenshot(path=screenshot_path)
-        # logging.error(f"Screenshot saved to: {screenshot_path}")
+        # Wait for network to settle
+        try:
+            await page.wait_for_load_state('networkidle', timeout=10000)
+        except:
+            pass  # Continue if network never settles
 
         # Get page content for debugging
         content = await page.content()
@@ -106,10 +91,11 @@ async def scrape_cars(query: str, max_results: int = 3):
         # Try multiple selectors for listings
         selectors = [
             '[data-testid="listing-card"]',
+            '[data-cg-ft="srp-listing-blade"]',
             '[class*="listing"]',
             'article',
-            '[data-cg-ft="srp-listing-blade"]',
-            '.car-blade'
+            '.car-blade',
+            '[class*="car-listing"]',
         ]
 
         listings = []
@@ -126,6 +112,12 @@ async def scrape_cars(query: str, max_results: int = 3):
             if body:
                 text = await body.inner_text()
                 logging.error(f"Page text preview: {text[:500]}")
+            # Take screenshot for debugging
+            try:
+                await page.screenshot(path='/tmp/cargurus-debug.png')
+                logging.error("Screenshot saved to /tmp/cargurus-debug.png")
+            except:
+                pass
 
         # Extract data from listings
         for i, listing in enumerate(listings[:max_results]):
@@ -195,6 +187,10 @@ async def scrape_cars(query: str, max_results: int = 3):
         traceback.print_exc()
 
     finally:
+        # Wait before closing so we can see what happened
+        logging.error("Scraping complete, waiting 3 seconds before closing...")
+        await asyncio.sleep(3)
+
         # Close browser
         if browser:
             try:

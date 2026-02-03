@@ -7,6 +7,7 @@ export interface ExecutedCommand {
   success: boolean;
   goalId?: string;
   subgoalId?: string;
+  taskId?: string;
   goal?: any;
   subgoal?: any;
   error?: string;
@@ -56,6 +57,52 @@ export class GoalCommandService {
             type: 'UPDATE_PROGRESS',
             success: true,
             goalId: command.data.goalId,
+          });
+        } else if (command.type === 'UPDATE_TITLE') {
+          const goal = await this.updateTitle(userId, command.data);
+          executedCommands.push({
+            type: 'UPDATE_TITLE',
+            success: true,
+            goalId: goal.id,
+            goal,
+          });
+        } else if (command.type === 'UPDATE_FILTERS') {
+          const goal = await this.updateFilters(userId, command.data);
+          executedCommands.push({
+            type: 'UPDATE_FILTERS',
+            success: true,
+            goalId: goal.id,
+            goal,
+          });
+        } else if (command.type === 'ADD_TASK') {
+          const goal = await this.addTask(userId, command.data);
+          executedCommands.push({
+            type: 'ADD_TASK',
+            success: true,
+            goalId: goal.id,
+            goal,
+          });
+        } else if (command.type === 'REMOVE_TASK') {
+          const goal = await this.removeTask(userId, command.data);
+          executedCommands.push({
+            type: 'REMOVE_TASK',
+            success: true,
+            taskId: goal.taskId,
+          });
+        } else if (command.type === 'ARCHIVE_GOAL') {
+          const goal = await this.archiveGoal(userId, command.data);
+          executedCommands.push({
+            type: 'ARCHIVE_GOAL',
+            success: true,
+            goalId: goal.id,
+          });
+        } else if (command.type === 'TOGGLE_TASK') {
+          const goal = await this.toggleTask(userId, command.data);
+          executedCommands.push({
+            type: 'TOGGLE_TASK',
+            success: true,
+            goalId: goal.id,
+            goal,
           });
         }
       } catch (error) {
@@ -161,10 +208,10 @@ export class GoalCommandService {
             create: {
               institutionIcon: '🏦',
               accountName: 'Savings',
-              currentBalance: 0,
+              currentBalance: data.currentBalance || 0,
               targetBalance: data.targetBalance || 1000,
               currency: 'USD',
-              progressHistory: [0],
+              progressHistory: [data.currentBalance || 0],
             },
           },
         },
@@ -304,10 +351,10 @@ export class GoalCommandService {
             create: {
               institutionIcon: '🏦',
               accountName: 'Savings',
-              currentBalance: 0,
+              currentBalance: data.currentBalance || 0,
               targetBalance: data.targetBalance || 1000,
               currency: 'USD',
-              progressHistory: [0],
+              progressHistory: [data.currentBalance || 0],
             },
           },
         },
@@ -345,5 +392,166 @@ export class GoalCommandService {
     }
 
     // For other types, implement as needed
+  }
+
+  /**
+   * Update goal title
+   */
+  async updateTitle(userId: string, data: { goalId: string; title: string }) {
+    const { goalId, title } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    return this.prisma.goal.update({
+      where: { id: goalId },
+      data: { title },
+    });
+  }
+
+  /**
+   * Update search filters for an item goal
+   */
+  async updateFilters(userId: string, data: { goalId: string; filters: any }) {
+    const { goalId, filters } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+      include: { itemData: true },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    if (goal.type !== 'item') {
+      throw new Error(`Filters can only be updated for item goals`);
+    }
+
+    // Merge new filters with existing
+    const existingFilters = (goal.itemData?.searchFilters as Record<string, any> | undefined) || {};
+    const mergedFilters: Record<string, any> = { ...existingFilters, ...(filters as Record<string, any>) };
+
+    return this.prisma.itemGoalData.update({
+      where: { goalId },
+      data: { searchFilters: mergedFilters },
+    });
+  }
+
+  /**
+   * Add a task to an action goal
+   */
+  async addTask(userId: string, data: { goalId: string; task: { title: string; priority?: string } }) {
+    const { goalId, task } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+      include: { actionData: { include: { tasks: true } } },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    if (goal.type !== 'action') {
+      throw new Error(`Tasks can only be added to action goals`);
+    }
+
+    // Create new task
+    const newTask = await this.prisma.task.create({
+      data: {
+        title: task.title,
+        completed: false,
+        actionGoalId: goal.actionData?.id || goalId,
+      },
+    });
+
+    return this.prisma.goal.findUnique({
+      where: { id: goalId },
+      include: { actionData: { include: { tasks: true } } },
+    });
+  }
+
+  /**
+   * Remove a task from an action goal
+   */
+  async removeTask(userId: string, data: { taskId: string }) {
+    const { taskId } = data;
+
+    // Find the task and verify ownership through the goal
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: { actionGoal: { include: { goal: true } } },
+    });
+
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    if (task.actionGoal.goal.userId !== userId) {
+      throw new Error(`You can only remove tasks from your own goals`);
+    }
+
+    await this.prisma.task.delete({
+      where: { id: taskId },
+    });
+
+    return { success: true, taskId };
+  }
+
+  /**
+   * Toggle a task's completed status
+   */
+  async toggleTask(userId: string, data: { taskId: string }) {
+    const { taskId } = data;
+
+    // Find the task and verify ownership
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: { actionGoal: { include: { goal: true } } },
+    });
+
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    if (task.actionGoal.goal.userId !== userId) {
+      throw new Error(`You can only toggle tasks from your own goals`);
+    }
+
+    const updatedTask = await this.prisma.task.update({
+      where: { id: taskId },
+      data: { completed: !task.completed },
+    });
+
+    return this.prisma.goal.findUnique({
+      where: { id: task.actionGoal.goalId },
+      include: { actionData: { include: { tasks: true } } },
+    });
+  }
+
+  /**
+   * Archive a goal (soft delete)
+   */
+  async archiveGoal(userId: string, data: { goalId: string }) {
+    const { goalId } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    return this.prisma.goal.update({
+      where: { id: goalId },
+      data: { status: 'archived' },
+    });
   }
 }

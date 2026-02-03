@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
-import { OpenAI } from 'openai';
+import OpenAI from 'openai';
 import { ChatCompletionMessageParam } from 'openai/resources';
 
 /**
@@ -11,8 +12,10 @@ import { ChatCompletionMessageParam } from 'openai/resources';
  * have been summarized, allowing us to build efficient LLM context.
  */
 @Injectable()
-export class ConversationSummaryService {
+export class ConversationSummaryService implements OnModuleInit {
   private readonly logger = new Logger(ConversationSummaryService.name);
+  private openai: OpenAI;
+  private readonly apiKey: string;
 
   // Default token threshold for summarization (100K context window)
   private readonly SUMMARY_THRESHOLD = 100000;
@@ -20,9 +23,18 @@ export class ConversationSummaryService {
   private readonly ESTIMATED_TOKENS_PER_MESSAGE = 100; // Rough estimate
 
   constructor(
+    private configService: ConfigService,
     private prisma: PrismaService,
-    private openai: OpenAI,
-  ) {}
+  ) {
+    this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
+  }
+
+  onModuleInit() {
+    this.openai = new OpenAI({
+      apiKey: this.apiKey,
+    });
+    this.logger.log('ConversationSummaryService initialized');
+  }
 
   /**
    * Check if a chat should be summarized based on message count

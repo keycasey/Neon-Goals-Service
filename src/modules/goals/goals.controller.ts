@@ -11,12 +11,11 @@ import {
 } from '@nestjs/common';
 import { GoalsService } from './goals.service';
 import { ScraperService } from '../scraper/scraper.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { ApiKeyGuard } from '../../common/guards/api-key.guard';
+import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('goals')
-@UseGuards(JwtAuthGuard, ApiKeyGuard)  // Allow both JWT and API key auth
+@UseGuards(JwtOrApiKeyGuard)  // Allow either JWT or API key auth
 export class GoalsController {
   constructor(
     private goalsService: GoalsService,

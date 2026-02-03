@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, Res, Logger } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -8,6 +8,8 @@ import { LocalAuthGuard } from './strategies/local-auth.guard';
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(private authService: AuthService) {}
 
   @Get('github')
@@ -125,7 +127,28 @@ export class AuthController {
   @UseGuards(LocalAuthGuard)
   @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 requests per 15 minutes
   async loginWithEmail(@Req() req) {
+    const origin = req.headers.origin || req.headers.referer || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    this.logger.log(`
+=== LOGIN REQUEST ===
+Email: ${req.user.email}
+Origin: ${origin}
+User-Agent: ${userAgent}
+IP: ${req.ip}
+Headers: ${JSON.stringify({
+      origin: req.headers.origin,
+      referer: req.headers.referer,
+      host: req.headers.host,
+      'content-type': req.headers['content-type'],
+    }, null, 2)}
+======================
+    `);
+
     const { access_token, user } = await this.authService.generateToken(req.user);
+
+    this.logger.log(`✅ Login successful for ${user.email} from ${origin}`);
+
     return {
       access_token,
       user: {

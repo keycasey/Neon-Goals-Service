@@ -2,7 +2,7 @@ import { Controller, Post, Body, Logger } from '@nestjs/common';
 import { ScraperService } from './scraper.service';
 
 interface CallbackData {
-  jobId: string;
+  jobId: number;
   scraper: string;
   status: 'success' | 'error';
   error?: string;

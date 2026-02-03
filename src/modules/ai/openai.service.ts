@@ -701,6 +701,16 @@ For action goals, you can also include tasks:
 CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","tasks":[{"title":"<task1>"},{"title":"<task2>"},{"title":"<task3>"}]}
 \`\`\`
 
+**For finance goals (savings, budgets, financial targets):**
+\`\`\`
+CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","targetBalance":<number>,"currentBalance":<number>}
+\`\`\`
+
+**Important for finance goals:**
+- \`targetBalance\` (REQUIRED): The target amount to save/reach (e.g., 36000 for $36,000)
+- \`currentBalance\` (optional): How much is already saved (defaults to 0 if not provided)
+- Both values should be numbers without currency symbols
+
 **For item goals (products to buy):**
 \`\`\`
 CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>"}
@@ -813,13 +823,34 @@ CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item","title":"<title>","cat
 UPDATE_PROGRESS: {"goalId":"<goal-id>","completionPercentage":50}
 \`\`\`
 
+**Modify existing goals:**
+\`\`\`
+UPDATE_TITLE: {"goalId":"<goal-id>","title":"<new title>"}
+UPDATE_FILTERS: {"goalId":"<goal-id>","filters":{"maxPrice":50000,"maxMileage":30000}}
+ADD_TASK: {"goalId":"<goal-id>","task":{"title":"<task title>","priority":"medium"}}
+REMOVE_TASK: {"taskId":"<task-id>"}
+TOGGLE_TASK: {"taskId":"<task-id>"}
+ARCHIVE_GOAL: {"goalId":"<goal-id>"}
+\`\`\`
+
 **Important Workflow:**
 - When creating goals with subgoals: ALWAYS output CREATE_GOAL first for the main goal, then output CREATE_SUBGOAL commands
 - For CREATE_SUBGOAL immediately after CREATE_GOAL, you can use the main goal's title as parentGoalId (the system will match it)
 - For subgoals under existing goals, use the actual goal ID
 
-**CRITICAL**: When you output CREATE_GOAL, CREATE_SUBGOAL, or UPDATE_PROGRESS commands, end your response with the simple question: "Does this look good?"
-Do NOT say things like "I'll proceed with creating this goal" or "I'll create this for you" or "Goal Created!" - the user will see a preview and action buttons to confirm. Just ask "Does this look good?"
+**CRITICAL - When to output commands:**
+- When user asks to CREATE a goal → Output CREATE_GOAL command immediately
+- When user asks to ADD a subgoal → Output CREATE_SUBGOAL command immediately
+- When user asks to CHANGE/UPDATE title, progress, filters → Output the appropriate command immediately
+- When user asks to ADD a task → Output ADD_TASK command immediately
+- When user asks to REMOVE/DELETE a task → Output REMOVE_TASK command immediately
+- When user asks to TOGGLE/CHECK/UNCHECK a task → Output TOGGLE_TASK command immediately
+- When user asks to ARCHIVE a goal → Output ARCHIVE_GOAL command immediately
+
+**CRITICAL**: After outputting CREATE_GOAL, CREATE_SUBGOAL, or UPDATE_PROGRESS commands, end your response with: "Does this look good?"
+After outputting UPDATE_TITLE, ADD_TASK, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL, or UPDATE_FILTERS commands, end your response with: "Does this look good?"
+
+Do NOT say things like "I'll proceed with creating this goal" or "I'll create this for you" or "Goal Created!" - the user will see a preview and action buttons to confirm. Just output the command and ask "Does this look good?"
 
 Be conversational, encouraging, and specific. Reference their actual goals in your responses.`;
   }
@@ -987,6 +1018,172 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
     }
 
+    // Parse UPDATE_TITLE commands
+    const titleMatches = content.matchAll(/UPDATE_TITLE:\s*({[^}]+})/g);
+    for (const match of titleMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        commands.push({ type: 'UPDATE_TITLE', data });
+      } catch (e) {
+        this.logger.warn('Failed to parse UPDATE_TITLE command:', e);
+      }
+    }
+
+    // Parse UPDATE_FILTERS commands (with nested object support)
+    const filterKeywordIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = content.indexOf('UPDATE_FILTERS:', searchStart);
+      if (keywordIndex === -1) break;
+      filterKeywordIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'UPDATE_FILTERS:'.length;
+    }
+
+    for (const keywordIndex of filterKeywordIndices) {
+      let startIndex = content.indexOf('{', keywordIndex);
+      if (startIndex === -1) continue;
+
+      // Count braces to find matching closing brace
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let i = startIndex; i < content.length; i++) {
+        const char = content[i];
+
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+        }
+      }
+
+      if (endIndex !== -1) {
+        const jsonStr = content.substring(startIndex, endIndex);
+        try {
+          const data = JSON.parse(jsonStr);
+          commands.push({ type: 'UPDATE_FILTERS', data });
+        } catch (e) {
+          this.logger.warn('Failed to parse UPDATE_FILTERS command:', e);
+        }
+      }
+    }
+
+    // Parse ADD_TASK commands (with nested object support)
+    const addTaskKeywordIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = content.indexOf('ADD_TASK:', searchStart);
+      if (keywordIndex === -1) break;
+      addTaskKeywordIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'ADD_TASK:'.length;
+    }
+
+    for (const keywordIndex of addTaskKeywordIndices) {
+      let startIndex = content.indexOf('{', keywordIndex);
+      if (startIndex === -1) continue;
+
+      // Count braces to find matching closing brace
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let i = startIndex; i < content.length; i++) {
+        const char = content[i];
+
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+        }
+      }
+
+      if (endIndex !== -1) {
+        const jsonStr = content.substring(startIndex, endIndex);
+        try {
+          const data = JSON.parse(jsonStr);
+          commands.push({ type: 'ADD_TASK', data });
+        } catch (e) {
+          this.logger.warn('Failed to parse ADD_TASK command:', e);
+        }
+      }
+    }
+
+    // Parse REMOVE_TASK commands
+    const removeTaskMatches = content.matchAll(/REMOVE_TASK:\s*({[^}]+})/g);
+    for (const match of removeTaskMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        commands.push({ type: 'REMOVE_TASK', data });
+      } catch (e) {
+        this.logger.warn('Failed to parse REMOVE_TASK command:', e);
+      }
+    }
+
+    // Parse TOGGLE_TASK commands
+    const toggleTaskMatches = content.matchAll(/TOGGLE_TASK:\s*({[^}]+})/g);
+    for (const match of toggleTaskMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        commands.push({ type: 'TOGGLE_TASK', data });
+      } catch (e) {
+        this.logger.warn('Failed to parse TOGGLE_TASK command:', e);
+      }
+    }
+
+    // Parse ARCHIVE_GOAL commands
+    const archiveMatches = content.matchAll(/ARCHIVE_GOAL:\s*({[^}]+})/g);
+    for (const match of archiveMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        commands.push({ type: 'ARCHIVE_GOAL', data });
+      } catch (e) {
+        this.logger.warn('Failed to parse ARCHIVE_GOAL command:', e);
+      }
+    }
+
     return commands;
   }
 
@@ -1058,10 +1255,98 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
     }
 
-    // Remove CREATE_SUBGOAL and UPDATE_PROGRESS commands (simple non-nested)
+    // Remove UPDATE_FILTERS commands (with nested objects support)
+    const filterKeywordIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = cleaned.indexOf('UPDATE_FILTERS:', searchStart);
+      if (keywordIndex === -1) break;
+      filterKeywordIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'UPDATE_FILTERS:'.length;
+    }
+
+    for (let i = filterKeywordIndices.length - 1; i >= 0; i--) {
+      const keywordIndex = filterKeywordIndices[i];
+      let startIndex = cleaned.indexOf('{', keywordIndex);
+      if (startIndex === -1) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(keywordIndex + 'UPDATE_FILTERS:'.length);
+        continue;
+      }
+
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let j = startIndex; j < cleaned.length; j++) {
+        const char = cleaned[j];
+        if (escapeNext) { escapeNext = false; continue; }
+        if (char === '\\') { escapeNext = true; continue; }
+        if (char === '"') { inString = !inString; continue; }
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) { endIndex = j + 1; break; }
+          }
+        }
+      }
+
+      if (endIndex > startIndex) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(endIndex + 1);
+      }
+    }
+
+    // Remove ADD_TASK commands (with nested objects support)
+    const addTaskKeywordIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = cleaned.indexOf('ADD_TASK:', searchStart);
+      if (keywordIndex === -1) break;
+      addTaskKeywordIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'ADD_TASK:'.length;
+    }
+
+    for (let i = addTaskKeywordIndices.length - 1; i >= 0; i--) {
+      const keywordIndex = addTaskKeywordIndices[i];
+      let startIndex = cleaned.indexOf('{', keywordIndex);
+      if (startIndex === -1) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(keywordIndex + 'ADD_TASK:'.length);
+        continue;
+      }
+
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let j = startIndex; j < cleaned.length; j++) {
+        const char = cleaned[j];
+        if (escapeNext) { escapeNext = false; continue; }
+        if (char === '\\') { escapeNext = true; continue; }
+        if (char === '"') { inString = !inString; continue; }
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) { endIndex = j + 1; break; }
+          }
+        }
+      }
+
+      if (endIndex > startIndex) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(endIndex + 1);
+      }
+    }
+
+    // Remove CREATE_SUBGOAL, UPDATE_PROGRESS, UPDATE_TITLE, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL commands (simple non-nested)
     cleaned = cleaned
       .replace(/CREATE_SUBGOAL:\s*{[^}]+}/g, '')
       .replace(/UPDATE_PROGRESS:\s*{[^}]+}/g, '')
+      .replace(/UPDATE_TITLE:\s*{[^}]+}/g, '')
+      .replace(/REMOVE_TASK:\s*{[^}]+}/g, '')
+      .replace(/TOGGLE_TASK:\s*{[^}]+}/g, '')
+      .replace(/ARCHIVE_GOAL:\s*{[^}]+}/g, '')
       .trim();
 
     return cleaned;

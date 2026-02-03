@@ -5,7 +5,7 @@ echo "🚀 Deploying scraper worker to Gilbert..."
 
 # 1. Update the code on the remote machine
 echo "📥 Pulling latest code..."
-ssh gilbert "cd ~/Development/neon-goals-service && git pull"
+ssh gilbert "cd ~/Development/Neon-Goals-Service && git pull"
 
 # 2. Restart the worker service to apply changes
 echo "🔄 Restarting scraper-worker service..."

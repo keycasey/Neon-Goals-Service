@@ -6,15 +6,23 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Enable CORS for the frontend
+  const isDev = process.env.NODE_ENV !== 'production';
+
   app.enableCors({
-    origin: [
-      'http://localhost:8080',
-      'http://localhost:8081',
-      'http://localhost:8082',
-      'http://localhost:8083',
-      'http://localhost:5173',
-      'http://localhost:3000',
-    ],
+    origin: isDev
+      ? /https?:\/\/(localhost|127\.0\.0\.1|100\.82\.23\.47)(:\d+)?/  // Allow any port on localhost or your network IP in dev
+      : [
+          'http://localhost:8080',
+          'http://localhost:8081',
+          'http://localhost:8082',
+          'http://localhost:8083',
+          'http://localhost:5173',
+          'http://localhost:3000',
+          // Tailscale and network IPs for mobile testing
+          'http://100.82.23.47:8080',
+          'http://100.82.23.47:8081',
+          'http://100.82.23.47:8082',
+        ],
     credentials: true,
   });
 

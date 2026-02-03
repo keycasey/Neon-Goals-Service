@@ -128,6 +128,31 @@ export class ChatsService {
    * Overview chat is unique per user (no categoryId, no goalId)
    */
   async getOrCreateOverviewChat(userId: string) {
+    // Agent users (API key auth) get a mock response without database operations
+    if (userId === 'agent') {
+      return {
+        id: 'agent-mock-overview',
+        type: 'overview',
+        categoryId: null,
+        goalId: null,
+        isLoading: false,
+        lastSummaryId: null,
+        summaryCursor: null,
+        userId: 'agent',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [{
+          id: 'agent-mock-message',
+          role: 'assistant',
+          content: 'Agent mode active. Use JWT authentication for user-specific chat features.',
+          threadId: null,
+          createdAt: new Date().toISOString(),
+          userId: 'agent',
+          chatId: 'agent-mock-overview',
+        }],
+      };
+    }
+
     let chat = await this.prisma.chatState.findFirst({
       where: {
         userId,
@@ -170,6 +195,37 @@ export class ChatsService {
    * categoryId must be 'items', 'finances', or 'actions'
    */
   async getOrCreateCategoryChat(userId: string, categoryId: string) {
+    // Agent users (API key auth) get a mock response without database operations
+    if (userId === 'agent') {
+      const welcomeMessages = {
+        items: "Agent mode active. Use JWT authentication for user-specific Items Specialist chat.",
+        finances: "Agent mode active. Use JWT authentication for user-specific Finance Specialist chat.",
+        actions: "Agent mode active. Use JWT authentication for user-specific Actions Specialist chat.",
+      };
+
+      return {
+        id: `agent-mock-${categoryId}`,
+        type: 'category',
+        categoryId,
+        goalId: null,
+        isLoading: false,
+        lastSummaryId: null,
+        summaryCursor: null,
+        userId: 'agent',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [{
+          id: `agent-mock-${categoryId}-message`,
+          role: 'assistant',
+          content: welcomeMessages[categoryId as keyof typeof welcomeMessages],
+          threadId: null,
+          createdAt: new Date().toISOString(),
+          userId: 'agent',
+          chatId: `agent-mock-${categoryId}`,
+        }],
+      };
+    }
+
     // Validate categoryId
     if (!VALID_CATEGORIES.includes(categoryId as CategoryId)) {
       throw new NotFoundException(`Invalid category. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
