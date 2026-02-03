@@ -59,12 +59,14 @@ def run_scraper_and_callback(
         # Build the command for Kitty with instance-group and window class
         # --class tags the window so i3 can recognize it
         # --instance-group allows multiple Kitty windows to share the same process group
+        # Use pyenv Python 3.12 which has camoufox installed
+        python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
         command = [
             "kitty",
             "--class", "scraper-window",  # Tag window for i3 recognition
             "--single-instance",
             "--instance-group", "scrapers",
-            "python3", script_path, f"'{query}'", "5"  # Query must be quoted, 5 = max results
+            python_bin, script_path, f"'{query}'", "5"  # Query must be quoted, 5 = max results
         ]
 
         logger.info(f"Running command: {' '.join(command)}")
