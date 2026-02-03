@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Scraper Worker", version="0.1.0")
 
 # Base directory for scrapers (relative to worker dir)
-SCRAPER_BASE_DIR = "/home/alpha/Development/neon-goals-service"
+SCRAPER_BASE_DIR = "/home/alpha/Development/Neon-Goals-Service"
 SCRIPTS_BASE_DIR = os.path.join(SCRAPER_BASE_DIR, "scripts")
 
 # Scraper script mapping
