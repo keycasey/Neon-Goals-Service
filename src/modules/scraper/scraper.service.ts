@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { PrismaService } from '../../config/prisma.service';
 import { GoalType } from '@prisma/client';
 
@@ -29,7 +31,10 @@ interface ProductCandidate {
 export class ScraperService {
   private readonly logger = new Logger(ScraperService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private httpService: HttpService,
+  ) {}
 
   /**
    * Queue a scraping job for a goal
@@ -46,6 +51,7 @@ export class ScraperService {
 
   /**
    * Background job processor - runs every 2 minutes
+   * Dispatches jobs to remote worker (Gilbert) instead of running locally
    */
   @Cron('*/2 * * * *')
   async processPendingJobs() {
@@ -72,23 +78,9 @@ export class ScraperService {
 
     for (const job of jobs) {
       try {
-        // Mark as running
-        await this.prisma.scrapeJob.update({
-          where: { id: job.id },
-          data: { status: 'running' },
-        });
-
         // Check if category is supported
         const category = job.goal.itemData?.category || 'general';
-        const supportedCategories = ['vehicle']; // Currently only vehicles have scrapers
-
-        // TODO: Implement category-specific scrapers:
-        //   - technology: Amazon, Best Buy, Newegg
-        //   - furniture: Wayfair, IKEA, Article
-        //   - sporting_goods: Dick's, REI, Academy
-        //   - clothing: Nike, Zappos, ASOS
-        //   - pets: Chewy, Petco, PetSmart
-        //   - vehicle_parts: AutoZone, Advance Auto Parts, Rock Auto
+        const supportedCategories = ['vehicle', 'technology', 'furniture', 'sporting_goods', 'clothing', 'pets', 'vehicle_parts'];
 
         if (!supportedCategories.includes(category)) {
           this.logger.log(`⏭️ Skipping goal "${job.goal.title}" - category "${category}" not yet supported`);
@@ -110,38 +102,9 @@ export class ScraperService {
           continue;
         }
 
-        // Acquire candidates
-        const candidates = await this.acquireCandidatesForGoal(job.goal);
+        // Dispatch to remote worker instead of running locally
+        await this.dispatchJobToWorker(job.id);
 
-        // Determine statusBadge based on results
-        const statusBadge = candidates.length > 0 ? 'in_stock' : 'not_found';
-
-        // Update goal with candidates
-        await this.prisma.itemGoalData.update({
-          where: { goalId: job.goal.id },
-          data: {
-            candidates: candidates as any,
-            statusBadge: statusBadge,
-            productImage: candidates[0]?.image || job.goal.itemData?.productImage,
-            category: job.goal.itemData?.category || 'vehicle',
-            searchTerm: job.goal.itemData?.searchTerm || job.goal.title,
-          },
-        });
-
-        // Mark job as complete
-        await this.prisma.scrapeJob.update({
-          where: { id: job.id },
-          data: {
-            status: 'completed',
-            error: candidates.length === 0 ? 'No candidates found' : null,
-          },
-        });
-
-        if (candidates.length === 0) {
-          this.logger.warn(`⚠️ No candidates found for goal: ${job.goal.title} (marked as not_found)`);
-        } else {
-          this.logger.log(`✅ Populated ${candidates.length} candidates for goal: ${job.goal.title}`);
-        }
       } catch (error) {
         // Mark as failed, increment attempts
         await this.prisma.scrapeJob.update({
@@ -152,7 +115,7 @@ export class ScraperService {
             error: error.message,
           },
         });
-        this.logger.error(`❌ Failed to scrape for job ${job.id}:`, error);
+        this.logger.error(`❌ Failed to dispatch job ${job.id}:`, error);
       }
     }
   }
@@ -1022,5 +985,161 @@ export class ScraperService {
       seen.add(c.url);
       return true;
     });
+  }
+
+  /**
+   * Dispatch a scraping job to the remote worker
+   */
+  async dispatchJobToWorker(goalId: string): Promise<void> {
+    const job = await this.prisma.scrapeJob.findUnique({
+      where: { id: goalId },
+      include: {
+        goal: {
+          include: {
+            itemData: true,
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      throw new Error(`Job not found: ${goalId}`);
+    }
+
+    const workerUrl = 'http://100.91.29.119:5000';
+    const query = job.goal.itemData?.searchTerm || job.goal.title;
+    const vehicleFilters = job.goal.itemData?.searchFilters || null;
+
+    // Determine which scraper to use based on category
+    const category = job.goal.itemData?.category || 'general';
+
+    // Map category to scraper name
+    const scraperMap: Record<string, string> = {
+      'vehicle': 'cargurus-camoufox', // Default for vehicles
+      'technology': 'browser-use',
+      'furniture': 'browser-use',
+      'sporting_goods': 'browser-use',
+      'clothing': 'browser-use',
+      'pets': 'browser-use',
+      'vehicle_parts': 'browser-use',
+    };
+
+    const scraperName = scraperMap[category] || 'browser-use';
+
+    try {
+      await firstValueFrom(
+        this.httpService.post(`${workerUrl}/run/${scraperName}`, {
+          jobId: job.id,
+          query,
+          vehicleFilters: vehicleFilters,
+        })
+      );
+
+      // Mark as dispatched
+      await this.prisma.scrapeJob.update({
+        where: { id: job.id },
+        data: { status: 'dispatched' },
+      });
+
+      this.logger.log(`✅ Dispatched job ${job.id} to worker (scraper: ${scraperName})`);
+    } catch (error) {
+      this.logger.error(`Failed to dispatch job ${job.id}: ${error.message}`);
+
+      // Mark as failed
+      await this.prisma.scrapeJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'failed',
+          attempts: { increment: 1 },
+          error: `Failed to dispatch to worker: ${error.message}`,
+        },
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Handle successful callback from worker
+   */
+  async handleJobSuccess(jobId: string, data: any[]): Promise<void> {
+    const job = await this.prisma.scrapeJob.findUnique({
+      where: { id: jobId },
+      include: { goal: { include: { itemData: true } } },
+    });
+
+    if (!job) {
+      this.logger.warn(`Received callback for unknown job: ${jobId}`);
+      return;
+    }
+
+    // Get denied and shortlisted candidates to filter out
+    const deniedCandidates = (job.goal.itemData?.deniedCandidates as any[]) || [];
+    const shortlistedCandidates = (job.goal.itemData?.shortlistedCandidates as any[]) || [];
+    const existingCandidates = (job.goal.itemData?.candidates as any[]) || [];
+
+    const deniedUrls = new Set(deniedCandidates.map((c) => c.url));
+    const shortlistedUrls = new Set(shortlistedCandidates.map((c) => c.url));
+    const existingUrls = new Set(existingCandidates.map((c) => c.url));
+    const excludedUrls = new Set([...deniedUrls, ...shortlistedUrls, ...existingUrls]);
+
+    // Filter and convert data
+    const candidates = data
+      .filter((item: any) => item.url && !excludedUrls.has(item.url))
+      .map((item: any, index: number) => ({
+        id: `${item.retailer?.toLowerCase() || 'scraper'}-${Date.now()}-${index}`,
+        name: item.name,
+        price: Math.round(item.price) || 0,
+        retailer: item.retailer || 'Unknown',
+        url: item.url,
+        image: item.image || this.getRandomTruckImage(),
+        condition: item.condition || 'used',
+        rating: item.rating || 4.5,
+        reviewCount: item.reviewCount || 50,
+        inStock: item.inStock !== false,
+        estimatedDelivery: item.location || 'Contact seller',
+        features: item.mileage ? [`${item.mileage} mi`] : [],
+      }));
+
+    // Update goal with candidates
+    const statusBadge = candidates.length > 0 ? 'in_stock' : 'not_found';
+
+    await this.prisma.itemGoalData.update({
+      where: { goalId: job.goal.id },
+      data: {
+        candidates: candidates as any,
+        statusBadge: statusBadge,
+        productImage: candidates[0]?.image || job.goal.itemData?.productImage,
+        searchTerm: job.goal.itemData?.searchTerm || job.goal.title,
+        category: job.goal.itemData?.category || 'vehicle',
+      },
+    });
+
+    // Mark job as complete
+    await this.prisma.scrapeJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'completed',
+        error: candidates.length === 0 ? 'No candidates found' : null,
+      },
+    });
+
+    this.logger.log(`✅ Job ${jobId} completed with ${candidates.length} candidates`);
+  }
+
+  /**
+   * Handle error callback from worker
+   */
+  async handleJobError(jobId: string, errorMessage: string): Promise<void> {
+    await this.prisma.scrapeJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'failed',
+        attempts: { increment: 1 },
+        error: errorMessage,
+      },
+    });
+
+    this.logger.error(`❌ Job ${jobId} failed: ${errorMessage}`);
   }
 }
