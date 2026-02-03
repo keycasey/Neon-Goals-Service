@@ -64,12 +64,8 @@ def run_scraper_and_callback(
             "--class", "scraper-window",  # Tag window for i3 recognition
             "--single-instance",
             "--instance-group", "scrapers",
-            "python3", script_path, query, "5"  # 5 = max results
+            "python3", script_path, f"'{query}'", "5"  # Query must be quoted, 5 = max results
         ]
-
-        # Add vehicle filters as JSON argument if provided
-        if vehicle_filters:
-            command.append(str(vehicle_filters))
 
         logger.info(f"Running command: {' '.join(command)}")
 
