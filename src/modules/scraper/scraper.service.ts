@@ -111,7 +111,7 @@ export class ScraperService {
           where: { id: job.id },
           data: {
             status: 'failed',
-            attempts: job.attempts + 1,
+            attempts: { increment: 1 },
             error: error.message,
           },
         });
@@ -990,7 +990,7 @@ export class ScraperService {
   /**
    * Dispatch a scraping job to the remote worker
    */
-  async dispatchJobToWorker(goalId: string): Promise<void> {
+  async dispatchJobToWorker(goalId: number): Promise<void> {
     const job = await this.prisma.scrapeJob.findUnique({
       where: { id: goalId },
       include: {
@@ -1035,10 +1035,10 @@ export class ScraperService {
         })
       );
 
-      // Mark as dispatched
+      // Mark as dispatched (using "running" for UI compatibility)
       await this.prisma.scrapeJob.update({
         where: { id: job.id },
-        data: { status: 'dispatched' },
+        data: { status: 'running' },
       });
 
       this.logger.log(`✅ Dispatched job ${job.id} to worker (scraper: ${scraperName})`);
@@ -1062,7 +1062,7 @@ export class ScraperService {
   /**
    * Handle successful callback from worker
    */
-  async handleJobSuccess(jobId: string, data: any[]): Promise<void> {
+  async handleJobSuccess(jobId: number, data: any[]): Promise<void> {
     const job = await this.prisma.scrapeJob.findUnique({
       where: { id: jobId },
       include: { goal: { include: { itemData: true } } },
@@ -1130,7 +1130,7 @@ export class ScraperService {
   /**
    * Handle error callback from worker
    */
-  async handleJobError(jobId: string, errorMessage: string): Promise<void> {
+  async handleJobError(jobId: number, errorMessage: string): Promise<void> {
     await this.prisma.scrapeJob.update({
       where: { id: jobId },
       data: {
