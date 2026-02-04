@@ -9,6 +9,7 @@ converts it to CarMax-specific parameters via the adapter function.
 import asyncio
 import json
 import sys
+import tempfile
 import logging
 import re
 from pathlib import Path
@@ -461,6 +462,7 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
         traceback.print_exc()
 
     finally:
+        await asyncio.sleep(2)  # Wait for output to flush
         await browser.close()
 
     # Limit results to max_results after filtering
@@ -522,7 +524,14 @@ async def main():
         if not result:
             print(json.dumps({"error": f"No CarMax listings found for '{search_arg}'"}))
         else:
-            print(json.dumps(result, indent=2))
+            output = json.dumps(result, indent=2)
+            print(output)
+            sys.stdout.flush()
+            # Also write to temp file as backup
+            with open(f"/tmp/scraper_output_{os.getpid()}.json", "w") as f:
+                f.write(output)
+            f.flush()
+            sys.stdout.flush()
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)

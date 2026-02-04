@@ -6,6 +6,7 @@ First tries GraphQL API with filters, falls back to Camoufox scraping
 import asyncio
 import json
 import sys
+import tempfile
 import logging
 import re
 from pathlib import Path
@@ -428,13 +429,22 @@ async def main():
 
         if not result:
             print(json.dumps({"error": f"No TrueCar listings found"}))
+            sys.stdout.flush()
         else:
-            print(json.dumps(result, indent=2))
+            output = json.dumps(result, indent=2)
+            print(output)
+            sys.stdout.flush()
+            # Also write to temp file as backup
+            with open(f"/tmp/scraper_output_{os.getpid()}.json", "w") as f:
+                f.write(output)
+            f.flush()
     except json.JSONDecodeError:
         print(json.dumps({"error": "Invalid JSON filters"}))
+            sys.stdout.flush()
         sys.exit(1)
     except Exception as e:
         print(json.dumps({"error": str(e)}))
+            sys.stdout.flush()
         sys.exit(1)
 
 

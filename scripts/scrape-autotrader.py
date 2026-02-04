@@ -7,6 +7,7 @@ converts it to AutoTrader-specific parameters via the adapter function.
 """
 import json
 import sys
+import tempfile
 import logging
 import re
 import random
@@ -286,7 +287,7 @@ def scrape_with_camoufox(query: str, max_results: int):
     with Camoufox(
         headless=False,
         os=(os_choice,),
-        screen=Screen(max_width=1366, max_height=768),
+        screen=Screen(max_width=800, max_height=600),
         humanize=True,
     ) as browser:
         page = browser.new_page()
@@ -463,10 +464,18 @@ def main():
 
         if not result:
             print(json.dumps({"error": f"No AutoTrader listings found for '{query}'"}))
+            sys.stdout.flush()
         else:
-            print(json.dumps(result, indent=2))
+            output = json.dumps(result, indent=2)
+            print(output)
+            sys.stdout.flush()
+            # Also write to temp file as backup
+            with open(f"/tmp/scraper_output_{os.getpid()}.json", "w") as f:
+                f.write(output)
+            f.flush()
     except Exception as e:
         print(json.dumps({"error": str(e)}))
+            sys.stdout.flush()
         import traceback
         traceback.print_exc()
         sys.exit(1)

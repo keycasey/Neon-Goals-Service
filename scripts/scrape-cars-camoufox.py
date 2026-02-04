@@ -22,6 +22,7 @@ IMPORTANT: Trim is JUST the trim name (no drivetrain suffix!)
 import asyncio
 import json
 import sys
+import tempfile
 import logging
 import re
 from pathlib import Path
@@ -35,6 +36,7 @@ logging.basicConfig(
 )
 
 from camoufox.async_api import AsyncCamoufox
+from camoufox.async_api import Screen
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -325,6 +327,7 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
         # Launch Camoufox - headless=False to avoid crashes
         logging.error(f"Launching Camoufox for: {make} {model}")
         browser = await AsyncCamoufox(
+            screen=Screen(max_width=800, max_height=600),
             headless=False,
             humanize=True,
         ).__aenter__()
@@ -333,8 +336,8 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
         logging.error("Browser launched, navigating to CarGurus homepage")
 
         # STEP 1: Visit homepage to discover entity codes
-        await page.goto("https://www.cargurus.com", wait_until='domcontentloaded', timeout=30000)
-        await asyncio.sleep(2)
+        await page.goto("https://www.cargurus.com", wait_until='networkidle', timeout=60000)
+        await asyncio.sleep(10)
 
         # STEP 2: Discover make and model entity codes
         if make and model:
@@ -358,11 +361,11 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
         )
 
         logging.error(f"Navigating to: {search_url}")
-        await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+        await page.goto(search_url, wait_until='networkidle', timeout=60000)
 
         # Wait for results page to load
         logging.error("Results page loading, waiting for content...")
-        await asyncio.sleep(5)
+        await asyncio.sleep(10)
 
         try:
             await page.wait_for_load_state('networkidle', timeout=10000)
@@ -499,7 +502,7 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
 
     finally:
         logging.error("Scraping complete, waiting 60 seconds before closing...")
-        await asyncio.sleep(60)
+        await asyncio.sleep(10)
 
         if browser:
             try:
@@ -538,7 +541,13 @@ async def main():
         if not result:
             print(json.dumps({"error": f"No car listings found for {filters}"}))
         else:
-            print(json.dumps(result, indent=2))
+            output = json.dumps(result, indent=2)
+            print(output)
+            sys.stdout.flush()
+            # Also write to temp file as backup
+            with open(f"/tmp/scraper_output_{os.getpid()}.json", "w") as f:
+                f.write(output)
+            f.flush()
     except json.JSONDecodeError:
         print(json.dumps({"error": "Invalid JSON filters"}))
         sys.exit(1)

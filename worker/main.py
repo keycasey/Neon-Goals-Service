@@ -62,10 +62,10 @@ def run_scraper_and_callback(
         python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
 
         # Different scrapers expect different parameter formats
+        import json as json_mod
+
         if scraper_name in ["truecar", "carvana"]:
-            # TrueCar and Carvana expect JSON filters
-            # Build simple JSON from query
-            import json as json_mod
+            # TrueCar and Carvana expect {"search": query} format
             filters = {"search": query}
             filters_json = json_mod.dumps(filters)
             command = [
@@ -76,9 +76,8 @@ def run_scraper_and_callback(
                 "--instance-group", "scrapers",
                 python_bin, script_path, filters_json, "5"
             ]
-        elif scraper_name == "cargurus-camoufox" and vehicle_filters:
-            # Wrap in {"structured": ...} for scrape-cars-camoufox.py to detect
-            import json as json_mod
+        elif scraper_name in ["cargurus-camoufox", "carmax", "autotrader"] and vehicle_filters:
+            # CarGurus, CarMax, AutoTrader expect {"structured": {...}} format
             filters_json = json_mod.dumps({"structured": vehicle_filters})
             command = [
                 "env", "LD_PRELOAD=/lib/libpthread.so.0",
@@ -89,7 +88,7 @@ def run_scraper_and_callback(
                 python_bin, script_path, filters_json, "5"
             ]
         else:
-            # Other scrapers expect plain query string
+            # Fallback to plain query string for scrapers without structured support
             command = [
                 "env", "LD_PRELOAD=/lib/libpthread.so.0",
                 "kitty",
@@ -106,7 +105,7 @@ def run_scraper_and_callback(
             command,
             capture_output=True,
             text=True,
-            timeout=180,  # 3 minute timeout
+            timeout=300,  # 5 minute timeout (60s wait + scraping)
             env={
                 **os.environ,
                 "DISPLAY": os.environ.get("DISPLAY", ":0"),
@@ -338,34 +337,25 @@ def run_all_scrapers_and_callback(
 
     logger.info(f"Starting all scrapers for job {job_id}")
 
-    # Run all scrapers in parallel using threads
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {}
-
-        for scraper_name in SCRAPER_SCRIPTS.keys():
-            future = executor.submit(
-                run_single_scraper,
+    # Run all scrapers sequentially (one at a time) for better debugging
+    for scraper_name in SCRAPER_SCRIPTS.keys():
+        logger.info(f"Starting {scraper_name}...")
+        try:
+            result = run_single_scraper(
                 scraper_name,
                 query,
                 vehicle_filters,
                 job_id
             )
-            futures[future] = scraper_name
-
-        # Wait for all to complete
-        for future in concurrent.futures.as_completed(futures, timeout=600):
-            scraper_name = futures[future]
-            try:
-                result = future.result()
-                if result and len(result) > 0:
-                    all_results.extend(result)
-                    logger.info(f"✅ {scraper_name}: {len(result)} listings")
-                else:
-                    logger.warn(f"⚠️ {scraper_name}: No results")
-            except Exception as e:
-                error_msg = f"{scraper_name}: {str(e)}"
-                errors.append(error_msg)
-                logger.error(f"❌ {error_msg}")
+            if result and len(result) > 0:
+                all_results.extend(result)
+                logger.info(f"✅ {scraper_name}: {len(result)} listings")
+            else:
+                logger.warn(f"⚠️ {scraper_name}: No results")
+        except Exception as e:
+            error_msg = f"{scraper_name}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(f"❌ {error_msg}")
 
     logger.info(f"Total listings from all scrapers: {len(all_results)}")
 
@@ -432,8 +422,10 @@ def run_single_scraper(
         python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
 
         # Different scrapers expect different parameter formats
+        import json as json_mod
+
         if scraper_name in ["truecar", "carvana"]:
-            import json as json_mod
+            # TrueCar and Carvana expect {"search": query} format
             filters = {"search": query}
             filters_json = json_mod.dumps(filters)
             command = [
@@ -444,9 +436,8 @@ def run_single_scraper(
                 "--instance-group", "scrapers",
                 python_bin, script_path, filters_json, "5"
             ]
-        elif scraper_name == "cargurus-camoufox" and vehicle_filters:
-            import json as json_mod
-            # Wrap in {"structured": ...} for scrape-cars-camoufox.py to detect
+        elif scraper_name in ["cargurus-camoufox", "carmax", "autotrader"] and vehicle_filters:
+            # CarGurus, CarMax, AutoTrader expect {"structured": {...}} format
             filters_json = json_mod.dumps({"structured": vehicle_filters})
             command = [
                 "env", "LD_PRELOAD=/lib/libpthread.so.0",
@@ -457,6 +448,7 @@ def run_single_scraper(
                 python_bin, script_path, filters_json, "5"
             ]
         else:
+            # Fallback to plain query string for scrapers without structured support
             command = [
                 "env", "LD_PRELOAD=/lib/libpthread.so.0",
                 "kitty",
@@ -473,7 +465,7 @@ def run_single_scraper(
             command,
             capture_output=True,
             text=True,
-            timeout=180,  # 3 minute timeout per scraper
+            timeout=300,  # 5 minute timeout (60s wait + scraping) per scraper
             env={
                 **os.environ,
                 "DISPLAY": os.environ.get("DISPLAY", ":0"),
@@ -490,7 +482,24 @@ def run_single_scraper(
         listings = result.stdout.strip()
         if not listings:
             logger.warn(f"Empty output from {scraper_name}")
-            return []
+            # Try to read from temp file as fallback
+            try:
+                import glob
+                import os
+                temp_files = glob.glob("/tmp/scraper_output_*.json")
+                if temp_files:
+                    # Get the most recently modified file
+                    latest_file = max(temp_files, key=os.path.getmtime)
+                    with open(latest_file, 'r') as f:
+                        listings = f.read().strip()
+                    logger.info(f"Recovered output from temp file for {scraper_name}")
+                    # Clean up temp file
+                    os.remove(latest_file)
+            except Exception as e:
+                logger.warn(f"Could not read from temp file: {e}")
+
+            if not listings:
+                return []
 
         data = eval(listings)  # Safe here as we control the scraper output
 
