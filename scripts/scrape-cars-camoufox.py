@@ -548,7 +548,7 @@ async def main():
             # Also write to temp file as backup
             with open(f"/tmp/scraper_output_{os.getpid()}.json", "w") as f:
                 f.write(output)
-            f.flush()
+                f.flush()
     except json.JSONDecodeError:
         print(json.dumps({"error": "Invalid JSON filters"}))
         sys.exit(1)
