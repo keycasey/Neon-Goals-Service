@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import os
 import logging
 from typing import Optional, Dict, Any
@@ -18,6 +19,24 @@ app = FastAPI(title="Scraper Worker", version="0.1.0")
 # Base directory for scrapers (relative to worker dir)
 SCRAPER_BASE_DIR = "/home/alpha/Development/Neon-Goals-Service"
 SCRIPTS_BASE_DIR = os.path.join(SCRAPER_BASE_DIR, "scripts")
+
+# VPN setup
+try:
+    sys.path.insert(0, SCRIPTS_BASE_DIR)
+    from vpn_manager import create_vpn_manager
+    VPN_AVAILABLE = True
+    _vpn_manager = None
+except ImportError:
+    VPN_AVAILABLE = False
+    _vpn_manager = None
+
+
+def get_vpn_manager():
+    """Get or create the global VPN manager instance."""
+    global _vpn_manager
+    if _vpn_manager is None and VPN_AVAILABLE:
+        _vpn_manager = create_vpn_manager(total_configs=5, config_prefix="v")
+    return _vpn_manager
 
 # Scraper script mapping
 SCRAPER_SCRIPTS: Dict[str, str] = {
@@ -55,46 +74,32 @@ def run_scraper_and_callback(
         if not os.path.exists(script_path):
             raise FileNotFoundError(f"Script not found: {script_path}")
 
-        # Build the command for Kitty with instance-group and window class
-        # --class tags the window so i3 can recognize it
-        # --instance-group allows multiple Kitty windows to share the same process group
-        # Use pyenv Python 3.12 which has camoufox installed
+        # Build the command using xvfb-run for virtual display
+        # This creates a virtual X server with proper resolution (1920x1080x24)
+        # which helps avoid bot detection
         python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
 
         # Different scrapers expect different parameter formats
         import json as json_mod
 
-        if scraper_name in ["truecar", "carvana"]:
-            # TrueCar and Carvana expect {"search": query} format
-            filters = {"search": query}
-            filters_json = json_mod.dumps(filters)
-            command = [
-                "env", "LD_PRELOAD=/lib/libpthread.so.0",
-                "kitty",
-                "--class", "scraper-window",
-                "--single-instance",
-                "--instance-group", "scrapers",
-                python_bin, script_path, filters_json, "5"
-            ]
-        elif scraper_name in ["cargurus-camoufox", "carmax", "autotrader"] and vehicle_filters:
-            # CarGurus, CarMax, AutoTrader expect {"structured": {...}} format
+        if scraper_name == "carvana" and vehicle_filters:
+            # Carvana interactive expects {"structured": {...}} format for filter selection
             filters_json = json_mod.dumps({"structured": vehicle_filters})
             command = [
-                "env", "LD_PRELOAD=/lib/libpthread.so.0",
-                "kitty",
-                "--class", "scraper-window",
-                "--single-instance",
-                "--instance-group", "scrapers",
+                "xvfb-run", "--server-args=-screen 0 1920x1080x24",
+                python_bin, script_path, filters_json, "5"
+            ]
+        elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "autotrader"] and vehicle_filters:
+            # CarGurus, TrueCar, CarMax, AutoTrader expect {"structured": {...}} format
+            filters_json = json_mod.dumps({"structured": vehicle_filters})
+            command = [
+                "xvfb-run", "--server-args=-screen 0 1920x1080x24",
                 python_bin, script_path, filters_json, "5"
             ]
         else:
             # Fallback to plain query string for scrapers without structured support
             command = [
-                "env", "LD_PRELOAD=/lib/libpthread.so.0",
-                "kitty",
-                "--class", "scraper-window",
-                "--single-instance",
-                "--instance-group", "scrapers",
+                "xvfb-run", "--server-args=-screen 0 1920x1080x24",
                 python_bin, script_path, f"'{query}'", "5"
             ]
 
@@ -108,7 +113,6 @@ def run_scraper_and_callback(
             timeout=300,  # 5 minute timeout (60s wait + scraping)
             env={
                 **os.environ,
-                "DISPLAY": os.environ.get("DISPLAY", ":0"),
                 "XAUTHORITY": os.environ.get("XAUTHORITY", "/home/alpha/.Xauthority"),
             }
         )
@@ -357,6 +361,9 @@ def run_all_scrapers_and_callback(
     # Run all scrapers sequentially (one at a time) for better debugging
     for scraper_name in SCRAPER_SCRIPTS.keys():
         logger.info(f"Starting {scraper_name}...")
+        # Add breathing room between scraper launches
+        import time
+        time.sleep(2)
         try:
             result = run_single_scraper(
                 scraper_name,
@@ -375,6 +382,12 @@ def run_all_scrapers_and_callback(
             logger.error(f"❌ {error_msg}")
 
     logger.info(f"Total listings from all scrapers: {len(all_results)}")
+
+    # Cleanup: Disable VPN after all scrapers finish
+    vpn = get_vpn_manager()
+    if vpn and vpn.vpn_enabled:
+        logger.info("Cleaning up VPN after all scrapers finished...")
+        vpn.disable_vpn()
 
     # Send combined callback
     try:
@@ -415,127 +428,159 @@ def run_single_scraper(
     scraper_name: str,
     query: str,
     vehicle_filters: Optional[Dict[str, Any]],
-    job_id: str
+    job_id: str,
+    use_vpn: bool = False
 ) -> list:
     """
     Run a single scraper and return its results (without callback).
 
     Used by run_all_scrapers_and_callback to run scrapers in parallel.
+    Handles bot detection and automatically retries with VPN rotation.
     """
-    try:
-        logger.info(f"Starting scraper: {scraper_name}")
+    max_vpn_retries = 3
+    vpn = get_vpn_manager() if VPN_AVAILABLE else None
 
-        # Get the script path
-        script_name = SCRAPER_SCRIPTS.get(scraper_name)
-        if not script_name:
-            raise ValueError(f"Unknown scraper: {scraper_name}")
+    for attempt in range(max_vpn_retries + 1):
+        should_use_vpn = use_vpn or (attempt > 0 and vpn)
 
-        script_path = os.path.join(SCRIPTS_BASE_DIR, script_name)
+        if attempt > 0 and vpn:
+            logger.info(f"{scraper_name}: Bot detected, rotating VPN (attempt {attempt}/{max_vpn_retries})...")
+            vpn.rotate_vpn()
+            import time
+            time.sleep(3)  # Give VPN time to settle
 
-        if not os.path.exists(script_path):
-            raise FileNotFoundError(f"Script not found: {script_path}")
+        try:
+            logger.info(f"Starting scraper: {scraper_name}" + (f" (VPN: {vpn.current_interface})" if should_use_vpn else ""))
 
-        # Build the command for Kitty
-        python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
+            # Get the script path
+            script_name = SCRAPER_SCRIPTS.get(scraper_name)
+            if not script_name:
+                raise ValueError(f"Unknown scraper: {scraper_name}")
 
-        # Different scrapers expect different parameter formats
-        import json as json_mod
+            script_path = os.path.join(SCRIPTS_BASE_DIR, script_name)
 
-        if scraper_name in ["truecar", "carvana"]:
-            # TrueCar and Carvana expect {"search": query} format
-            filters = {"search": query}
-            filters_json = json_mod.dumps(filters)
-            command = [
-                "env", "LD_PRELOAD=/lib/libpthread.so.0",
-                "kitty",
-                "--class", "scraper-window",
-                "--single-instance",
-                "--instance-group", "scrapers",
-                python_bin, script_path, filters_json, "5"
-            ]
-        elif scraper_name in ["cargurus-camoufox", "carmax", "autotrader"] and vehicle_filters:
-            # CarGurus, CarMax, AutoTrader expect {"structured": {...}} format
-            filters_json = json_mod.dumps({"structured": vehicle_filters})
-            command = [
-                "env", "LD_PRELOAD=/lib/libpthread.so.0",
-                "kitty",
-                "--class", "scraper-window",
-                "--single-instance",
-                "--instance-group", "scrapers",
-                python_bin, script_path, filters_json, "5"
-            ]
-        else:
-            # Fallback to plain query string for scrapers without structured support
-            command = [
-                "env", "LD_PRELOAD=/lib/libpthread.so.0",
-                "kitty",
-                "--class", "scraper-window",
-                "--single-instance",
-                "--instance-group", "scrapers",
-                python_bin, script_path, f"'{query}'", "5"
-            ]
+            if not os.path.exists(script_path):
+                raise FileNotFoundError(f"Script not found: {script_path}")
 
-        logger.info(f"Running command: {' '.join(command)}")
+            # Build the command using xvfb-run for virtual display
+            # This creates a virtual X server with proper resolution (1920x1080x24)
+            # which helps avoid bot detection
+            python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
 
-        # Run the scraper and capture output
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=300,  # 5 minute timeout (60s wait + scraping) per scraper
-            env={
-                **os.environ,
-                "DISPLAY": os.environ.get("DISPLAY", ":0"),
-                "XAUTHORITY": os.environ.get("XAUTHORITY", "/home/alpha/.Xauthority"),
-            }
-        )
+            # Different scrapers expect different parameter formats
+            import json as json_mod
 
-        # Wait a moment for scraper to finish writing to temp file
-        import time
-        time.sleep(2)
+            if scraper_name == "carvana" and vehicle_filters:
+                # Carvana interactive expects {"structured": {...}} format for filter selection
+                filters_json = json_mod.dumps({"structured": vehicle_filters})
+                command = [
+                    "xvfb-run", "--server-args=-screen 0 1920x1080x24",
+                    python_bin, script_path, filters_json, "5"
+                ]
+            elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "autotrader"] and vehicle_filters:
+                # CarGurus, TrueCar, CarMax, AutoTrader expect {"structured": {...}} format
+                filters_json = json_mod.dumps({"structured": vehicle_filters})
+                command = [
+                    "xvfb-run", "--server-args=-screen 0 1920x1080x24",
+                    python_bin, script_path, filters_json, "5"
+                ]
+            else:
+                # Fallback to plain query string for scrapers without structured support
+                command = [
+                    "xvfb-run", "--server-args=-screen 0 1920x1080x24",
+                    python_bin, script_path, f"'{query}'", "5"
+                ]
 
-        if result.returncode != 0:
-            error_msg = result.stderr or "Unknown error"
-            logger.error(f"Scraper {scraper_name} failed: {error_msg}")
-            return []
+            logger.info(f"Running command: {' '.join(command)}")
 
-        # Parse the JSON output
-        listings = result.stdout.strip()
-        if not listings:
-            logger.warn(f"Empty output from {scraper_name}")
-            # Try to read from temp file as fallback
-            try:
-                import glob
-                temp_files = glob.glob("/tmp/scraper_output_*.json")
-                if temp_files:
-                    # Get the most recently modified file
-                    latest_file = max(temp_files, key=os.path.getmtime)
-                    with open(latest_file, 'r') as f:
-                        listings = f.read().strip()
-                    logger.info(f"Recovered output from temp file for {scraper_name}: {latest_file}")
-                    # Clean up temp file
-                    os.remove(latest_file)
-            except Exception as e:
-                logger.warn(f"Could not read from temp file: {e}")
+            # Run the scraper and capture output
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout (60s wait + scraping) per scraper
+                env={
+                    **os.environ,
+                    "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                    "XAUTHORITY": os.environ.get("XAUTHORITY", "/home/alpha/.Xauthority"),
+                }
+            )
 
-            if not listings:
+            # Wait a moment for scraper to finish writing to temp file
+            import time
+            time.sleep(2)
+
+            if result.returncode != 0:
+                error_msg = result.stderr or "Unknown error"
+                logger.error(f"Scraper {scraper_name} failed: {error_msg}")
+
+                # Check for bot detection indicators in stderr
+                bot_indicators = ["403", "forbidden", "access denied", "bot detected", "blocked"]
+                if any(indicator.lower() in error_msg.lower() for indicator in bot_indicators):
+                    if attempt < max_vpn_retries and vpn:
+                        logger.warning(f"{scraper_name}: Bot detection detected, will retry with VPN...")
+                        continue  # Retry with VPN
+                    return []
+
                 return []
 
-        data = eval(listings)  # Safe here as we control the scraper output
+            # Parse the JSON output
+            listings = result.stdout.strip()
+            if not listings:
+                logger.warn(f"Empty output from {scraper_name}")
+                # Try to read from temp file as fallback
+                try:
+                    import glob
+                    temp_files = glob.glob("/tmp/scraper_output_*.json")
+                    if temp_files:
+                        # Get the most recently modified file
+                        latest_file = max(temp_files, key=os.path.getmtime)
+                        with open(latest_file, 'r') as f:
+                            listings = f.read().strip()
+                        logger.info(f"Recovered output from temp file for {scraper_name}: {latest_file}")
+                        # Clean up temp file
+                        os.remove(latest_file)
+                except Exception as e:
+                    logger.warn(f"Could not read from temp file: {e}")
 
-        if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "error" in data[0]:
-            logger.error(f"{scraper_name} returned error: {data[0]['error']}")
+                if not listings:
+                    return []
+
+            data = eval(listings)  # Safe here as we control the scraper output
+
+            # Check for bot detection in scraper output
+            if data is None:
+                logger.warning(f"{scraper_name}: Returned None (bot detection)")
+                if attempt < max_vpn_retries and vpn:
+                    continue  # Retry with VPN
+                return []
+
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+                if "error" in data[0]:
+                    error = data[0]["error"]
+                    logger.error(f"{scraper_name} returned error: {error}")
+
+                    # Check for bot detection in error message
+                    bot_indicators = ["403", "forbidden", "bot", "blocked", "access denied", "restricted"]
+                    if any(indicator.lower() in error.lower() for indicator in bot_indicators):
+                        if attempt < max_vpn_retries and vpn:
+                            logger.warning(f"{scraper_name}: Bot detection in error, will retry with VPN...")
+                            continue  # Retry with VPN
+                    return []
+
+            logger.info(f"{scraper_name} returned {len(data) if data else 0} listings")
+            return data if data else []
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"{scraper_name} timeout after 300 seconds")
+            return []
+        except Exception as e:
+            logger.error(f"Failed to run {scraper_name}: {e}")
             return []
 
-        logger.info(f"{scraper_name} returned {len(data)} listings")
-        return data
-
-    except subprocess.TimeoutExpired:
-        logger.error(f"{scraper_name} timeout after 180 seconds")
-        return []
-    except Exception as e:
-        logger.error(f"Failed to run {scraper_name}: {e}")
-        return []
+    # All retries exhausted
+    logger.error(f"{scraper_name}: All {max_vpn_retries + 1} attempts failed")
+    return []
 
 
 @app.get("/")

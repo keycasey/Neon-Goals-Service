@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-AutoTrader scraper using Chrome CDP (primary) or Camoufox (fallback)
+AutoTrader scraper using Camoufox with VPN rotation support.
 
 Accepts structured query format (from parse_vehicle_query.py) and
 converts it to AutoTrader-specific parameters via the adapter function.
+
+Features:
+- VPN rotation when bot detection is triggered
+- Automatic retry with IP rotation
+- Camoufox anti-detection browser
 """
 import json
 import os
@@ -14,7 +19,7 @@ import re
 import random
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, List
 
 logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=sys.stderr)
 
@@ -33,69 +38,118 @@ try:
 except ImportError:
     CAMOUFOX_AVAILABLE = False
 
+# Try to import VPN manager
+try:
+    from vpn_manager import create_vpn_manager
+    VPN_AVAILABLE = True
+except ImportError:
+    VPN_AVAILABLE = False
+
+# Global VPN manager instance
+_vpn_manager = None
+_max_vpn_rotations = 3
+
+
+def get_vpn_manager():
+    """Get or create the global VPN manager instance."""
+    global _vpn_manager
+    if _vpn_manager is None and VPN_AVAILABLE:
+        # gilbert has 5 WireGuard configs (v1.conf through v5.conf)
+        _vpn_manager = create_vpn_manager(total_configs=5, config_prefix="v")
+    return _vpn_manager
+
 
 def adapt_structured_to_autotrader(structured: dict) -> str:
     """
-    Convert structured query format to AutoTrader search query string.
+    Convert structured query format to AutoTrader URL.
 
     The structured format is the universal format output by parse_vehicle_query.py.
     Each scraper has its own adapter to convert this to scraper-specific params.
 
     AutoTrader specifics:
-    - Uses text-based search query (like "GMC Sierra Denali black")
-    - Supports make/model/trim/color combinations
-    - Location can be added with "near [zip]" or similar
+    - URL format: /cars-for-sale/{make}/{model}/{trim}/{location}?{params}
+    - Example: /cars-for-sale/gmc/sierra-3500/denali-ultimate/san-mateo-ca?endYear=2024&searchRadius=500
+    - Supports trim, location, and year filters in URL
 
     Args:
         structured: The structured query dict with keys like makes, models, trims, etc.
 
     Returns:
-        AutoTrader search query string
+        AutoTrader URL string
     """
-    parts = []
+    # Get make (first one if multiple) - handle both singular and plural
+    makes = structured.get('makes') or ([structured.get('make')] if structured.get('make') else [])
+    make = makes[0].lower().replace(' ', '-') if makes else ''
 
-    # Add make/model/trim
-    if structured.get('makes'):
-        parts.extend(structured['makes'])
+    # Get model (first one if multiple) - handle both singular and plural
+    models = structured.get('models') or ([structured.get('model')] if structured.get('model') else [])
+    model = models[0].lower().replace(' ', '-') if models else ''
 
-    if structured.get('models'):
-        # AutoTrader combines make and model nicely
-        for model in structured['models']:
-            parts.append(model)
+    # Get trim (first one if multiple)
+    trims = structured.get('trims', [])
+    trim = trims[0].lower().replace(' ', '-') if trims else ''
 
-    if structured.get('trims'):
-        parts.extend(structured['trims'])
+    # Build base URL path
+    path_parts = ["cars-for-sale"]
+    if make:
+        path_parts.append(make)
+    if model:
+        path_parts.append(model)
+    if trim:
+        path_parts.append(trim)
 
-    # Add color
-    if structured.get('exteriorColor'):
-        parts.append(structured['exteriorColor'])
-
-    # Add other key features as text
-    if structured.get('features'):
-        # Add notable features that help search
-        feature_keywords = {
-            'Seat Massagers': 'massaging seats',
-            'Sunroof': 'sunroof',
-            'Navigation': 'navigation',
-            'Tow Hitch': 'tow hitch'
-        }
-        for feature in structured['features']:
-            if feature in feature_keywords:
-                parts.append(feature_keywords[feature])
-
-    # Build query
-    query = ' '.join(parts)
-
-    # Add location if provided
+    # Add location to path - handle both location dict and zip code
     location = structured.get('location', {})
-    if location.get('zip'):
-        query += f' near {location["zip"]}'
-    elif location.get('city'):
-        query += f' near {location["city"]}'
-        if location.get('state'):
-            query += f', {location["state"]}'
+    zip_code = structured.get('zip')
+    
+    # If we have a zip code, skip adding location to path (use query param instead)
+    if not zip_code:
+        city = location.get('city', '').lower().replace(' ', '-') if location.get('city') else ''
+        state = location.get('state', '').lower() if location.get('state') else ''
+        
+        if city or state:
+            location_part = f"{city}-{state}" if city and state else (city or state)
+            path_parts.append(location_part)
 
-    return query
+    url_path = '/' + '/'.join(path_parts)
+
+    # Build query parameters
+    params = []
+
+    # Add zip code if provided
+    if structured.get('zip'):
+        params.append(f"zip={structured['zip']}")
+
+    # Add search radius (use provided radius or default to 500)
+    radius = structured.get('radius', 500)
+    params.append(f"searchRadius={radius}")
+
+    # Add year range
+    year = structured.get('year', {})
+    if isinstance(year, dict):
+        if year.get('min'):
+            params.append(f"startYear={year['min']}")
+        if year.get('max'):
+            params.append(f"endYear={year['max']}")
+    elif isinstance(year, int):
+        params.append(f"startYear={year}&endYear={year}")
+
+    # Fallback to yearMin/yearMax if year dict not provided
+    if structured.get('yearMin'):
+        params.append(f"startYear={structured['yearMin']}")
+    if structured.get('yearMax'):
+        params.append(f"endYear={structured['yearMax']}")
+
+    # Add max price if specified
+    if structured.get('maxPrice'):
+        params.append(f"maxPrice={structured['maxPrice']}")
+
+    # Build final URL
+    base_url = "https://www.autotrader.com"
+    query_string = '&'.join(params)
+    url = f"{base_url}{url_path}?{query_string}"
+
+    return url
 
 
 def extract_number(text: str) -> int:
@@ -279,168 +333,225 @@ def scrape_with_playwright_cdp(query: str, max_results: int, cdp_url: str = "htt
         return results
 
 
-def scrape_with_camoufox(query: str, max_results: int):
-    """Scrape using Camoufox as fallback"""
+def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
+    """
+    Scrape using Playwright Firefox (formerly Camoufox).
+    Name kept for compatibility but now uses regular Firefox for better fingerprint.
+    """
     results = []
 
-    os_choice = random.choice(['windows', 'macos', 'linux'])
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        logging.error("[AutoTrader] Playwright not available!")
+        return None
 
-    with Camoufox(
-        headless=False,
-        os=(os_choice,),
-        screen=Screen(max_width=800, max_height=600),
-        humanize=True,
-    ) as browser:
-        page = browser.new_page()
+    with sync_playwright() as p:
+        browser = p.firefox.launch(
+            headless=False,
+            firefox_user_prefs={"dom.webdriver.enabled": False}
+        )
 
-        logging.error(f"[AutoTrader] Using Camoufox with {os_choice} fingerprint...")
-        page.goto("https://www.autotrader.com", wait_until='domcontentloaded', timeout=30000)
-        time.sleep(random.uniform(5, 10))
+        context = browser.new_context(viewport={'width': 1920, 'height': 1080})
+        page = context.new_page()
 
-        # Determine search terms
+        logging.error(f"[AutoTrader] Using Playwright Firefox...")
+
         if query.startswith('http'):
-            parts = query.split('/')
-            if 'cars-for-sale' in parts:
-                idx = parts.index('cars-for-sale')
-                if idx + 2 < len(parts):
-                    make = parts[idx + 1].replace('-', ' ').title()
-                    model = parts[idx + 2].split('-')[0].replace('-', ' ').title() if idx + 2 < len(parts) else ''
-                    search_terms = f"{make} {model}".strip()
-                else:
-                    search_terms = "GMC Sierra"
-            else:
-                search_terms = "GMC Sierra"
+            search_url = query
         else:
-            search_terms = query
-
-        search_terms_slug = search_terms.replace(' ', '-').lower()
-        search_url = f"https://www.autotrader.com/cars-for-sale/{search_terms_slug}/san-mateo-ca?searchRadius=500"
+            search_terms = query.replace(' ', '-').lower()
+            search_url = f"https://www.autotrader.com/cars-for-sale/{search_terms}?searchRadius=500&zip=94401"
 
         logging.error(f"[AutoTrader] Navigating to: {search_url}")
-        page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
-        time.sleep(random.uniform(3, 5))
-
-        # Same extraction logic as CDP...
         try:
-            page.wait_for_selector('a[href*="/cars-for-sale/vehicle/"]', timeout=30000)
+            page.goto(search_url, timeout=60000)
+            time.sleep(5)
+        except Exception as e:
+            logging.error(f"[AutoTrader] Navigation error: {e}")
+            time.sleep(5)
+
+        page_text = page.inner_text('body')
+
+        try:
+            screenshot_path = f"/tmp/autotrader_debug_{os.getpid()}.png"
+            page.screenshot(path=screenshot_path)
+            logging.error(f"[AutoTrader] Debug screenshot: {screenshot_path}")
         except:
             pass
 
-        listings = page.query_selector_all('a[href*="/cars-for-sale/vehicle/"]')
+        logging.error(f"[AutoTrader] Page text preview: {page_text[:200]}")
 
-        for listing in listings[:max_results]:
-            url = listing.get_attribute('href') or ''
-            if not url:
-                continue
+        if any(keyword in page_text.lower() for keyword in ['unavailable', 'incident number', 'blocked']):
+            logging.error(f"[AutoTrader] BOT DETECTED - retry needed")
+            browser.close()
+            return None
 
-            # Extract data (simplified for brevity)
-            link_text = listing.inner_text()
-            title = link_text.strip()
+        logging.error(f"[AutoTrader] Page loaded successfully, extracting...")
 
-            if not title or len(title) < 10:
-                continue
+        try:
+            page.wait_for_selector('[data-cmp="inventoryListing"]', timeout=10000)
+        except:
+            logging.error(f"[AutoTrader] No listings found or timeout")
 
-            # Get ancestor text for price
+        listing_cards = page.query_selector_all('[data-cmp="inventoryListing"]')
+        logging.error(f"[AutoTrader] Found {len(listing_cards)} listings")
+
+        for idx, card in enumerate(listing_cards):
+            if idx >= max_results:
+                break
             try:
-                all_text = ''
-                for ancestor_level in range(1, 8):
-                    try:
-                        ancestor = listing.evaluate(f'el => {{ let p = el; for(let i=0; i<{ancestor_level}; i++) p = p?.parentElement; return p?.innerText; }}')
-                        if ancestor and len(ancestor) > 50:
-                            all_text = ancestor
-                            break
-                    except:
-                        continue
+                # Title - h2 with data-cmp=subheading
+                title_elem = card.query_selector('h2[data-cmp="subheading"]')
+                title = title_elem.inner_text().strip() if title_elem else "Unknown"
 
-                price_match = re.search(r'\$\s*([\d,]+)', all_text)
-                price = extract_number(price_match.group(1)) if price_match else 0
+                # Price - div with data-cmp=firstPrice (just number, no $ sign)
+                price_elem = card.query_selector('div[data-cmp="firstPrice"]')
+                price_text = price_elem.inner_text().strip() if price_elem else ""
+                price = int(price_text.replace(',', '')) if price_text and price_text.replace(',', '').isdigit() else 0
 
-                # Get image from ancestor elements
-                image = ''
+                # Mileage - in the list items, look for text containing "mi"
+                mileage = 0
+                list_items = card.query_selector_all('ul[data-cmp="list"] li')
+                for item in list_items:
+                    text = item.inner_text().strip()
+                    if 'mi' in text.lower():
+                        # Extract number from "65K mi" or "12,345 mi"
+                        num_match = re.search(r'([\d,]+(?:\.\d+)?)\s*[kK]?\s*mi', text, re.IGNORECASE)
+                        if num_match:
+                            num_str = num_match.group(1).replace(',', '')
+                            # Handle K suffix
+                            if 'k' in text.lower():
+                                mileage = int(float(num_str) * 1000)
+                            else:
+                                mileage = int(float(num_str))
+                        break
+
+                # Location - try various selectors
+                location = "Unknown"
+                location_selectors = [
+                    '[data-cmp="listingSummaryLocationText"]',
+                    '.dealer-name',
+                    '.location-text',
+                    '[data-cmp="dealerName"]'
+                ]
+                for selector in location_selectors:
+                    location_elem = card.query_selector(selector)
+                    if location_elem:
+                        location = location_elem.inner_text().strip()
+                        break
+
+                # Link - check if card is wrapped in a link or find link via JavaScript
+                link = ""
                 try:
-                    img_src = listing.evaluate('''
-                        el => {
-                            for (let level = 1; level <= 8; level++) {
-                                let ancestor = el;
-                                for (let i = 0; i < level; i++) {
-                                    if (ancestor) ancestor = ancestor.parentElement;
-                                }
-                                if (!ancestor) continue;
-                                const img = ancestor.querySelector('img');
-                                if (img && img.src && img.src.includes('autotrader.com')) {
-                                    return img.src;
-                                }
-                            }
-                            return '';
-                        }
-                    ''')
-                    if img_src:
-                        image = img_src
+                    # Try to find the link by evaluating JavaScript
+                    link_href = card.evaluate('(el) => { const link = el.closest("a") || el.querySelector("a"); return link ? link.href : ""; }')
+                    if link_href:
+                        link = link_href
                 except:
+                    # Fallback: construct from title if we can extract VIN or ID
                     pass
 
-                if price > 0:
-                    results.append({
-                        'name': title,
-                        'price': price,
-                        'mileage': 0,
-                        'image': image,
-                        'retailer': 'AutoTrader',
-                        'url': url,
-                        'location': 'AutoTrader'
-                    })
-                    logging.error(f"[AutoTrader] {title[:30]} - ${price:,}")
+                vehicle = {
+                    "title": title,
+                    "price": price,
+                    "mileage": mileage,
+                    "location": location,
+                    "link": link,
+                    "source": "autotrader"
+                }
 
-            except:
+                results.append(vehicle)
+                logging.error(f"[AutoTrader] Extracted: {title} - ${price:,}")
+
+            except Exception as e:
+                logging.error(f"[AutoTrader] Error extracting vehicle {idx}: {e}")
                 continue
+
+        browser.close()
 
     return results
 
-
-def scrape_autotrader(query: str, max_results: int = 10, cdp_url: str = "http://localhost:9222"):
+def scrape_autotrader(query: str, max_results: int = 10, cdp_url: str = "http://localhost:9222", enable_vpn: bool = True):
     """
-    Main scrape function that tries CDP first, then falls back to Camoufox
+    Main scrape function with VPN rotation support.
+
+    Args:
+        query: Search URL or structured query
+        max_results: Maximum number of results to return
+        cdp_url: CDP URL (not used, kept for compatibility)
+        enable_vpn: Whether to use VPN rotation (default: True)
+
+    Returns:
+        List of vehicle listings
     """
-    # Try CDP first if Playwright is available
-    if PLAYWRIGHT_AVAILABLE:
-        logging.error(f"[AutoTrader] Trying Chrome CDP...")
-        results = scrape_with_playwright_cdp(query, max_results, cdp_url)
+    global _max_vpn_rotations
 
-        if results is not None:  # CDP connection succeeded
-            if results:
-                logging.error(f"[AutoTrader] CDP scraping successful: {len(results)} results")
-                return results
-            else:
-                logging.error(f"[AutoTrader] CDP returned no results")
-                return results
-        else:
-            logging.error(f"[AutoTrader] CDP connection failed, trying fallback...")
-
-    # Fallback to Camoufox
-    if CAMOUFOX_AVAILABLE:
-        logging.error(f"[AutoTrader] Using Camoufox fallback...")
-        return scrape_with_camoufox(query, max_results)
-    else:
-        logging.error(f"[AutoTrader] No scraping backend available!")
+    if not CAMOUFOX_AVAILABLE:
+        logging.error(f"[AutoTrader] Camoufox not available!")
         return []
+
+    # Initialize VPN if enabled
+    vpn = get_vpn_manager() if enable_vpn else None
+    if vpn and vpn.vpn_enabled is False:
+        # Start with VPN enabled
+        logging.error(f"[AutoTrader] Starting VPN for scraping...")
+        vpn.rotate_vpn()
+
+    # Try scraping with VPN rotation on bot detection
+    # Systematically try different OS fingerprints
+    os_options = ['windows', 'macos', 'linux']
+
+    for attempt in range(_max_vpn_rotations + 1):
+        os_choice = os_options[attempt % len(os_options)]
+        logging.error(f"[AutoTrader] Scrape attempt {attempt + 1}/{_max_vpn_rotations + 1} (OS: {os_choice})")
+
+        result = scrape_with_camoufox(query, max_results, os_choice=os_choice)
+
+        # Success - return results
+        if result is not None:
+            # If we got results or it's the last attempt with no bot detection
+            if result or attempt == _max_vpn_rotations:
+                if vpn:
+                    logging.error(f"[AutoTrader] Got {len(result)} results")
+                return result
+
+        # Bot detected - rotate VPN and retry
+        if result is None and vpn:
+            logging.error(f"[AutoTrader] Bot detected, rotating VPN...")
+            vpn.rotate_vpn()
+            time.sleep(3)  # Give VPN time to settle
+        elif result is None and not vpn:
+            # No VPN available and bot detected
+            logging.error(f"[AutoTrader] Bot detected but VPN not available - giving up")
+            break
+
+    # If we get here, all attempts failed
+    logging.error(f"[AutoTrader] All {_max_vpn_rotations + 1} attempts failed")
+    return []
 
 
 def main():
     if len(sys.argv) < 2:
         print(json.dumps({
-            "error": "Usage: scrape-autotrader.py <URL or search query or structured> [max_results] [cdp_url]",
+            "error": "Usage: scrape-autotrader.py <URL or search query or structured> [max_results] [cdp_url] [--no-vpn]",
             "examples": [
                 "scrape-autotrader.py 'GMC Sierra Denali black'",
                 "scrape-autotrader.py 'https://www.autotrader.com/cars-for-sale/...'",
-                "scrape-autotrader.py '{\"structured\": {...}}'  # From parse_vehicle_query.py"
+                "scrape-autotrader.py '{\"structured\": {...}}'  # From parse_vehicle_query.py",
+                "scrape-autotrader.py '{\"structured\": {...}}' 10 '' --no-vpn  # Disable VPN"
             ],
-            "note": "Start Chrome with: google-chrome --remote-debugging-port=9222"
+            "note": "VPN rotation is enabled by default. Use --no-vpn to disable.",
+            "vpn": "Requires WireGuard configs in /etc/wireguard/ and sudo access."
         }))
         sys.exit(1)
 
     query_input = sys.argv[1]
     max_results = int(sys.argv[2]) if len(sys.argv) > 2 else 10
     cdp_url = sys.argv[3] if len(sys.argv) > 3 else "http://localhost:9222"
+
+    # Check for --no-vpn flag
+    enable_vpn = '--no-vpn' not in sys.argv
 
     # Parse input to determine format
     query = query_input
@@ -461,7 +572,14 @@ def main():
         query = query_input
 
     try:
-        result = scrape_autotrader(query, max_results, cdp_url)
+        result = scrape_autotrader(query, max_results, cdp_url, enable_vpn=enable_vpn)
+
+        # Cleanup: Disable VPN after scraping
+        if enable_vpn:
+            vpn = get_vpn_manager()
+            if vpn:
+                logging.error(f"[AutoTrader] Cleaning up VPN...")
+                vpn.disable_vpn()
 
         if not result:
             print(json.dumps({"error": f"No AutoTrader listings found for '{query}'"}))
@@ -475,6 +593,12 @@ def main():
                 f.write(output)
                 f.flush()
     except Exception as e:
+        # Cleanup on error
+        if enable_vpn:
+            vpn = get_vpn_manager()
+            if vpn:
+                vpn.disable_vpn()
+
         print(json.dumps({"error": str(e)}))
         sys.stdout.flush()
         import traceback

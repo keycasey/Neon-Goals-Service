@@ -168,18 +168,58 @@ async def discover_make_and_model_codes(page, make: str, model: str) -> Tuple[Op
     model_code = None
 
     try:
-        # Wait for make dropdown to be available
-        await page.wait_for_selector('[aria-label="Select Make"]', timeout=10000)
+        # Try multiple selectors for the make dropdown
+        make_selectors = [
+            '[aria-label="Select Make"]',
+            'select[name="make"]',
+            '#make',
+            '.make-select',
+            'select[data-test="make-select"]',
+        ]
+
+        make_dropdown = None
+        for selector in make_selectors:
+            try:
+                make_dropdown = await page.wait_for_selector(selector, timeout=15000)  # Increased from 5000
+                if make_dropdown:
+                    logging.error(f"Found make dropdown with selector: {selector}")
+                    break
+            except:
+                continue
+
+        if not make_dropdown:
+            logging.error(f"Could not find make dropdown with any selector")
+            # Take screenshot for debugging
+            try:
+                await page.screenshot(path='/tmp/cargurus-no-dropdown.png')
+                logging.error("Screenshot saved to /tmp/cargurus-no-dropdown.png")
+            except:
+                pass
+            return None, None
 
         # Get all make options
         makes = await page.evaluate('''() => {
-            const dropdown = document.querySelector('[aria-label="Select Make"]');
-            if (!dropdown) return [];
-            return Array.from(dropdown.options).map(opt => ({
-                name: opt.textContent.trim(),
-                value: opt.value
-            })).filter(m => m.value !== "");
+            // Try multiple selectors
+            const selectors = [
+                '[aria-label="Select Make"]',
+                'select[name="make"]',
+                '#make',
+                '.make-select',
+                'select[data-test="make-select"]',
+            ];
+            for (const sel of selectors) {
+                const dropdown = document.querySelector(sel);
+                if (dropdown && dropdown.options) {
+                    return Array.from(dropdown.options).map(opt => ({
+                        name: opt.textContent.trim(),
+                        value: opt.value
+                    })).filter(m => m.value !== "");
+                }
+            }
+            return [];
         }''')
+
+        logging.error(f"Found {len(makes)} makes on CarGurus")
 
         # Find the make code (case-insensitive match)
         make_lower = make.lower()
@@ -193,19 +233,45 @@ async def discover_make_and_model_codes(page, make: str, model: str) -> Tuple[Op
             logging.error(f"Make '{make}' not found. Available: {[m['name'] for m in makes[:10]]}")
             return None, None
 
-        # Select the make
-        await page.select_option('[aria-label="Select Make"]', make_code)
-        await asyncio.sleep(1)  # Wait for models to populate
+        # Select the make using the same selector strategy
+        selected = False
+        for selector in make_selectors:
+            try:
+                await page.select_option(selector, make_code, timeout=5000)
+                selected = True
+                logging.error(f"Selected make using selector: {selector}")
+                break
+            except:
+                continue
+
+        if not selected:
+            logging.error(f"Could not select make")
+            return None, None
+
+        await asyncio.sleep(2)  # Wait for models to populate
 
         # Get all model options for this make
         models = await page.evaluate('''() => {
-            const dropdown = document.querySelector('[aria-label="Select Model"]');
-            if (!dropdown) return [];
-            return Array.from(dropdown.options).map(opt => ({
-                name: opt.textContent.trim(),
-                value: opt.value
-            })).filter(m => m.value !== "");
+            const selectors = [
+                '[aria-label="Select Model"]',
+                'select[name="model"]',
+                '#model',
+                '.model-select',
+                'select[data-test="model-select"]',
+            ];
+            for (const sel of selectors) {
+                const dropdown = document.querySelector(sel);
+                if (dropdown && dropdown.options) {
+                    return Array.from(dropdown.options).map(opt => ({
+                        name: opt.textContent.trim(),
+                        value: opt.value
+                    })).filter(m => m.value !== "");
+                }
+            }
+            return [];
         }''')
+
+        logging.error(f"Found {len(models)} models for {make}")
 
         # Find the model code (case-insensitive, partial match)
         model_lower = model.lower()
@@ -221,6 +287,13 @@ async def discover_make_and_model_codes(page, make: str, model: str) -> Tuple[Op
 
     except Exception as e:
         logging.error(f"Error discovering make/model codes: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            await page.screenshot(path='/tmp/cargurus-error.png')
+            logging.error("Screenshot saved to /tmp/cargurus-error.png")
+        except:
+            pass
         return None, None
 
     return make_code, model_code
@@ -325,30 +398,182 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
     trim = search_filters.get('trim', '')
 
     try:
-        # Launch Camoufox - headless=False to avoid crashes
+        # Launch Camoufox in headed mode with full xvfb resolution
+        # Use RAM-based profile for faster startup and cleanup
         logging.error(f"Launching Camoufox for: {make} {model}")
+        logging.error("Display: {}".format(os.environ.get('DISPLAY', 'not set')))
         browser = await AsyncCamoufox(
-            screen=Screen(max_width=800, max_height=600),
-            headless=False,
+            screen=Screen(max_width=1920, max_height=1080),  # Match xvfb resolution
+            headless=False,  # Use headed mode with xvfb
             humanize=True,
         ).__aenter__()
 
-        page = await browser.new_page()
+        page = await browser.new_page(viewport={'width': 1920, 'height': 1080})
         logging.error("Browser launched, navigating to CarGurus homepage")
+        logging.error("Viewport set to 1920x1080")
 
-        # STEP 1: Visit homepage to discover entity codes
-        await page.goto("https://www.cargurus.com", wait_until='networkidle', timeout=60000)
-        await asyncio.sleep(10)
+        # STEP 1: Try to discover make and model entity codes from homepage
+        # If that fails, use a direct text search URL instead
 
-        # STEP 2: Discover make and model entity codes
+        # First, try visiting homepage to discover entity codes
+        await page.goto("https://www.cargurus.com", wait_until='domcontentloaded', timeout=90000)
+        await asyncio.sleep(15)  # Give CarGurus more time to fully load (was 5s)
+
+        # Take screenshot for debugging
+        try:
+            await page.screenshot(path='/tmp/cargurus-homepage.png')
+            logging.error("Homepage screenshot saved")
+        except:
+            pass
+
+        # STEP 2: Try to discover make and model entity codes
+        make_code = None
+        model_code = None
+
         if make and model:
             make_code, model_code = await discover_make_and_model_codes(page, make, model)
-            if not make_code or not model_code:
-                return [{"error": f"Could not find entity codes for {make} {model}"}]
-        else:
-            return [{"error": "Make and model are required"}]
 
-        # STEP 3: Build search URL with correct format
+        # If dropdown discovery failed, use search box approach
+        if not make_code or not model_code:
+            logging.error(f"Could not discover entity codes, trying search box approach")
+
+            try:
+                # Look for search input box on the homepage
+                search_selectors = [
+                    'input[name="searchQuery"]',
+                    'input[placeholder*="search" i]',
+                    'input[type="search"]',
+                    '#search-input',
+                    '[data-test="search-input"]',
+                ]
+
+                search_input = None
+                for selector in search_selectors:
+                    try:
+                        search_input = await page.wait_for_selector(selector, timeout=15000)  # Increased from 5000
+                        if search_input:
+                            logging.error(f"Found search input with selector: {selector}")
+                            break
+                    except:
+                        continue
+
+                if not search_input:
+                    logging.error("Could not find search input on homepage")
+                    await page.screenshot(path='/tmp/cargurus-no-search.png')
+                    return [{"error": "Could not find search box on CarGurus homepage"}]
+
+                # Enter search query
+                search_query = f"{make} {model}"
+                await search_input.fill(search_query)
+                logging.error(f"Entered search query: {search_query}")
+                await asyncio.sleep(1)
+
+                # Submit search (press Enter)
+                await search_input.press('Enter')
+                logging.error("Submitted search")
+                await asyncio.sleep(10)
+
+                # Take screenshot of search results
+                await page.screenshot(path='/tmp/cargurus-search-results.png')
+                logging.error("Search results screenshot saved")
+
+                # Check for access restriction
+                page_text = await page.inner_text('body')
+                if any(indicator in page_text.lower() for indicator in ['access is temporarily restricted', 'bot detection', 'please verify you are human']):
+                    logging.error("Bot detection detected")
+                    return [{"error": "Access restricted - bot detection"}]
+
+                # Check for no results
+                if any(indicator in page_text for indicator in ['No matching vehicles', 'No results found', '0 results']):
+                    logging.error("[CarGurus] No results found")
+                    return []
+
+                # Try to find listings
+                selectors = [
+                    'a[href*="/details/"]',
+                    '[data-testid="listing-card"]',
+                    'article',
+                    '[class*="listing"]',
+                ]
+
+                listings = []
+                for selector in selectors:
+                    listings = await page.query_selector_all(selector)
+                    if listings:
+                        logging.error(f"Found {len(listings)} potential listings with selector: {selector}")
+                        break
+
+                # Extract data from listings
+                for i, listing in enumerate(listings[:max_results]):
+                    try:
+                        all_text = await listing.inner_text()
+                        name = f"{make} {model}"
+                        name_elem = await listing.query_selector('h4, h3, h2')
+                        if name_elem:
+                            name = await name_elem.inner_text()
+
+                        price = 0
+                        price_match = re.search(r'\$[\d,]+', all_text)
+                        if price_match:
+                            price = extract_number(price_match.group())
+
+                        mileage = 0
+                        mileage_match = re.search(r'([\d,]+)\s*(?:mi|miles)', all_text, re.IGNORECASE)
+                        if mileage_match:
+                            mileage = extract_number(mileage_match.group(1))
+
+                        image = ''
+                        img_elem = await listing.query_selector('img')
+                        if img_elem:
+                            image = await img_elem.get_attribute('src') or ''
+
+                        url = ''
+                        tag_name = await listing.evaluate('el => el.tagName')
+                        if tag_name == 'A':
+                            url = await listing.get_attribute('href') or ''
+                        else:
+                            link_elem = await listing.query_selector('a[href*="/details/"]')
+                            if link_elem:
+                                url = await link_elem.get_attribute('href') or ''
+
+                        if url and not url.startswith('http'):
+                            url = f"https://www.cargurus.com{url}"
+
+                        location = 'Unknown'
+                        location_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z]{2})', all_text)
+                        if location_match:
+                            location = f"{location_match.group(1)}, {location_match.group(2)}"
+
+                        if price > 0 or mileage > 0:
+                            results.append({
+                                'name': name.strip(),
+                                'price': price,
+                                'mileage': mileage,
+                                'trim': '',
+                                'image': image,
+                                'retailer': 'CarGurus',
+                                'url': url,
+                                'location': location
+                            })
+                            logging.error(f"Extracted: {name[:40]} - ${price} - {mileage} mi")
+                    except Exception as e:
+                        logging.error(f"Error extracting listing {i}: {e}")
+                        continue
+
+                if results:
+                    logging.error(f"Successfully extracted {len(results)} listings using search box")
+                    return results
+                else:
+                    logging.error("No listings extracted using search box")
+                    return [{"error": f"No listings found for {make} {model}"}]
+
+            except Exception as e:
+                logging.error(f"Error using search box approach: {e}")
+                import traceback
+                traceback.print_exc()
+                return [{"error": f"Search box approach failed: {str(e)}"}]
+
+        # STEP 3: Build search URL with correct format (original entity code path)
         other_filters = {k: v for k, v in search_filters.items()
                         if k not in ['make', 'model', 'zip', 'distance', 'trim']}
 
@@ -362,7 +587,7 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
         )
 
         logging.error(f"Navigating to: {search_url}")
-        await page.goto(search_url, wait_until='networkidle', timeout=60000)
+        await page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
 
         # Wait for results page to load
         logging.error("Results page loading, waiting for content...")

@@ -10,6 +10,7 @@ import sys
 import tempfile
 import logging
 import re
+import traceback
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -20,6 +21,10 @@ from dotenv import load_dotenv
 
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
+
+# Ensure profile directory exists
+PROFILE_DIR = "/tmp/scraper_profile"
+os.makedirs(PROFILE_DIR, exist_ok=True)
 
 
 def extract_number(text: str) -> int:
@@ -65,9 +70,14 @@ def adapt_structured_to_carvana_interactive(structured: dict) -> dict:
     if structured.get('trims'):
         params['trims'] = structured['trims']
 
-    # Year
+    # Year - extract max year from range or use single year
     if structured.get('year'):
-        params['year'] = structured['year']
+        year = structured['year']
+        if isinstance(year, dict):
+            # Year range provided - use max year (latest model)
+            params['year'] = year.get('max')
+        elif isinstance(year, int):
+            params['year'] = year
 
     return params
 
@@ -93,15 +103,20 @@ async def scrape_carvana_interactive(
     """
     results = []
 
-    browser = await AsyncCamoufox(headless=False, humanize=True).__aenter__()
+    # Use RAM-based profile for faster startup and cleanup
+    browser = await AsyncCamoufox(
+        headless=False,
+        humanize=True,
+    ).__aenter__()
 
     try:
-        page = await browser.new_page(viewport={'width': 1366, 'height': 768})
+        # Use full HD resolution for better visibility of filters
+        page = await browser.new_page(viewport={'width': 1920, 'height': 1080})
 
         # Resize window using JavaScript to ensure full width
-        await page.evaluate("window.resizeTo(1366, 768)")
-        await page.set_viewport_size({'width': 1366, 'height': 768})
-        logging.error(f"[Carvana] Window and viewport resized to 1366x768")
+        await page.evaluate("window.resizeTo(1920, 1080)")
+        await page.set_viewport_size({'width': 1920, 'height': 1080})
+        logging.error(f"[Carvana] Window and viewport resized to 1920x1080")
 
         # Start at Carvana search page
         logging.error(f"[Carvana] Starting search")
@@ -111,44 +126,15 @@ async def scrape_carvana_interactive(
         # Step 1: Click "Make & Model" filter button to expand filters
         logging.error(f"[Carvana] Clicking Make & Model filter")
         try:
-            make_model_button = None
-            selectors_to_try = [
-                # Primary: Use data-analytics-id attribute (most reliable)
-                '[data-analytics-id="Filter Menu"][data-analytics-attributes*="Make & Model"]',
-                # Fallback: Role button with exact text
-                '[role="button"]:has-text("Make & Model")',
-                # XPath for exact text match in div with role button
-                '//div[@role="button"][contains(text(), "Make & Model")]',
-                # Get by role (Playwright's accessibility API)
-                'get_by_role=button:Make & Model',
-            ]
+            # Use data-testid selector (more reliable based on recording)
+            make_model_button = await page.wait_for_selector('[data-testid="facet-make-model"] > div', timeout=10000)
+            if make_model_button:
+                await make_model_button.click()
+                await asyncio.sleep(2)
+                logging.error(f"[Carvana] Make & Model filter opened")
+            else:
+                logging.error(f"[Carvana] Could not find Make & Model button")
 
-            for selector in selectors_to_try:
-                try:
-                    if selector.startswith('get_by_role='):
-                        # Special handling for get_by_role
-                        role, name = selector.split('=')[1].split(':')
-                        make_model_button = page.get_by_role(role, name=name, exact=True)
-                        await make_model_button.click(timeout=5000)
-                    elif selector.startswith('//'):
-                        make_model_button = await page.wait_for_selector('xpath=' + selector, timeout=5000)
-                        if make_model_button:
-                            await make_model_button.click()
-                    else:
-                        make_model_button = await page.wait_for_selector(selector, timeout=5000)
-                        if make_model_button:
-                            await make_model_button.click()
-
-                    await asyncio.sleep(1)
-                    logging.error(f"[Carvana] Make & Model filter opened (selector: {selector})")
-                    break
-                except Exception as inner_e:
-                    continue
-
-            if not make_model_button:
-                logging.error(f"[Carvana] Could not find Make & Model button with any selector")
-
-            await asyncio.sleep(2)
         except Exception as e:
             logging.error(f"[Carvana] Error opening Make & Model filter: {e}")
 
@@ -492,6 +478,9 @@ async def main():
         if 'structured' in filters:
             # Use adapter to convert structured to Carvana interactive params
             filters = adapt_structured_to_carvana_interactive(filters['structured'])
+            logging.error(f"[Carvana] Adapter returned: {filters}")
+
+        logging.error(f"[Carvana] Calling scrape_carvana_interactive with make={filters.get('make')}, model={filters.get('model')}, trims={filters.get('trims')}, year={filters.get('year')}")
 
         result = await scrape_carvana_interactive(
             make=filters.get('make'),

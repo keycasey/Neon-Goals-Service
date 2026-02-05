@@ -59,9 +59,18 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
     if structured.get('trims'):
         params['trims'] = [structured['trims'][0]]
 
-    # Year handling
+    # Year handling - extract min/max from year dict if it's a range
     if structured.get('year'):
-        params['year'] = structured['year']
+        year = structured['year']
+        if isinstance(year, dict):
+            # Year range provided - extract min/max
+            if year.get('min'):
+                params['startYear'] = year['min']
+            if year.get('max'):
+                params['endYear'] = year['max']
+        elif isinstance(year, int):
+            # Single year provided
+            params['year'] = year
     else:
         # Use yearMin/yearMax as startYear/endYear
         if structured.get('yearMin'):

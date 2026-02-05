@@ -24,3 +24,11 @@ coverage/
 
 # Build
 build/
+*.backup
+*~
+*.bak
+__pycache__/
+*.pyc
+*.pyo
+scripts/__pycache__/
+worker/__pycache__/
