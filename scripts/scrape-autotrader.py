@@ -441,6 +441,14 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
                         location = location_elem.inner_text().strip()
                         break
 
+                # Image - img with data-cmp="inventoryImage"
+                image = ""
+                img_elem = card.query_selector('img[data-cmp="inventoryImage"]')
+                if img_elem:
+                    image = img_elem.get_attribute('src') or ""
+                    # Clean up HTML entities in URL
+                    image = image.replace('&amp;', '&')
+
                 # Link - AutoTrader listings always have a link
                 # HTML structure: <a href="..."><h2 data-cmp="subheading">TITLE</h2></a>
                 # The anchor wraps the h2, so we need to find h2 first, then get parent anchor
@@ -483,7 +491,7 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
                     "mileage": mileage,
                     "location": location,
                     "url": link,             # Changed from "link" to "url" for backend compatibility
-                    "image": "",            # Will be filled by backend if missing
+                    "image": image,          # Extracted from img[data-cmp="inventoryImage"]
                     "retailer": "AutoTrader",  # Explicit retailer name
                     "source": "autotrader"
                 }
