@@ -46,6 +46,7 @@ def normalize_model_for_site(model: str, site: str) -> str:
     Normalize a model name for a specific site.
 
     If the site has specific mappings, use those. Otherwise, use default mappings.
+    Sites that have both variants (AutoTrader, TrueCar, CarGurus) receive the original model.
 
     Args:
         model: The model name to normalize (e.g., "Sierra 3500HD")
@@ -61,6 +62,10 @@ def normalize_model_for_site(model: str, site: str) -> str:
         "Sierra 3500HD"  # AutoTrader has both, no mapping needed
     """
     site_key = site.lower().replace('-', '').replace('_', '')
+
+    # If site has both variants, don't normalize - return original
+    if site_key in SITES_WITH_BOTH_VARIANTS:
+        return model
 
     # Check if site has specific mappings
     if site_key in SITE_MODEL_MAPPINGS:
