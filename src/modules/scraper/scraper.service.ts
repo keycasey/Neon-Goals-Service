@@ -1105,6 +1105,12 @@ export class ScraperService {
 
     this.logger.log(`Job ${jobId} filtering: ${deniedUrls.size} denied, ${shortlistedUrls.size} shortlisted, ${existingUrls.size} existing URLs`);
 
+    // DEBUG: Log the excluded URLs for debugging
+    if (existingUrls.size > 0) {
+      this.logger.log(`Existing URLs that will filter out new results:`);
+      existingUrls.forEach((url: string) => this.logger.log(`  - ${url.substring(0, 100)}...`));
+    }
+
     // DEBUG: Check AutoTrader specifically before filtering
     const autoTraderBeforeFilter = data.filter((item: any) =>
       item.retailer === 'AutoTrader' || item.source === 'autotrader'
@@ -1112,7 +1118,14 @@ export class ScraperService {
     this.logger.log(`AutoTrader BEFORE filter: ${autoTraderBeforeFilter.length} listings`);
     autoTraderBeforeFilter.forEach((listing: any) => {
       const urlPreview = listing.url ? listing.url.substring(0, 80) : 'NO URL';
-      this.logger.log(`  - ${listing.name} | URL: ${urlPreview}...`);
+      const isFiltered = excludedUrls.has(listing.url);
+      this.logger.log(`  - ${listing.name} | URL: ${urlPreview}... | FILTERED: ${isFiltered}`);
+      if (isFiltered) {
+        // Find which list it's in
+        if (deniedUrls.has(listing.url)) this.logger.log(`    ^ In DENIED list`);
+        if (shortlistedUrls.has(listing.url)) this.logger.log(`    ^ In SHORTLISTED list`);
+        if (existingUrls.has(listing.url)) this.logger.log(`    ^ In EXISTING candidates`);
+      }
     });
 
     // Filter and convert data

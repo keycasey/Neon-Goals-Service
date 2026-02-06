@@ -441,51 +441,50 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
                         location = location_elem.inner_text().strip()
                         break
 
-                # Link - AutoTrader listings always have a link, find it robustly
+                # Link - AutoTrader listings always have a link
+                # HTML structure: <a href="..."><h2 data-cmp="subheading">TITLE</h2></a>
+                # The anchor wraps the h2, so we need to find h2 first, then get parent anchor
                 link = ""
                 try:
-                    # Method 1: Check if card itself is wrapped in anchor
-                    link_href = card.evaluate('(el) => { const link = el.closest("a"); return link ? link.href : null; }')
-                    if link_href:
-                        link = link_href
+                    # Find the h2 element with data-cmp="subheading"
+                    h2_elem = card.query_selector('h2[data-cmp="subheading"]')
 
-                    # Method 2: Look for anchor inside card with href containing /cars-for-sale/vehicle/ or /vehicledetails/
-                    if not link:
-                        links_in_card = card.query_selector_all('a[href*="/cars-for-sale/"], a[href*="vehicledetails"]')
-                        if links_in_card:
-                            link = links_in_card[0].get_attribute('href') or ""
+                    if h2_elem:
+                        # Get the parent anchor tag of the h2 element
+                        # The anchor wraps the h2, so we use evaluate to call closest() on the h2
+                        link_result = h2_elem.evaluate('(el) => { const anchor = el.closest("a"); return anchor ? anchor.href : null; }')
+                        if link_result:
+                            link = link_result
+                            logging.error(f"[AutoTrader] Listing {idx}: Found URL via h2 parent anchor: {link[:80]}...")
+                        else:
+                            logging.error(f"[AutoTrader] Listing {idx}: h2 found but no parent anchor")
+                    else:
+                        logging.error(f"[AutoTrader] Listing {idx}: No h2[data-cmp='subheading'] found in card")
 
-                    # Method 3: Any anchor with href inside the card
+                    # Fallback: try finding anchor with vehicle href directly
                     if not link:
-                        all_links = card.query_selector_all('a[href]')
-                        for a in all_links:
-                            href = a.get_attribute('href')
-                            if href and ('autotrader.com' in href or '/cars-for-sale/' in href or 'vehicledetails' in href):
-                                link = href
-                                break
-
-                    # Method 4: Last resort - get any href from card
-                    if not link:
-                        any_link = card.query_selector('a[href]')
-                        if any_link:
-                            link = any_link.get_attribute('href') or ""
+                        fallback_links = card.query_selector_all('a[href*="/cars-for-sale/vehicle/"]')
+                        if fallback_links:
+                            link = fallback_links[0].get_attribute('href') or ""
+                            logging.error(f"[AutoTrader] Listing {idx}: Found URL via fallback (vehicle href)")
 
                 except Exception as e:
                     logging.error(f"[AutoTrader] Error extracting link for listing {idx}: {e}")
 
                 # If still no link, log details for debugging
                 if not link:
-                    card_html = card.evaluate('(el) => el.outerHTML.substring(0, 500)')
-                    logging.error(f"[AutoTrader] No URL found for listing {idx}. Card HTML preview: {card_html}")
+                    logging.error(f"[AutoTrader] Listing {idx}: NO URL FOUND - this should not happen")
                     # Still add the listing - user wants all listings
                     link = f"https://www.autotrader.com/error-no-url-{idx}"
 
                 vehicle = {
-                    "title": title,
+                    "name": title,           # Changed from "title" to "name" for backend compatibility
                     "price": price,
                     "mileage": mileage,
                     "location": location,
-                    "link": link,
+                    "url": link,             # Changed from "link" to "url" for backend compatibility
+                    "image": "",            # Will be filled by backend if missing
+                    "retailer": "AutoTrader",  # Explicit retailer name
                     "source": "autotrader"
                 }
 

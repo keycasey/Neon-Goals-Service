@@ -399,6 +399,18 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
                     price = 0
                     stock_number = ''
 
+                # Extract URL from link element if stock_number not available
+                url = ''
+                if stock_number:
+                    url = f"https://www.carmax.com/car/{stock_number}"
+                else:
+                    # Fallback: get URL directly from link element
+                    link_elem = await tile.query_selector('a[href*="/car/"]')
+                    if link_elem:
+                        url = await link_elem.get_attribute('href') or ''
+                        if url and not url.startswith('http'):
+                            url = f"https://www.carmax.com{url}"
+
                 # Get the full vehicle name from the tile text
                 # The link element has the full name with trim (e.g., "2024 GMC Sierra 3500 Denali Ultimate")
                 # But inner_text() might return split text, so we need to clean it up
@@ -434,9 +446,6 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
                 image = ''
                 if img_elem:
                     image = await img_elem.get_attribute('src') or ''
-
-                # Construct URL from stock number
-                url = f"https://www.carmax.com/car/{stock_number}" if stock_number else ''
 
                 # Get location (try multiple approaches)
                 location = 'CarMax'
