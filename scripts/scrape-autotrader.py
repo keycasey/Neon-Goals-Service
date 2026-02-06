@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
-AutoTrader scraper using Camoufox with VPN rotation support.
+AutoTrader scraper using Camoufox.
 
 Accepts structured query format (from parse_vehicle_query.py) and
 converts it to AutoTrader-specific parameters via the adapter function.
 
 Features:
-- VPN rotation when bot detection is triggered
-- Automatic retry with IP rotation
 - Camoufox anti-detection browser
+- Bot detection returns None for worker retry with VPN
 """
 import json
 import os
@@ -16,8 +15,6 @@ import sys
 import tempfile
 import logging
 import re
-import random
-import time
 from pathlib import Path
 from typing import Dict, Optional, List
 
@@ -37,26 +34,6 @@ try:
     CAMOUFOX_AVAILABLE = True
 except ImportError:
     CAMOUFOX_AVAILABLE = False
-
-# Try to import VPN manager
-try:
-    from vpn_manager import create_vpn_manager
-    VPN_AVAILABLE = True
-except ImportError:
-    VPN_AVAILABLE = False
-
-# Global VPN manager instance
-_vpn_manager = None
-_max_vpn_rotations = 3
-
-
-def get_vpn_manager():
-    """Get or create the global VPN manager instance."""
-    global _vpn_manager
-    if _vpn_manager is None and VPN_AVAILABLE:
-        # gilbert has 5 WireGuard configs (v1.conf through v5.conf)
-        _vpn_manager = create_vpn_manager(total_configs=5, config_prefix="v")
-    return _vpn_manager
 
 
 def adapt_structured_to_autotrader(structured: dict) -> str:
@@ -507,91 +484,48 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
 
     return results
 
-def scrape_autotrader(query: str, max_results: int = 10, cdp_url: str = "http://localhost:9222", enable_vpn: bool = True):
+def scrape_autotrader(query: str, max_results: int = 10, cdp_url: str = "http://localhost:9222", enable_vpn: bool = False):
     """
-    Main scrape function with VPN rotation support.
+    Main scrape function.
+
+    VPN is now handled by the worker process. This scraper returns:
+    - List of results on success
+    - None on bot detection (worker will retry with VPN)
 
     Args:
         query: Search URL or structured query
         max_results: Maximum number of results to return
         cdp_url: CDP URL (not used, kept for compatibility)
-        enable_vpn: Whether to use VPN rotation (default: True)
+        enable_vpn: Ignored (worker handles VPN)
 
     Returns:
-        List of vehicle listings
+        List of vehicle listings, or None if bot detected
     """
-    global _max_vpn_rotations
-
     # If Camoufox is not available, fall back to CDP
     if not CAMOUFOX_AVAILABLE:
         logging.error(f"[AutoTrader] Camoufox not available, falling back to CDP...")
-        # CDP doesn't support VPN rotation, just try once
         return scrape_with_playwright_cdp(query, max_results, cdp_url)
 
-    # Initialize VPN if enabled
-    vpn = get_vpn_manager() if enable_vpn else None
-    if vpn and vpn.vpn_enabled is False:
-        # Start with VPN enabled
-        logging.error(f"[AutoTrader] Starting VPN for scraping...")
-        if not vpn.rotate_vpn():
-            logging.error(f"[AutoTrader] Failed to acquire VPN lock, continuing without VPN...")
-
-    # Try scraping with VPN rotation on bot detection
-    # Systematically try different OS fingerprints
-    os_options = ['windows', 'macos', 'linux']
-
-    for attempt in range(_max_vpn_rotations + 1):
-        os_choice = os_options[attempt % len(os_options)]
-        logging.error(f"[AutoTrader] Scrape attempt {attempt + 1}/{_max_vpn_rotations + 1} (OS: {os_choice})")
-
-        result = scrape_with_camoufox(query, max_results, os_choice=os_choice)
-
-        # Success (scraping completed) - return results
-        # result is not None means scraping succeeded (even if empty list)
-        # result is None means bot detected
-        if result is not None:
-            if vpn:
-                logging.error(f"[AutoTrader] Got {len(result)} results")
-            return result
-
-        # Bot detected (result is None) - rotate VPN and retry
-        if result is None and vpn:
-            logging.error(f"[AutoTrader] Bot detected, rotating VPN...")
-            if not vpn.rotate_vpn():
-                logging.error(f"[AutoTrader] Failed to acquire VPN lock for rotation, giving up...")
-                break
-            time.sleep(3)  # Give VPN time to settle
-        elif result is None and not vpn:
-            # No VPN available and bot detected
-            logging.error(f"[AutoTrader] Bot detected but VPN not available - giving up")
-            break
-
-    # If we get here, all attempts failed
-    logging.error(f"[AutoTrader] All {_max_vpn_rotations + 1} attempts failed")
-    return []
+    # Try scraping with Camoufox
+    # Bot detection returns None for worker to retry with VPN
+    return scrape_with_camoufox(query, max_results, os_choice='windows')
 
 
 def main():
     if len(sys.argv) < 2:
         print(json.dumps({
-            "error": "Usage: scrape-autotrader.py <URL or search query or structured> [max_results] [cdp_url] [--no-vpn]",
+            "error": "Usage: scrape-autotrader.py <URL or search query or structured> [max_results]",
             "examples": [
                 "scrape-autotrader.py 'GMC Sierra Denali black'",
                 "scrape-autotrader.py 'https://www.autotrader.com/cars-for-sale/...'",
-                "scrape-autotrader.py '{\"structured\": {...}}'  # From parse_vehicle_query.py",
-                "scrape-autotrader.py '{\"structured\": {...}}' 10 '' --no-vpn  # Disable VPN"
+                "scrape-autotrader.py '{\"structured\": {...}}'  # From parse_vehicle_query.py"
             ],
-            "note": "VPN rotation is enabled by default. Use --no-vpn to disable.",
-            "vpn": "Requires WireGuard configs in /etc/wireguard/ and sudo access."
+            "note": "VPN retry is handled by the worker process. This scraper returns None on bot detection."
         }))
         sys.exit(1)
 
     query_input = sys.argv[1]
     max_results = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-    cdp_url = sys.argv[3] if len(sys.argv) > 3 else "http://localhost:9222"
-
-    # Check for --no-vpn flag
-    enable_vpn = '--no-vpn' not in sys.argv
 
     # Parse input to determine format
     query = query_input
@@ -612,14 +546,7 @@ def main():
         query = query_input
 
     try:
-        result = scrape_autotrader(query, max_results, cdp_url, enable_vpn=enable_vpn)
-
-        # Cleanup: Disable VPN after scraping
-        if enable_vpn:
-            vpn = get_vpn_manager()
-            if vpn:
-                logging.error(f"[AutoTrader] Cleaning up VPN...")
-                vpn.disable_vpn()
+        result = scrape_autotrader(query, max_results)
 
         if not result:
             print(json.dumps({"error": f"No AutoTrader listings found for '{query}'"}))
@@ -633,12 +560,6 @@ def main():
                 f.write(output)
                 f.flush()
     except Exception as e:
-        # Cleanup on error
-        if enable_vpn:
-            vpn = get_vpn_manager()
-            if vpn:
-                vpn.disable_vpn()
-
         print(json.dumps({"error": str(e)}))
         sys.stdout.flush()
         import traceback
