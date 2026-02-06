@@ -21,6 +21,9 @@ logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=sys.stderr
 from camoufox.async_api import AsyncCamoufox
 from dotenv import load_dotenv
 
+# Import model name mappings
+from model_mappings import normalize_models_for_site
+
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
@@ -50,6 +53,8 @@ def adapt_structured_to_carmax(structured: dict) -> dict:
     makes = structured.get('makes', [])
     models = structured.get('models', [])
     if makes and models:
+        # Normalize model names for CarMax (e.g., Sierra 3500HD -> Sierra 3500)
+        models = normalize_models_for_site(models, 'carmax')
         # Ensure equal length - zip to pairs
         min_len = min(len(makes), len(models))
         params['makes'] = makes[:min_len]

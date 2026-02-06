@@ -19,6 +19,9 @@ logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=sys.stderr
 from camoufox.async_api import AsyncCamoufox
 from dotenv import load_dotenv
 
+# Import model name mappings
+from model_mappings import normalize_model_for_site
+
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
@@ -62,9 +65,11 @@ def adapt_structured_to_carvana_interactive(structured: dict) -> dict:
     if structured.get('makes'):
         params['make'] = structured['makes'][0]
 
-    # Model (take first if multiple)
+    # Model (take first if multiple, normalize for Carvana)
     if structured.get('models'):
-        params['model'] = structured['models'][0]
+        model = structured['models'][0]
+        # Normalize model name for Carvana (e.g., Sierra 3500HD -> Sierra 3500)
+        params['model'] = normalize_model_for_site(model, 'carvana')
 
     # Trims (Carvana interactive supports list of trims)
     if structured.get('trims'):
