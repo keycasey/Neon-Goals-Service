@@ -5,6 +5,8 @@ VPN Manager for WireGuard configuration rotation.
 Manages WireGuard VPN connections for scraping, allowing IP rotation
 when bot detection is detected or for distributing load across multiple IPs.
 
+Uses file locking to prevent multiple processes from using VPN simultaneously.
+
 Usage:
     vpn = VPNManager(total_configs=50)
 
@@ -23,12 +25,17 @@ import subprocess
 import random
 import time
 import logging
+import fcntl
+import os
 
 logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=__import__('sys').stderr)
 
+# Lock file to prevent concurrent VPN usage
+VPN_LOCK_FILE = "/tmp/vpn_manager.lock"
+
 
 class VPNManager:
-    """Manages WireGuard VPN configuration rotation."""
+    """Manages WireGuard VPN configuration rotation with file locking."""
 
     def __init__(self, total_configs=50, config_dir="/etc/wireguard", config_prefix="v"):
         """
@@ -44,6 +51,60 @@ class VPNManager:
         self.config_prefix = config_prefix
         self.current_interface = None
         self.vpn_enabled = False
+        self.lock_file = None
+        self._lock_held = False
+
+    def _acquire_lock(self, timeout=60):
+        """
+        Acquire exclusive lock to prevent concurrent VPN usage.
+
+        Args:
+            timeout: Maximum seconds to wait for lock (default 60)
+
+        Returns:
+            True if lock acquired, False if timeout
+        """
+        if self._lock_held:
+            return True  # Already holding lock
+
+        try:
+            self.lock_file = open(VPN_LOCK_FILE, 'w')
+            # Try to acquire exclusive lock (non-blocking)
+            fcntl.lockf(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._lock_held = True
+            logging.error(f"[VPN] Acquired VPN lock (PID: {os.getpid()})")
+            return True
+        except IOError:
+            # Lock is held by another process
+            logging.error(f"[VPN] VPN lock held by another process, waiting...")
+            # Try again with blocking mode and timeout
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    time.sleep(0.5)
+                    self.lock_file = open(VPN_LOCK_FILE, 'w')
+                    fcntl.lockf(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self._lock_held = True
+                    logging.error(f"[VPN] Acquired VPN lock after waiting (PID: {os.getpid()})")
+                    return True
+                except IOError:
+                    continue
+            logging.error(f"[VPN] Timeout waiting for VPN lock")
+            return False
+
+    def _release_lock(self):
+        """Release the VPN lock."""
+        if self.lock_file and self._lock_held:
+            try:
+                fcntl.lockf(self.lock_file, fcntl.LOCK_UN)
+                self.lock_file.close()
+                self._lock_held = False
+                logging.error(f"[VPN] Released VPN lock (PID: {os.getpid()})")
+            except Exception as e:
+                logging.error(f"[VPN] Error releasing lock: {e}")
+            finally:
+                self.lock_file = None
+                self._lock_held = False
 
     def disable_vpn(self):
         """Shut down any active WireGuard interface we started."""
@@ -60,49 +121,75 @@ class VPNManager:
                 logging.error(f"[VPN] Error stopping VPN: {result.stderr}")
             self.current_interface = None
             self.vpn_enabled = False
+            # Release lock after disabling VPN
+            self._release_lock()
         else:
             logging.error(f"[VPN] No active VPN to disable")
 
     def rotate_vpn(self):
-        """Pick a random config and switch to it."""
-        # Disable the old one first
-        self.disable_vpn()
+        """Pick a random config and switch to it (with locking)."""
+        # Acquire lock before rotating
+        if not self._acquire_lock(timeout=60):
+            logging.error(f"[VPN] Failed to acquire lock for VPN rotation")
+            return False
 
-        # Pick a new random config (1 to total_configs)
-        new_id = random.randint(1, self.total_configs)
-        interface_name = f"{self.config_prefix}{new_id}"
-        config_path = f"{self.config_dir}/{interface_name}.conf"
-
-        logging.error(f"[VPN] Rotating to IP from config: {interface_name}.conf")
-
-        # If interface is already up (from previous runs), bring it down first
         try:
-            subprocess.run(
-                ["sudo", "wg-quick", "down", interface_name],
+            # Disable the old one first
+            if self.current_interface:
+                logging.error(f"[VPN] Stopping VPN: {self.current_interface}...")
+                subprocess.run(
+                    ["sudo", "wg-quick", "down", self.current_interface],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                self.current_interface = None
+                self.vpn_enabled = False
+
+            # Pick a new random config (1 to total_configs)
+            new_id = random.randint(1, self.total_configs)
+            interface_name = f"{self.config_prefix}{new_id}"
+            config_path = f"{self.config_dir}/{interface_name}.conf"
+
+            logging.error(f"[VPN] Rotating to IP from config: {interface_name}.conf")
+
+            # If interface is already up (from previous runs), bring it down first
+            try:
+                subprocess.run(
+                    ["sudo", "wg-quick", "down", interface_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+            except:
+                pass
+
+            # Bring it up
+            result = subprocess.run(
+                ["sudo", "wg-quick", "up", config_path],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=30
             )
-        except:
-            pass
 
-        # Bring it up
-        result = subprocess.run(
-            ["sudo", "wg-quick", "up", config_path],
-            capture_output=True,
-            text=True
-        )
-
-        if result.returncode == 0:
-            # WireGuard interfaces are named after the filename (without .conf)
-            self.current_interface = interface_name
-            self.vpn_enabled = True
-            # Give the network and DNS more time to settle
-            time.sleep(5)
-            logging.error(f"[VPN] VPN rotated successfully to interface {interface_name}")
-        else:
-            logging.error(f"[VPN] Error starting VPN: {result.stderr}")
-            self.vpn_enabled = False
+            if result.returncode == 0:
+                # WireGuard interfaces are named after the filename (without .conf)
+                self.current_interface = interface_name
+                self.vpn_enabled = True
+                # Give the network and DNS more time to settle
+                time.sleep(5)
+                logging.error(f"[VPN] VPN rotated successfully to interface {interface_name}")
+                return True
+            else:
+                logging.error(f"[VPN] Error starting VPN: {result.stderr}")
+                self.vpn_enabled = False
+                # Release lock on failure
+                self._release_lock()
+                return False
+        except Exception as e:
+            logging.error(f"[VPN] Exception during VPN rotation: {e}")
+            self._release_lock()
+            return False
 
     def get_current_ip(self):
         """Get the current public IP address."""

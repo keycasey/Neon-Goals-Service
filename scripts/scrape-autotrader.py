@@ -533,7 +533,8 @@ def scrape_autotrader(query: str, max_results: int = 10, cdp_url: str = "http://
     if vpn and vpn.vpn_enabled is False:
         # Start with VPN enabled
         logging.error(f"[AutoTrader] Starting VPN for scraping...")
-        vpn.rotate_vpn()
+        if not vpn.rotate_vpn():
+            logging.error(f"[AutoTrader] Failed to acquire VPN lock, continuing without VPN...")
 
     # Try scraping with VPN rotation on bot detection
     # Systematically try different OS fingerprints
@@ -556,7 +557,9 @@ def scrape_autotrader(query: str, max_results: int = 10, cdp_url: str = "http://
         # Bot detected (result is None) - rotate VPN and retry
         if result is None and vpn:
             logging.error(f"[AutoTrader] Bot detected, rotating VPN...")
-            vpn.rotate_vpn()
+            if not vpn.rotate_vpn():
+                logging.error(f"[AutoTrader] Failed to acquire VPN lock for rotation, giving up...")
+                break
             time.sleep(3)  # Give VPN time to settle
         elif result is None and not vpn:
             # No VPN available and bot detected
