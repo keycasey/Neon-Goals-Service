@@ -126,6 +126,40 @@ class VPNManager:
         else:
             logging.error(f"[VPN] No active VPN to disable")
 
+    def _disable_all_wireguard_interfaces(self):
+        """
+        Disable ALL active WireGuard interfaces, not just the one we started.
+
+        This is important when a new worker process starts and there might be
+        a VPN interface active from a previous worker. We scan for ALL interfaces
+        matching our config prefix and bring them down.
+        """
+        try:
+            # Get list of all WireGuard interfaces
+            result = subprocess.run(
+                ["sudo", "wg", "show", "interfaces"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode == 0:
+                interfaces = result.stdout.strip().split()
+                logging.error(f"[VPN] Found active WireGuard interfaces: {interfaces}")
+
+                # Bring down all interfaces matching our config prefix
+                for interface in interfaces:
+                    if interface.startswith(self.config_prefix):
+                        logging.error(f"[VPN] Bringing down interface: {interface}")
+                        subprocess.run(
+                            ["sudo", "wg-quick", "down", interface],
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+        except Exception as e:
+            logging.error(f"[VPN] Error scanning for WireGuard interfaces: {e}")
+
     def rotate_vpn(self):
         """Pick a random config and switch to it (with locking)."""
         # Acquire lock before rotating
@@ -134,9 +168,13 @@ class VPNManager:
             return False
 
         try:
-            # Disable the old one first
+            # First, disable ANY active WireGuard interfaces to prevent double VPN
+            # This handles the case where a previous worker left a VPN active
+            self._disable_all_wireguard_interfaces()
+
+            # Also disable our tracked interface if it exists
             if self.current_interface:
-                logging.error(f"[VPN] Stopping VPN: {self.current_interface}...")
+                logging.error(f"[VPN] Stopping tracked VPN: {self.current_interface}...")
                 subprocess.run(
                     ["sudo", "wg-quick", "down", self.current_interface],
                     capture_output=True,
