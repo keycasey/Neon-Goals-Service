@@ -235,14 +235,35 @@ async def main():
     query = query_input
 
     if query_input.strip().startswith('{'):
-        # Structured JSON format from parse_vehicle_query.py
+        # JSON format - either old {"structured": {...}} or new direct format
         try:
             structured_data = json.loads(query_input)
             if 'structured' in structured_data:
-                # Use adapter to convert structured to Carvana query
+                # Old format: Use adapter to convert structured to Carvana query
                 query = adapt_structured_to_carvana(structured_data['structured'])
             else:
-                query = query_input  # Use as-is
+                # New format: Direct Carvana-specific keys from LLM
+                # Expected: {"make":"GMC","model":"Sierra 3500","series":"3500","trims":["Denali Ultimate"],"year":2023}
+                make = structured_data.get('make', '')
+                model = structured_data.get('model', '')
+                series = structured_data.get('series', '')
+                trims = structured_data.get('trims', [])
+                year = structured_data.get('year', '')
+
+                # Build Carvana search query
+                parts = []
+                if year:
+                    parts.append(str(year))
+                if make:
+                    parts.append(make)
+                if model:
+                    parts.append(model)
+                if series and series not in model:
+                    parts.append(series)
+                if trims:
+                    parts.extend(trims)
+
+                query = ' '.join(parts)
         except json.JSONDecodeError:
             query = query_input
     elif not query_input.startswith('http'):

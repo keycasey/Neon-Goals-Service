@@ -163,6 +163,25 @@ The worker runs on a separate server (typically `gilbert`) and:
 5. carvana (interactive)
 ```
 
+#### Scraper Scripts Used by Worker
+
+| Retailer | Script Used | Status | Notes |
+|----------|-------------|--------|-------|
+| **AutoTrader** | `scrape-autotrader.py` | ✅ Working | Uses Playwright, URL-based filtering |
+| **CarGurus** | `scrape-cars-camoufox.py` | ✅ Working | Interactive filter selection, Camoufox |
+| **CarMax** | `scrape-carmax.py` | ⚠️ Issues | URL correct but returns wrong vehicles |
+| **Carvana** | `scrape-carvana-interactive.py` | ⚠️ Partial | Interactive, can't find Sierra 3500HD/Denali Ultimate |
+| **TrueCar** | `scrape-truecar.py` | ⚠️ No Results | URL format or inventory issue |
+
+**Testing Query:** "2023-2024 black gmc sierra 3500HD denali ultimate within 500 miles of 94002 under 100000"
+
+**Test Results (2025-02-07):**
+- AutoTrader: 7 GMC Sierra 3500 results (2024, $79k-$86k) ✅
+- CarGurus: 9 GMC Sierra 3500HD + 1 false positive (Chevy) ✅
+- CarMax: Returns wrong vehicles (Ford Fusion, VW Jetta, etc.) ❌
+- Carvana: Returns mixed results (Sierra 1500, not 3500HD) ❌
+- TrueCar: "No exact matches found" ❌
+
 #### Bot Detection Handling
 
 **Symptom:** "Could not find search box", "Access restricted", or empty results
