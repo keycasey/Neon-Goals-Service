@@ -517,6 +517,20 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                 await page.screenshot(path='/tmp/cargurus-search-results.png')
                 logging.error("Search results screenshot saved")
 
+                # Scroll to bottom to trigger lazy-loading of images
+                logging.error("Scrolling to load all images...")
+                try:
+                    # Scroll to bottom in increments
+                    for _ in range(5):
+                        await page.evaluate('window.scrollBy(0, window.innerHeight)')
+                        await asyncio.sleep(0.5)
+                    # Scroll back to top
+                    await page.evaluate('window.scrollTo(0, 0)')
+                    await asyncio.sleep(2)
+                    logging.error("Scrolling complete, images should be loaded")
+                except Exception as e:
+                    logging.error(f"Scrolling failed: {e}")
+
                 # Check for access restriction
                 page_text = await page.inner_text('body')
                 if any(indicator in page_text.lower() for indicator in ['access is temporarily restricted', 'bot detection', 'please verify you are human']):
@@ -563,9 +577,15 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                             mileage = extract_number(mileage_match.group(1))
 
                         image = ''
+                        # Try img tag first, then fallback to image tag
                         img_elem = await listing.query_selector('img')
                         if img_elem:
                             image = await img_elem.get_attribute('src') or ''
+                        else:
+                            # Some listings use <image> instead of <img>
+                            image_elem = await listing.query_selector('image')
+                            if image_elem:
+                                image = await image_elem.get_attribute('src') or ''
 
                         url = ''
                         tag_name = await listing.evaluate('el => el.tagName')
@@ -689,6 +709,20 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
             except:
                 pass
 
+        # Scroll to bottom to trigger lazy-loading of images
+        logging.error("Scrolling to load all images...")
+        try:
+            # Scroll to bottom in increments
+            for _ in range(5):
+                await page.evaluate('window.scrollBy(0, window.innerHeight)')
+                await asyncio.sleep(0.5)
+            # Scroll back to top
+            await page.evaluate('window.scrollTo(0, 0)')
+            await asyncio.sleep(2)
+            logging.error("Scrolling complete, images should be loaded")
+        except Exception as e:
+            logging.error(f"Scrolling failed: {e}")
+
         # Extract data from listings
         for i, listing in enumerate(listings[:max_results]):
             try:
@@ -715,9 +749,15 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
 
                 # Extract image
                 image = ''
+                # Try img tag first, then fallback to image tag
                 img_elem = await listing.query_selector('img')
                 if img_elem:
                     image = await img_elem.get_attribute('src') or ''
+                else:
+                    # Some listings use <image> instead of <img>
+                    image_elem = await listing.query_selector('image')
+                    if image_elem:
+                        image = await image_elem.get_attribute('src') or ''
 
                 # Extract URL
                 url = ''
