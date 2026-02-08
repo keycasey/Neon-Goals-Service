@@ -360,10 +360,19 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
         tiles = await page.query_selector_all('.kmx-car-tile')
         logging.error(f"[CarMax] Found {len(tiles)} total listings")
 
-        # Note: The recommendations filter was found to be too aggressive - it filtered all results
-        # because the recommendations section wraps all content. For now, return all tiles.
-        filtered_tiles = tiles
-        logging.error(f"[CarMax] Processing {len(filtered_tiles)} listings")
+        # Filter out tiles from the "recommendations" section (similar vehicles)
+        filtered_tiles = []
+        for tile in tiles:
+            # Check if this tile is inside a recommendations section
+            recommendations_section = await tile.evaluate('''
+                (element) => {
+                    let parent = element.closest('section[aria-label="recommendations"]');
+                    return parent !== null;
+                }
+            ''')
+            if not recommendations_section:
+                filtered_tiles.append(tile)
+        logging.error(f"[CarMax] Filtered out {len(tiles) - len(filtered_tiles)} recommendations, processing {len(filtered_tiles)} listings")
 
         # Process filtered tiles
         for i, tile in enumerate(filtered_tiles[:max_results]):
