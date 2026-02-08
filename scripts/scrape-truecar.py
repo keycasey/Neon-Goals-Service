@@ -30,23 +30,54 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
     """
     Convert structured query format to TrueCar-specific parameters.
 
-    The structured format is the universal format output by parse_vehicle_query.py.
-    Each scraper has its own adapter to convert this to scraper-specific params.
+    Handles two formats:
+    1. LLM retailer-specific format: {url_params, path_components, body_params}
+    2. Legacy format: {makes, models, trims, zip, location, year, ...}
 
     TrueCar specifics:
     - Uses mmt[] format for make/model/trim (make_model-series_trim)
-    - Supports yearHigh/yearLow for year ranges
+    - Supports yearHigh/yearLow or yearMin/yearMax for year ranges
     - Uses budget for max price
     - Has bodyStyle, drivetrain, fuelType filters
 
     Args:
-        structured: The structured query dict with keys like makes, models, trims, etc.
+        structured: The structured query dict
 
     Returns:
         TrueCar-specific parameter dict for scrape_truecar()
     """
     params = {}
 
+    # Handle LLM retailer-specific format (new format from parse_vehicle_query.py)
+    if 'url_params' in structured or 'path_components' in structured:
+        path_components = structured.get('path_components', {})
+        url_params = structured.get('url_params', {})
+
+        # Extract make/model/trim from path_components
+        make = path_components.get('make', '')
+        model = path_components.get('model', '')
+        trim = path_components.get('trim', '')
+
+        if make:
+            params['make'] = make
+        if model:
+            params['model'] = model
+        if trim:
+            params['trims'] = [trim]
+
+        # Extract years from url_params (yearMin/yearMax)
+        if url_params.get('yearMin'):
+            params['startYear'] = url_params['yearMin']
+        if url_params.get('yearMax'):
+            params['endYear'] = url_params['yearMax']
+
+        # Extract other params from url_params
+        if url_params.get('maxPrice'):
+            params['budget'] = url_params['maxPrice']
+
+        return params
+
+    # Handle legacy format {makes, models, trims, zip, location, year, ...}
     # Make (take first if multiple - TrueCar only supports single make)
     if structured.get('makes'):
         params['make'] = structured['makes'][0]

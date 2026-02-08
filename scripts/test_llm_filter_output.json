@@ -1,0 +1,103 @@
+{
+  "query": "2023-2024 GMC Sierra 3500HD Denali Ultimate black color",
+  "llm_result": {
+    "query": "2023-2024 GMC Sierra 3500HD Denali Ultimate black color",
+    "retailers": {
+      "autotrader": {
+        "url": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500hd/denali-ultimate?endYear=2024&startYear=2023&color=Black",
+        "filters": {
+          "url_params": {
+            "endYear": "2024",
+            "startYear": "2023",
+            "color": "Black"
+          },
+          "path_components": {
+            "make": "gmc",
+            "model": "sierra-3500hd"
+          },
+          "body_params": {}
+        },
+        "selector_info": {}
+      },
+      "cargurus": {
+        "url": "https://www.cargurus.com/search?make=GMC&model=Sierra+3500HD&yearMin=2023&yearMax=2024&exteriorColor=Black",
+        "filters": {
+          "url_params": {
+            "make": "GMC",
+            "model": "Sierra 3500HD",
+            "yearMin": "2023",
+            "yearMax": "2024",
+            "exteriorColor": "Black"
+          },
+          "path_components": {},
+          "body_params": {}
+        },
+        "selector_info": {}
+      },
+      "carmax": {
+        "url": "https://www.carmax.com/cars/gmc/suv?yearMin=2023&yearMax=2024&exteriorColor=Black",
+        "filters": {
+          "url_params": {
+            "yearMin": "2023",
+            "yearMax": "2024"
+          },
+          "path_components": {
+            "make": "gmc",
+            "bodyType": "suv"
+          },
+          "body_params": {}
+        },
+        "selector_info": {}
+      },
+      "carvana": {
+        "url": "https://www.carvana.com/cars/gmc-sierra-3500hd",
+        "filters": {
+          "url_params": {},
+          "path_components": {
+            "make": "gmc",
+            "model": "sierra-3500hd"
+          },
+          "body_params": {}
+        },
+        "selector_info": {}
+      },
+      "truecar": {
+        "url": "https://www.truecar.com/used-cars-for-sale/listings/?yearMax=2024&yearMin=2023&make=GMC&model=Sierra+3500HD&exteriorColor=Black",
+        "filters": {
+          "url_params": {
+            "yearMax": "2024",
+            "yearMin": "2023",
+            "make": "GMC",
+            "model": "Sierra 3500HD",
+            "exteriorColor": "Black"
+          },
+          "path_components": {},
+          "body_params": {}
+        },
+        "selector_info": {}
+      }
+    }
+  },
+  "verification": {
+    "autotrader": {
+      "status": "success",
+      "adapter_output": "https://www.autotrader.com/cars-for-sale?searchRadius=500"
+    },
+    "cargurus": {
+      "status": "skipped",
+      "reason": "No adapter function or no filters in result"
+    },
+    "carmax": {
+      "status": "success",
+      "adapter_output": {}
+    },
+    "carvana": {
+      "status": "success",
+      "adapter_output": {}
+    },
+    "truecar": {
+      "status": "success",
+      "adapter_output": {}
+    }
+  }
+}

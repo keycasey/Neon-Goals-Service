@@ -126,7 +126,7 @@ export class ConversationSummaryService implements OnModuleInit {
    */
   private async generateSummary(conversationText: string): Promise<string> {
     const response = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-nano',
       messages: [
         {
           role: 'system',
@@ -137,7 +137,6 @@ export class ConversationSummaryService implements OnModuleInit {
           content: `Please summarize this conversation:\n\n${conversationText}`,
         },
       ],
-      temperature: 0.3, // Lower temperature for more focused summaries
       max_tokens: 1000,
     });
 

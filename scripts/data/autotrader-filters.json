@@ -1,11 +1,332 @@
 {
   "version": "1.0",
   "last_updated": "2026-02-06T00:00:00",
-  "note": "AutoTrader uses URL-based filters. Makes and models are discovered dynamically.",
-  "global_filters": {
-    "body_types": ["Convertible", "Coupe", "Hatchback", "Sedan", "SUV", "Truck", "Van", "Wagon"],
-    "fuel_types": ["Diesel", "Electric", "Gas", "Hybrid"],
-    "drivetrains": ["AWD", "4WD", "FWD", "RWD"],
-    "transmissions": ["Automatic", "Manual", "CVT"]
+  "retailer": "AutoTrader",
+  "base_url": "https://www.autotrader.com",
+  "search_path": "/cars-for-sale",
+  "note": "AutoTrader uses URL path for make/model/trim and query params for other filters. Filter options are dynamically loaded.",
+  "url_format": {
+    "pattern": "/cars-for-sale/{make}/{model}/{trim}/{location}?{params}",
+    "example": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali-ultimate/san-mateo-ca?endYear=2024&searchRadius=500",
+    "path_components": {
+      "make": "Vehicle make (lowercase, hyphens for spaces: gmc, ford, chevrolet)",
+      "model": "Vehicle model (lowercase, hyphens for spaces: sierra-3500, f-150)",
+      "trim": "Trim level (lowercase, hyphens for spaces: denali-ultimate, lariat)",
+      "location": "{city}-{state} or zip code (e.g., san-mateo-ca or 94401)"
+    }
+  },
+  "url_parameters": {
+    "searchRadius": "Search radius in miles from location (default: 500)",
+    "zip": "Zip code for location-based search",
+    "startYear": "Minimum model year (e.g., 2020)",
+    "endYear": "Maximum model year (e.g., 2024)",
+    "minPrice": "Minimum price in dollars (e.g., 10000)",
+    "maxPrice": "Maximum price in dollars (e.g., 50000)",
+    "priceDrop": "Show only vehicles with price drops (true/false)",
+    "homeServices": "Purchase options (BUY_ONLINE for online-only)",
+    "vehicleHistoryType": "Vehicle history filters (CLEAN_TITLE,NO_ACCIDENTS,NO_FRAME_DAMAGE)",
+    "driveGroup": "Drivetrain (awd,4wd,fwd,rwd,4x2)",
+    "fuelTypeGroup": "Fuel type (diesel,electric,flex,gas,hybrid)",
+    "intColor": "Interior color (black,gray,beige,brown,etc)",
+    "extColor": "Exterior color (black,white,gray,silver,blue,red,etc)",
+    "bodyStyleGroups": "Body style (coupe,hatchback,sedan,suv,truck,van,wagon,convertible)",
+    "cabType": "Truck cab type (crew cab,extended cab,regular cab)",
+    "bedLength": "Truck bed length (long,short,standard)",
+    "transmission": "Transmission (automatic,manual)",
+    "doors": "Number of doors (2,3,4,5)",
+    "engine": "Engine cylinders (4,6,8,10,12)",
+    "seatCount": "Number of seats (2,4,5,6,7,8)",
+    "marketExtension": "Include deliverable vehicles (on/off)",
+    "dealType": "Deal rating (greatprice,goodprice,fairprice)",
+    "certified": "Certified pre-owned only (true/false)",
+    "sellerType": "Seller type (dealer,private)"
+  },
+  "filters": [
+    {
+      "name": "Location & Delivery",
+      "type": "combined",
+      "url_params": {
+        "zip": "Zip code",
+        "searchRadius": "Radius in miles"
+      },
+      "options": {
+        "homeServices": {
+          "label": "Purchase Online",
+          "value": "BUY_ONLINE"
+        },
+        "marketExtension": {
+          "label": "Include deliverable cars",
+          "value": "on"
+        }
+      }
+    },
+    {
+      "name": "Condition",
+      "type": "chip",
+      "url_param": "certified",
+      "options": [
+        { "label": "Used", "value": "false" },
+        { "label": "Certified Pre-Owned", "value": "true" },
+        { "label": "New", "value": "new" }
+      ]
+    },
+    {
+      "name": "Year",
+      "type": "range",
+      "url_params": {
+        "min": "startYear",
+        "max": "endYear"
+      },
+      "selector": "input[name='startYear'], input[name='endYear']",
+      "note": "Year range filters in query parameters"
+    },
+    {
+      "name": "Price & Payments",
+      "type": "range",
+      "url_params": {
+        "min": "minPrice",
+        "max": "maxPrice"
+      },
+      "selector": "input[min][max]",
+      "note": "Price range in dollars"
+    },
+    {
+      "name": "Make, Model & Trim",
+      "type": "path-based",
+      "url_format": "/cars-for-sale/{make}/{model}/{trim}",
+      "note": "Make, model, and trim are encoded in the URL path, not query parameters",
+      "makes": {
+        "gmc": "GMC",
+        "ford": "Ford",
+        "chevrolet": "Chevrolet",
+        "toyota": "Toyota",
+        "honda": "Honda",
+        "ram": "RAM",
+        "nissan": "Nissan",
+        "jeep": "Jeep",
+        "subaru": "Subaru",
+        "bmw": "BMW"
+      },
+      "example_path": "gmc/sierra-3500/denali-ultimate"
+    },
+    {
+      "name": "Mileage",
+      "type": "range",
+      "url_params": {
+        "min": "minMileage",
+        "max": "maxMileage"
+      },
+      "selector": "input[name='mileage']",
+      "note": "Mileage range filter"
+    },
+    {
+      "name": "Color",
+      "type": "chip",
+      "url_params": {
+        "exterior": "extColor",
+        "interior": "intColor"
+      },
+      "options": {
+        "exterior": [
+          { "label": "Black", "value": "black" },
+          { "label": "White", "value": "white" },
+          { "label": "Gray", "value": "gray" },
+          { "label": "Silver", "value": "silver" },
+          { "label": "Blue", "value": "blue" },
+          { "label": "Red", "value": "red" },
+          { "label": "Green", "value": "green" },
+          { "label": "Brown", "value": "brown" },
+          { "label": "Beige", "value": "beige" },
+          { "label": "Gold", "value": "gold" }
+        ],
+        "interior": [
+          { "label": "Black", "value": "black" },
+          { "label": "Gray", "value": "gray" },
+          { "label": "Beige", "value": "beige" },
+          { "label": "Brown", "value": "brown" },
+          { "label": "Tan", "value": "tan" }
+        ]
+      }
+    },
+    {
+      "name": "Drive Type",
+      "type": "chip",
+      "url_param": "driveGroup",
+      "options": [
+        { "label": "AWD", "value": "awd" },
+        { "label": "4WD", "value": "4wd" },
+        { "label": "4x4", "value": "4x4" },
+        { "label": "FWD", "value": "fwd" },
+        { "label": "RWD", "value": "rwd" },
+        { "label": "4x2", "value": "4x2" }
+      ]
+    },
+    {
+      "name": "Body Style",
+      "type": "chip",
+      "url_param": "bodyStyleGroups",
+      "options": [
+        { "label": "SUV", "value": "suv" },
+        { "label": "Truck", "value": "truck" },
+        { "label": "Sedan", "value": "sedan" },
+        { "label": "Coupe", "value": "coupe" },
+        { "label": "Hatchback", "value": "hatchback" },
+        { "label": "Convertible", "value": "convertible" },
+        { "label": "Van", "value": "van" },
+        { "label": "Wagon", "value": "wagon" }
+      ]
+    },
+    {
+      "name": "Truck Cab Size",
+      "type": "chip",
+      "url_param": "cabType",
+      "options": [
+        { "label": "Crew Cab", "value": "crew cab" },
+        { "label": "Extended Cab", "value": "extended cab" },
+        { "label": "Regular Cab", "value": "regular cab" },
+        { "label": "King Cab", "value": "king cab" },
+        { "label": "Double Cab", "value": "double cab" }
+      ]
+    },
+    {
+      "name": "Truck Bed Length",
+      "type": "chip",
+      "url_param": "bedLength",
+      "options": [
+        { "label": "Long Bed", "value": "long" },
+        { "label": "Short Bed", "value": "short" },
+        { "label": "Standard Bed", "value": "standard" }
+      ]
+    },
+    {
+      "name": "Vehicle History",
+      "type": "chip",
+      "url_param": "vehicleHistoryType",
+      "options": [
+        { "label": "Clean Title", "value": "CLEAN_TITLE" },
+        { "label": "No Accidents", "value": "NO_ACCIDENTS" },
+        { "label": "No Frame Damage", "value": "NO_FRAME_DAMAGE" },
+        { "label": "1 Owner", "value": "ONE_OWNER" }
+      ],
+      "note": "Multiple values can be comma-separated"
+    },
+    {
+      "name": "Features",
+      "type": "chip",
+      "url_param": "features",
+      "options": [
+        { "label": "Navigation", "value": "navigation" },
+        { "label": "Sunroof", "value": "sunroof" },
+        { "label": "Leather Seats", "value": "leather" },
+        { "label": "Backup Camera", "value": "backup camera" },
+        { "label": "Bluetooth", "value": "bluetooth" },
+        { "label": "Heated Seats", "value": "heated seats" },
+        { "label": "Apple CarPlay", "value": "carplay" },
+        { "label": "Android Auto", "value": "android auto" },
+        { "label": "Remote Start", "value": "remote start" },
+        { "label": "360° Camera", "value": "360 camera" }
+      ]
+    },
+    {
+      "name": "Fuel Type",
+      "type": "chip",
+      "url_param": "fuelTypeGroup",
+      "options": [
+        { "label": "Gasoline", "value": "gas" },
+        { "label": "Diesel", "value": "diesel" },
+        { "label": "Electric", "value": "electric" },
+        { "label": "Hybrid", "value": "hybrid" },
+        { "label": "Flex Fuel", "value": "flex" },
+        { "label": "Plug-in Hybrid", "value": "plug-in hybrid" }
+      ]
+    },
+    {
+      "name": "Fuel Economy",
+      "type": "range",
+      "url_param": "fuelEconomy",
+      "note": "MPG range filter"
+    },
+    {
+      "name": "Transmission",
+      "type": "chip",
+      "url_param": "transmission",
+      "options": [
+        { "label": "Automatic", "value": "automatic" },
+        { "label": "Manual", "value": "manual" },
+        { "label": "CVT", "value": "cvt" }
+      ]
+    },
+    {
+      "name": "Cylinders",
+      "type": "chip",
+      "url_param": "engine",
+      "options": [
+        { "label": "4 Cylinder", "value": "4" },
+        { "label": "6 Cylinder", "value": "6" },
+        { "label": "8 Cylinder", "value": "8" },
+        { "label": "10 Cylinder", "value": "10" },
+        { "label": "12 Cylinder", "value": "12" }
+      ]
+    },
+    {
+      "name": "Number of Seats",
+      "type": "chip",
+      "url_param": "seatCount",
+      "options": [
+        { "label": "2 Seats", "value": "2" },
+        { "label": "4 Seats", "value": "4" },
+        { "label": "5 Seats", "value": "5" },
+        { "label": "6 Seats", "value": "6" },
+        { "label": "7 Seats", "value": "7" },
+        { "label": "8 Seats", "value": "8" }
+      ]
+    },
+    {
+      "name": "Number of Doors",
+      "type": "chip",
+      "url_param": "doors",
+      "options": [
+        { "label": "2 Doors", "value": "2" },
+        { "label": "3 Doors", "value": "3" },
+        { "label": "4 Doors", "value": "4" },
+        { "label": "5 Doors", "value": "5" }
+      ]
+    },
+    {
+      "name": "Deal Rating",
+      "type": "chip",
+      "url_param": "dealType",
+      "options": [
+        { "label": "Great Price", "value": "greatprice" },
+        { "label": "Good Price", "value": "goodprice" },
+        { "label": "Fair Price", "value": "fairprice" }
+      ]
+    },
+    {
+      "name": "Seller Type",
+      "type": "chip",
+      "url_param": "sellerType",
+      "options": [
+        { "label": "Dealer", "value": "dealer" },
+        { "label": "Private Seller", "value": "private" }
+      ]
+    }
+  ],
+  "example_urls": {
+    "basic_search": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali?searchRadius=500",
+    "with_price_range": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali?minPrice=20000&maxPrice=60000&searchRadius=500",
+    "with_year_range": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali?startYear=2020&endYear=2024&searchRadius=500",
+    "with_location": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali/san-mateo-ca?searchRadius=50",
+    "with_drivetrain": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali?driveGroup=4wd&searchRadius=500",
+    "online_only": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali?homeServices=BUY_ONLINE&searchRadius=500",
+    "clean_title": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali?vehicleHistoryType=CLEAN_TITLE,NO_ACCIDENTS&searchRadius=500"
+  },
+  "selector_patterns": {
+    "filter_button": "#filter-btn-handler",
+    "filter_drawer": "[role='dialog']:not(.ot-pc-container)",
+    "filter_section": "button[class*='accordion']",
+    "filter_chip": "[class*='chip-filter']",
+    "checkbox_input": "input[type='checkbox']",
+    "accordion_trigger": "button[aria-expanded][class*='accordion']"
   }
 }

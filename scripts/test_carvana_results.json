@@ -1,0 +1,47 @@
+[
+  {
+    "name": "2020 GMC Sierra 3500 HD Crew Cab",
+    "price": 44990,
+    "mileage": 39000,
+    "image": "https://vexgateway.fastly.carvana.io/2004435816/standardizedHero.jpg?width=500",
+    "retailer": "Carvana",
+    "url": "https://www.carvana.com/vehicle/4142020?refSource=srp",
+    "location": "Carvana"
+  },
+  {
+    "name": "2023 GMC Sierra 3500 HD Crew Cab",
+    "price": 43590,
+    "mileage": 54000,
+    "image": "https://vexgateway.fastly.carvana.io/2004349662/standardizedHero.jpg?width=500",
+    "retailer": "Carvana",
+    "url": "https://www.carvana.com/vehicle/4072662?refSource=srp",
+    "location": "Carvana"
+  },
+  {
+    "name": "2024 GMC Sierra 3500 HD Regular Cab",
+    "price": 44590,
+    "mileage": 18000,
+    "image": "https://vexgateway.fastly.carvana.io/2004223841/standardizedHero.jpg?width=500",
+    "retailer": "Carvana",
+    "url": "https://www.carvana.com/vehicle/3989688?refSource=srp",
+    "location": "Carvana"
+  },
+  {
+    "name": "2025 GMC Sierra 3500 HD Regular Cab",
+    "price": 51990,
+    "mileage": 9000,
+    "image": "https://vexgateway.fastly.carvana.io/2004410004/standardizedHero.jpg?width=500",
+    "retailer": "Carvana",
+    "url": "https://www.carvana.com/vehicle/4114262?refSource=srp",
+    "location": "Carvana"
+  },
+  {
+    "name": "2015 GMC Sierra 3500 HD Crew Cab",
+    "price": 40990,
+    "mileage": 62000,
+    "image": "https://vexstockimages.fastly.carvana.io/stockimages/2015_GMC_SIERRA%203500%20HD%20CREW%20CAB_DENALI%20PICKUP%204D%208%20FT_BLACK_stock_mobile_640x640.png?v=1730397256.290&width=500",
+    "retailer": "Carvana",
+    "url": "https://www.carvana.com/vehicle/4094591?refSource=srp",
+    "location": "Carvana"
+  }
+]

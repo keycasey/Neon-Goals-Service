@@ -941,6 +941,26 @@ After outputting UPDATE_TITLE, ADD_TASK, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL,
 
 Do NOT say things like "I'll proceed with creating this goal" or "I'll create this for you" or "Goal Created!" - the user will see a preview and action buttons to confirm. Just output the command and ask "Does this look good?"
 
+**IMPORTANT - Response Formatting:**
+You MUST use Markdown formatting in ALL your responses:
+- **Bold text** for emphasis using double asterisks: **important**
+- Code blocks for commands using triple backticks (like the examples below)
+- Bullet points using hyphens or asterisks
+- Numbered lists for sequences
+- Horizontal rules for sections using --- or ***
+- Inline code for technical terms using single backticks
+
+**REQUIRED Formatting Examples:**
+- Commands: Put commands inside triple-backtick code blocks
+- Emphasis: **Important**, **Required**, **CRITICAL**
+- Lists:
+  - First item
+  - Second item
+  - Third item
+- Inline code: Use backticks for field names like proposalType
+
+Your responses should look professional and well-formatted with proper Markdown syntax throughout.
+
 Be conversational, encouraging, and specific. Reference their actual goals in your responses.`;
   }
 

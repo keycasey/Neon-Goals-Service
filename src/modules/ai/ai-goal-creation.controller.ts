@@ -10,7 +10,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @Controller('ai/goal-chat')
 @UseGuards(JwtOrApiKeyGuard)
 export class AiGoalChatController {
-  constructor(private openaiService: OpenAIService) {}
+  constructor(
+    private openaiService: OpenAIService,
+    private prisma: PrismaService,
+  ) {}
 
   /**
    * Continue conversation for an existing goal
@@ -22,15 +25,39 @@ export class AiGoalChatController {
     @CurrentUser('userId') userId: string,
     @Body() body: { message: string },
   ) {
+    // Fetch the goal from database to get full context including goalId
+    const goal = await this.prisma.goal.findUnique({
+      where: { id: goalId },
+      include: {
+        itemData: true,
+        financeData: true,
+        actionData: true,
+      },
+    });
+
+    if (!goal) {
+      return {
+        error: 'Goal not found',
+      };
+    }
+
+    // Build goal context with all required fields including id
+    const goalContext = {
+      id: goal.id,
+      type: goal.type,
+      title: goal.title,
+      description: goal.description,
+      // Include type-specific data
+      ...(goal.itemData && { itemData: goal.itemData }),
+      ...(goal.financeData && { financeData: goal.financeData }),
+      ...(goal.actionData && { actionData: goal.actionData }),
+    };
+
     const result = await this.openaiService.continueGoalConversation(
       goalId,
       userId,
       body.message,
-      {
-        type: 'item', // Will be populated by service
-        title: '',
-        description: '',
-      },
+      goalContext,
     );
 
     // Return both content and commands
@@ -38,6 +65,9 @@ export class AiGoalChatController {
     return {
       content: result.content,
       commands: result.commands,
+      goalPreview: result.goalPreview,
+      awaitingConfirmation: result.awaitingConfirmation,
+      proposalType: result.proposalType,
     };
   }
 }

@@ -1,0 +1,394 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-02-06T00:00:00",
+  "retailer": "CarGurus",
+  "base_url": "https://www.cargurus.com",
+  "search_path": "/search",
+  "note": "CarGurus uses button-based checkbox filters with aria-controls. Filters are applied via client-side but reflected in URL.",
+  "url_parameters": {
+    "zip": "Zip code",
+    "distance": "Search radius in miles",
+    "makeModelTrimPaths": "Make/model/trim (format: m26 for GMC, m26/d973 for Sierra 3500HD)",
+    "wheelSystems": "Drivetrain (FOUR_WHEEL_DRIVE, FOUR_BY_TWO)",
+    "transmission": "Transmission (AUTOMATIC)",
+    "fuelType": "Fuel type (DIESEL, GASOLINE, FLEX_FUEL_VEHICLE, BIODIESEL)",
+    "exteriorColor": "Exterior color (BLACK, BLUE, GRAY, RED, SILVER, WHITE, UNKNOWN)",
+    "interiorColor": "Interior color (BLACK, BROWN, GRAY, UNKNOWN)",
+    "truckCabin": "Cabin size (CREW, EXTENDED, REGULAR)",
+    "truckBed": "Bed size (LONG, REGULAR, SHORT)",
+    "vehicleCondition": "Condition (USED=2, FIRST_PARTY=8, THIRD_PARTY=9)",
+    "minPrice": "Minimum price",
+    "maxPrice": "Maximum price",
+    "minMileage": "Minimum mileage",
+    "maxMileage": "Maximum mileage",
+    "minYear": "Minimum year",
+    "maxYear": "Maximum year",
+    "buyOnlineType": "Online shopping (DIGITAL_DEAL)",
+    "sellerHierarchyType": "Seller type (FRANCHISE_DEALER, PAYING_DEALER)",
+    "dealRating": "Deal rating (GREAT_PRICE, GOOD_PRICE, FAIR_PRICE, POOR_PRICE, OVERPRICED, OUTLIER, NA)",
+    "sortType": "Sort order (BEST_MATCH, PRICE_DESC, PRICE_ASC, MILEAGE_DESC, MILEAGE_ASC, YEAR_DESC)",
+    "sortDirection": "Sort direction (ASC, DESC)"
+  },
+  "filters": [
+    {
+      "name": "Make & Model",
+      "trigger_id": "MakeAndModel-accordion-trigger",
+      "content_id": "MakeAndModel-accordion-content",
+      "type": "hierarchical-checkbox",
+      "url_param": "makeModelTrimPaths",
+      "selector": "button[id^='FILTER.MAKE_MODEL.']",
+      "options": [
+        { "label": "Acura", "value": "m4", "id": "FILTER.MAKE_MODEL.Acura" },
+        { "label": "Alfa Romeo", "value": "m124", "id": "FILTER.MAKE_MODEL.Alfa_Romeo" },
+        { "label": "Audi", "value": "m19", "id": "FILTER.MAKE_MODEL.Audi" },
+        { "label": "BMW", "value": "m3", "id": "FILTER.MAKE_MODEL.BMW" },
+        { "label": "Buick", "value": "m21", "id": "FILTER.MAKE_MODEL.Buick" },
+        { "label": "Cadillac", "value": "m22", "id": "FILTER.MAKE_MODEL.Cadillac" },
+        { "label": "Chevrolet", "value": "m1", "id": "FILTER.MAKE_MODEL.Chevrolet" },
+        { "label": "Chrysler", "value": "m23", "id": "FILTER.MAKE_MODEL.Chrysler" },
+        { "label": "Dodge", "value": "m24", "id": "FILTER.MAKE_MODEL.Dodge" },
+        { "label": "Ford", "value": "m2", "id": "FILTER.MAKE_MODEL.Ford" },
+        { "label": "GMC", "value": "m26", "id": "FILTER.MAKE_MODEL.GMC" },
+        { "label": "Honda", "value": "m6", "id": "FILTER.MAKE_MODEL.Honda" },
+        { "label": "Hyundai", "value": "m28", "id": "FILTER.MAKE_MODEL.Hyundai" },
+        { "label": "INFINITI", "value": "m84", "id": "FILTER.MAKE_MODEL.INFINITI" },
+        { "label": "Jaguar", "value": "m31", "id": "FILTER.MAKE_MODEL.Jaguar" },
+        { "label": "Jeep", "value": "m32", "id": "FILTER.MAKE_MODEL.Jeep" },
+        { "label": "Kia", "value": "m33", "id": "FILTER.MAKE_MODEL.Kia" },
+        { "label": "Land Rover", "value": "m35", "id": "FILTER.MAKE_MODEL.Land_Rover" },
+        { "label": "Lexus", "value": "m37", "id": "FILTER.MAKE_MODEL.Lexus" },
+        { "label": "Lincoln", "value": "m38", "id": "FILTER.MAKE_MODEL.Lincoln" },
+        { "label": "Mazda", "value": "m42", "id": "FILTER.MAKE_MODEL.Mazda" },
+        { "label": "Mercedes-Benz", "value": "m43", "id": "FILTER.MAKE_MODEL.Mercedes-Benz" },
+        { "label": "Nissan", "value": "m12", "id": "FILTER.MAKE_MODEL.Nissan" },
+        { "label": "RAM", "value": "m191", "id": "FILTER.MAKE_MODEL.RAM" },
+        { "label": "Subaru", "value": "m53", "id": "FILTER.MAKE_MODEL.Subaru" },
+        { "label": "Tesla", "value": "m112", "id": "FILTER.MAKE_MODEL.Tesla" },
+        { "label": "Toyota", "value": "m7", "id": "FILTER.MAKE_MODEL.Toyota" },
+        { "label": "Volkswagen", "value": "m55", "id": "FILTER.MAKE_MODEL.Volkswagen" },
+        { "label": "Volvo", "value": "m56", "id": "FILTER.MAKE_MODEL.Volvo" }
+      ],
+      "note": "Models are nested under makes with format m{make_id}/d{model_id}"
+    },
+    {
+      "name": "Price",
+      "trigger_id": "PriceAndMonthlyPayment-accordion-trigger",
+      "content_id": "PriceAndMonthlyPayment-accordion-content",
+      "type": "range-input",
+      "url_params": {
+        "min": "minPrice",
+        "max": "maxPrice"
+      },
+      "selectors": {
+        "min": "input#PRICE-text-input-min",
+        "max": "input#PRICE-text-input-max"
+      },
+      "note": "Text inputs for min/max price in dollars"
+    },
+    {
+      "name": "Mileage",
+      "trigger_id": "Mileage-accordion-trigger",
+      "content_id": "Mileage-accordion-content",
+      "type": "range-slider",
+      "url_params": {
+        "min": "minMileage",
+        "max": "maxMileage"
+      },
+      "selector": "input[type='range']",
+      "note": "Slider-based range filter for mileage"
+    },
+    {
+      "name": "Years",
+      "trigger_id": "Year-accordion-trigger",
+      "content_id": "Year-accordion-content",
+      "type": "select-range",
+      "url_params": {
+        "min": "minYear",
+        "max": "maxYear"
+      },
+      "selectors": {
+        "min": "select#year-filter-min",
+        "max": "select#year-filter-max"
+      },
+      "note": "Dropdown selects for min/max year"
+    },
+    {
+      "name": "Online Shopping Options",
+      "trigger_id": "BuyOnlineType-accordion-trigger",
+      "content_id": "BuyOnlineType-accordion-content",
+      "type": "checkbox",
+      "url_param": "buyOnlineType",
+      "selector": "button[id='FILTER.BUY_ONLINE_TYPE.DIGITAL_DEAL']",
+      "options": [
+        { "label": "Start your purchase online", "value": "DIGITAL_DEAL", "id": "FILTER.BUY_ONLINE_TYPE.DIGITAL_DEAL" }
+      ]
+    },
+    {
+      "name": "Trim",
+      "trigger_id": "ModelAndTrim-accordion-trigger",
+      "content_id": "ModelAndTrim-accordion-content",
+      "type": "checkbox",
+      "url_param": "trim",
+      "selector": "button[id^='FILTER.MODEL_TRIM.']",
+      "note": "Trim options are model-specific, values use format m{make_id}/d{model_id}/{trim}",
+      "example_options": [
+        { "label": "AT4", "value": "m26/d973/AT4" },
+        { "label": "Denali", "value": "m26/d973/Denali" },
+        { "label": "Denali Ultimate", "value": "m26/d973/Denali Ultimate" },
+        { "label": "SLE", "value": "m26/d973/SLE" },
+        { "label": "SLT", "value": "m26/d973/SLT" }
+      ]
+    },
+    {
+      "name": "Exterior Color",
+      "trigger_id": "Colors-accordion-trigger",
+      "content_id": "Colors-accordion-content",
+      "type": "checkbox",
+      "url_param": "exteriorColor",
+      "selector": "button[id^='FILTER.COLOR.']",
+      "options": [
+        { "label": "Black", "value": "BLACK", "id": "FILTER.COLOR.BLACK" },
+        { "label": "Blue", "value": "BLUE", "id": "FILTER.COLOR.BLUE" },
+        { "label": "Gray", "value": "GRAY", "id": "FILTER.COLOR.GRAY" },
+        { "label": "Red", "value": "RED", "id": "FILTER.COLOR.RED" },
+        { "label": "Silver", "value": "SILVER", "id": "FILTER.COLOR.SILVER" },
+        { "label": "White", "value": "WHITE", "id": "FILTER.COLOR.WHITE" }
+      ]
+    },
+    {
+      "name": "Interior Color",
+      "trigger_id": "InteriorColors-accordion-trigger",
+      "content_id": "InteriorColors-accordion-content",
+      "type": "checkbox",
+      "url_param": "interiorColor",
+      "selector": "button[id^='FILTER.INTERIOR_COLOR.']",
+      "options": [
+        { "label": "Black", "value": "BLACK", "id": "FILTER.INTERIOR_COLOR.BLACK" },
+        { "label": "Brown", "value": "BROWN", "id": "FILTER.INTERIOR_COLOR.BROWN" },
+        { "label": "Gray", "value": "GRAY", "id": "FILTER.INTERIOR_COLOR.GRAY" }
+      ]
+    },
+    {
+      "name": "Drivetrain",
+      "trigger_id": "Drivetrain-accordion-trigger",
+      "content_id": "Drivetrain-accordion-content",
+      "type": "checkbox",
+      "url_param": "wheelSystems",
+      "selector": "button[id^='FILTER.DRIVETRAIN.']",
+      "options": [
+        { "label": "Four-Wheel Drive", "value": "FOUR_WHEEL_DRIVE", "id": "FILTER.DRIVETRAIN.FOUR_WHEEL_DRIVE" },
+        { "label": "4X2 (2WD)", "value": "FOUR_BY_TWO", "id": "FILTER.DRIVETRAIN.FOUR_BY_TWO" }
+      ]
+    },
+    {
+      "name": "Transmission",
+      "trigger_id": "Transmission-accordion-trigger",
+      "content_id": "Transmission-accordion-content",
+      "type": "checkbox",
+      "url_param": "transmission",
+      "selector": "button[id^='FILTER.TRANSMISSION_TYPE.']",
+      "options": [
+        { "label": "Automatic", "value": "AUTOMATIC", "id": "FILTER.TRANSMISSION_TYPE.AUTOMATIC" }
+      ]
+    },
+    {
+      "name": "Cabin Size",
+      "trigger_id": "TruckCabin-accordion-trigger",
+      "content_id": "TruckCabin-accordion-content",
+      "type": "checkbox",
+      "url_param": "truckCabin",
+      "selector": "button[id^='FILTER.TRUCK_CABIN.']",
+      "options": [
+        { "label": "Crew Cab", "value": "CREW", "id": "FILTER.TRUCK_CABIN.CREW" },
+        { "label": "Extended Cab", "value": "EXTENDED", "id": "FILTER.TRUCK_CABIN.EXTENDED" },
+        { "label": "Regular Cab", "value": "REGULAR", "id": "FILTER.TRUCK_CABIN.REGULAR" }
+      ]
+    },
+    {
+      "name": "Bed Size",
+      "trigger_id": "TruckBed-accordion-trigger",
+      "content_id": "TruckBed-accordion-content",
+      "type": "checkbox",
+      "url_param": "truckBed",
+      "selector": "button[id^='FILTER.TRUCK_BED.']",
+      "options": [
+        { "label": "Long", "value": "LONG", "id": "FILTER.TRUCK_BED.LONG" },
+        { "label": "Regular", "value": "REGULAR", "id": "FILTER.TRUCK_BED.REGULAR" },
+        { "label": "Short", "value": "SHORT", "id": "FILTER.TRUCK_BED.SHORT" }
+      ]
+    },
+    {
+      "name": "Fuel Type",
+      "trigger_id": "FuelType-accordion-trigger",
+      "content_id": "FuelType-accordion-content",
+      "type": "checkbox",
+      "url_param": "fuelType",
+      "selector": "button[id^='FILTER.FUEL_TYPE.']",
+      "options": [
+        { "label": "Diesel", "value": "DIESEL", "id": "FILTER.FUEL_TYPE.DIESEL" },
+        { "label": "Flex Fuel Vehicle", "value": "FLEX_FUEL_VEHICLE", "id": "FILTER.FUEL_TYPE.FLEX_FUEL_VEHICLE" },
+        { "label": "Gasoline", "value": "GASOLINE", "id": "FILTER.FUEL_TYPE.GASOLINE" },
+        { "label": "Biodiesel", "value": "BIODIESEL", "id": "FILTER.FUEL_TYPE.BIODIESEL" }
+      ]
+    },
+    {
+      "name": "Condition",
+      "trigger_id": "VehicleCondition-accordion-trigger",
+      "content_id": "VehicleCondition-accordion-content",
+      "type": "checkbox",
+      "url_param": "vehicleCondition",
+      "selector": "button[id^='FILTER.VEHICLE_CONDITION.']",
+      "options": [
+        { "label": "Used", "value": "2", "id": "FILTER.VEHICLE_CONDITION.USED" },
+        { "label": "Manufacturer Certified", "value": "8", "id": "FILTER.VEHICLE_CONDITION.FIRST_PARTY" },
+        { "label": "Third-Party Certified", "value": "9", "id": "FILTER.VEHICLE_CONDITION.THIRD_PARTY" }
+      ]
+    },
+    {
+      "name": "Features",
+      "trigger_id": "VehicleOption-accordion-trigger",
+      "content_id": "VehicleOption-accordion-content",
+      "type": "checkbox",
+      "url_param": "vehicleOptions",
+      "selector": "button[id^='FILTER.VEHICLE_OPTION.']",
+      "note": "Feature options use numeric codes",
+      "example_options": [
+        { "label": "Backup Camera", "value": "121", "id": "FILTER.VEHICLE_OPTION.121" },
+        { "label": "Alloy Wheels", "value": "6", "id": "FILTER.VEHICLE_OPTION.6" },
+        { "label": "Bluetooth", "value": "120", "id": "FILTER.VEHICLE_OPTION.120" },
+        { "label": "Heated Seats", "value": "140", "id": "FILTER.VEHICLE_OPTION.140" },
+        { "label": "Apple CarPlay", "value": "142", "id": "FILTER.VEHICLE_OPTION.142" },
+        { "label": "Android Auto", "value": "141", "id": "FILTER.VEHICLE_OPTION.141" },
+        { "label": "Navigation System", "value": "4", "id": "FILTER.VEHICLE_OPTION.4" },
+        { "label": "Remote Start", "value": "122", "id": "FILTER.VEHICLE_OPTION.122" },
+        { "label": "Sunroof/Moonroof", "value": "2", "id": "FILTER.VEHICLE_OPTION.2" },
+        { "label": "Blind Spot Monitoring", "value": "138", "id": "FILTER.VEHICLE_OPTION.138" },
+        { "label": "Leather Seats", "value": "1", "id": "FILTER.VEHICLE_OPTION.1" },
+        { "label": "Adaptive Cruise Control", "value": "132", "id": "FILTER.VEHICLE_OPTION.132" },
+        { "label": "Parking Sensors", "value": "139", "id": "FILTER.VEHICLE_OPTION.139" }
+      ]
+    },
+    {
+      "name": "Number of Seats",
+      "trigger_id": "NumberOfSeats-accordion-trigger",
+      "content_id": "NumberOfSeats-accordion-content",
+      "type": "checkbox",
+      "url_param": "numberOfSeats",
+      "selector": "button[id^='FILTER.NUMBER_OF_SEATS.']",
+      "options": [
+        { "label": "3", "value": "THREE", "id": "FILTER.NUMBER_OF_SEATS.THREE" },
+        { "label": "5", "value": "FIVE", "id": "FILTER.NUMBER_OF_SEATS.FIVE" },
+        { "label": "6", "value": "SIX", "id": "FILTER.NUMBER_OF_SEATS.SIX" }
+      ]
+    },
+    {
+      "name": "Number of Doors",
+      "trigger_id": "NumberOfDoors-accordion-trigger",
+      "content_id": "NumberOfDoors-accordion-content",
+      "type": "checkbox",
+      "url_param": "numberOfDoors",
+      "selector": "button[id^='FILTER.NUMBER_OF_DOORS.']",
+      "options": [
+        { "label": "2", "value": "2", "id": "FILTER.NUMBER_OF_DOORS.2" },
+        { "label": "4", "value": "4", "id": "FILTER.NUMBER_OF_DOORS.4" }
+      ]
+    },
+    {
+      "name": "Deal Rating",
+      "trigger_id": "DealRating-accordion-trigger",
+      "content_id": "DealRating-accordion-content",
+      "type": "checkbox",
+      "url_param": "dealRating",
+      "selector": "button[id^='FILTER.DEAL_RATING.']",
+      "options": [
+        { "label": "Great Deal", "value": "GREAT_PRICE", "id": "FILTER.DEAL_RATING.GREAT_PRICE" },
+        { "label": "Good Deal", "value": "GOOD_PRICE", "id": "FILTER.DEAL_RATING.GOOD_PRICE" },
+        { "label": "Fair Deal", "value": "FAIR_PRICE", "id": "FILTER.DEAL_RATING.FAIR_PRICE" },
+        { "label": "High Priced", "value": "POOR_PRICE", "id": "FILTER.DEAL_RATING.POOR_PRICE" },
+        { "label": "Overpriced", "value": "OVERPRICED", "id": "FILTER.DEAL_RATING.OVERPRICED" }
+      ]
+    },
+    {
+      "name": "Photos",
+      "trigger_id": "HasPhotos-accordion-trigger",
+      "content_id": "HasPhotos-accordion-content",
+      "type": "checkbox",
+      "url_param": "hasPhotos",
+      "selector": "button[id='FILTER.HAS_PHOTOS']",
+      "options": [
+        { "label": "Hide vehicles without photos", "value": "on", "id": "FILTER.HAS_PHOTOS" }
+      ]
+    },
+    {
+      "name": "Vehicle History",
+      "trigger_id": "VEHICLE_HISTORY_OPTIONS-accordion-trigger",
+      "content_id": "VEHICLE_HISTORY_OPTIONS-accordion-content",
+      "type": "checkbox",
+      "url_param": "vehicleHistoryOptions",
+      "selector": "button[id^='FILTER.VEHICLE_HISTORY_OPTIONS.']",
+      "options": [
+        { "label": "Single owner", "value": "SINGLE_OWNER", "id": "FILTER.VEHICLE_HISTORY_OPTIONS.SINGLE_OWNER" },
+        { "label": "No accidents reported", "value": "CLEAN_TITLE", "id": "FILTER.VEHICLE_HISTORY_OPTIONS.CLEAN_TITLE" },
+        { "label": "No frame damage reported", "value": "UNDAMAGED_FRAME", "id": "FILTER.VEHICLE_HISTORY_OPTIONS.UNDAMAGED_FRAME" },
+        { "label": "No theft history reported", "value": "NO_THEFT_HISTORY", "id": "FILTER.VEHICLE_HISTORY_OPTIONS.NO_THEFT_HISTORY" },
+        { "label": "No fleet use", "value": "NON_FLEET", "id": "FILTER.VEHICLE_HISTORY_OPTIONS.NON_FLEET" },
+        { "label": "No salvage history", "value": "NON_SALVAGE", "id": "FILTER.VEHICLE_HISTORY_OPTIONS.NON_SALVAGE" }
+      ]
+    },
+    {
+      "name": "Days on Market",
+      "trigger_id": "DaysOnMarket-accordion-trigger",
+      "content_id": "DaysOnMarket-accordion-content",
+      "type": "range-slider",
+      "url_params": {
+        "min": "minDaysOnMarket",
+        "max": "maxDaysOnMarket"
+      },
+      "selector": "input[type='range']",
+      "note": "Slider-based filter for days listed"
+    },
+    {
+      "name": "Price Drops",
+      "trigger_id": "PriceDrop-accordion-trigger",
+      "content_id": "PriceDrop-accordion-content",
+      "type": "checkbox",
+      "url_param": "recentPriceDrops",
+      "selector": "button[id='FILTER.HAS_RECENT_PRICE_DROPS']",
+      "options": [
+        { "label": "Only show recent price drops", "value": "on", "id": "FILTER.HAS_RECENT_PRICE_DROPS" }
+      ]
+    },
+    {
+      "name": "Dealer Rating",
+      "trigger_id": "AverageDealerRating-accordion-trigger",
+      "content_id": "AverageDealerRating-accordion-content",
+      "type": "radio",
+      "url_param": "averageDealerRatings",
+      "selector": "input[name='AVERAGE_DEALER_RATINGS']",
+      "options": [
+        { "label": "5 Stars", "value": "FIVE_STAR" },
+        { "label": "4+ Stars", "value": "FOUR_STAR_AND_MORE" },
+        { "label": "3+ Stars", "value": "THREE_STAR_AND_MORE" },
+        { "label": "2+ Stars", "value": "TWO_STAR_AND_MORE" }
+      ]
+    },
+    {
+      "name": "Seller Type",
+      "trigger_id": "SellerHierarchyType-accordion-trigger",
+      "content_id": "SellerHierarchyType-accordion-content",
+      "type": "checkbox",
+      "url_param": "sellerHierarchyType",
+      "selector": "button[id^='FILTER.SELLER_HIERARCHY_TYPE.']",
+      "options": [
+        { "label": "Authorized Dealer", "value": "FRANCHISE_DEALER", "id": "FILTER.SELLER_HIERARCHY_TYPE.FRANCHISE_DEALER" },
+        { "label": "CarGurus Partners", "value": "PAYING_DEALER", "id": "FILTER.SELLER_HIERARCHY_TYPE.PAYING_DEALER" }
+      ]
+    }
+  ],
+  "example_urls": {
+    "search_gmc_sierra": "https://www.cargurus.com/search?makeModelTrimPaths=m26,m26/d973&zip=94002",
+    "search_with_drivetrain": "https://www.cargurus.com/search?makeModelTrimPaths=m26,m26/d973&wheelSystems=FOUR_WHEEL_DRIVE",
+    "search_with_price": "https://www.cargurus.com/search?minPrice=20000&maxPrice=50000",
+    "search_with_color": "https://www.cargurus.com/search?exteriorColor=BLACK&interiorColor=BLACK"
+  }
+}

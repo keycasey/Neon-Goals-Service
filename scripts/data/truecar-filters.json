@@ -1,10 +1,296 @@
 {
   "version": "1.0",
   "last_updated": "2026-02-06T00:00:00",
-  "note": "TrueCar uses mmt[] parameter for make/model/trim in URL format.",
-  "global_filters": {
-    "body_styles": ["Convertible", "Coupe", "Hatchback", "Sedan", "SUV", "Truck", "Van", "Wagon"],
-    "fuel_types": ["Diesel", "Electric", "Gas", "Hybrid", "Plug-In Hybrid"],
-    "drivetrains": ["AWD", "4WD", "FWD", "RWD"]
+  "retailer": "TrueCar",
+  "base_url": "https://www.truecar.com",
+  "search_path": "/used-cars-for-sale/listings",
+  "note": "TrueCar uses URL path structure and query parameters. Filters are loaded dynamically.",
+  "url_format": {
+    "pattern": "/used-cars-for-sale/listings/?{params}",
+    "example": "https://www.truecar.com/used-cars-for-sale/listings/?priceMax=25000&mileageMax=30000",
+    "query_params": {
+      "priceMax": "Maximum price in dollars",
+      "priceMin": "Minimum price in dollars",
+      "mileageMax": "Maximum mileage",
+      "mileageMin": "Minimum mileage",
+      "yearMax": "Maximum model year",
+      "yearMin": "Minimum model year",
+      "distance": "Search radius in miles",
+      "zip": "Zip code",
+      "exteriorColor": "Exterior color",
+      "interiorColor": "Interior color",
+      "bodyStyleGroup": "Body style",
+      "fuelTypeGroup": "Fuel type",
+      "driveGroup": "Drivetrain",
+      "transmission": "Transmission",
+      "historyGroup": "Vehicle history (noAccidents, cleanTitle, oneOwner)",
+      "certified": "Certified pre-owned (true/false)",
+      "priceDrop": "Recent price drop only (true/false)"
+    }
+  },
+  "filters": [
+    {
+      "name": "Popular Filters",
+      "type": "preset",
+      "url_params": {
+        "Under $25,000": "priceMax=25000",
+        "Under 30,000 miles": "mileageMax=30000",
+        "One owner & accident-free": "historyGroup=oneOwner,accidentFree",
+        "Tech-savvy": "features=appleCarPlay,androidAuto,backupCamera,navigation",
+        "Smart & safe": "features=adaptiveCruiseControl,blindSpotSystem,laneKeepAssist,parkingSensors",
+        "Eco-friendly & efficient": "fuelTypeGroup=hybrid,plugInHybrid,electric",
+        "All-terrain ready": "driveGroup=awd,fourWheelDrive"
+      },
+      "selector": "[data-test='popularFilters']",
+      "note": "Predefined filter combinations"
+    },
+    {
+      "name": "Vehicle Condition",
+      "type": "radio",
+      "url_param": "condition",
+      "options": [
+        { "label": "Popular", "value": "POPULAR" },
+        { "label": "All", "value": "ALL" }
+      ]
+    },
+    {
+      "name": "Brand / Make",
+      "type": "checkbox",
+      "url_param": "make",
+      "options": [
+        { "label": "Acura", "value": "acura" },
+        { "label": "Audi", "value": "audi" },
+        { "label": "BMW", "value": "bmw" },
+        { "label": "Buick", "value": "buick" },
+        { "label": "Cadillac", "value": "cadillac" },
+        { "label": "Chevrolet", "value": "chevrolet" },
+        { "label": "Dodge", "value": "dodge" },
+        { "label": "Ford", "value": "ford" },
+        { "label": "GMC", "value": "gmc" },
+        { "label": "Honda", "value": "honda" },
+        { "label": "Hyundai", "value": "hyundai" },
+        { "label": "Jeep", "value": "jeep" },
+        { "label": "Kia", "value": "kia" },
+        { "label": "Lexus", "value": "lexus" },
+        { "label": "Mazda", "value": "mazda" },
+        { "label": "Mercedes-Benz", "value": "mercedes-benz" },
+        { "label": "Nissan", "value": "nissan" },
+        { "label": "RAM", "value": "ram" },
+        { "label": "Subaru", "value": "subaru" },
+        { "label": "Toyota", "value": "toyota" },
+        { "label": "Volkswagen", "value": "volkswagen" }
+      ],
+      "selector": "input[value^=':r'][name='']"
+    },
+    {
+      "name": "Price Range",
+      "type": "range",
+      "url_params": {
+        "min": "priceMin",
+        "max": "priceMax"
+      },
+      "selector": "input[name='priceMin'], input[name='priceMax']",
+      "presets": {
+        "Under $15,000": "priceMax=15000",
+        "Under $20,000": "priceMax=20000",
+        "Under $25,000": "priceMax=25000",
+        "Under $30,000": "priceMax=30000",
+        "Under $40,000": "priceMax=40000",
+        "$40,000+": "priceMin=40000"
+      }
+    },
+    {
+      "name": "Mileage",
+      "type": "range",
+      "url_params": {
+        "max": "mileageMax"
+      },
+      "selector": "input[name='mileageMax']",
+      "presets": {
+        "Under 10,000 miles": "mileageMax=10000",
+        "Under 30,000 miles": "mileageMax=30000",
+        "Under 50,000 miles": "mileageMax=50000",
+        "Under 75,000 miles": "mileageMax=75000",
+        "Under 100,000 miles": "mileageMax=100000"
+      }
+    },
+    {
+      "name": "Year Range",
+      "type": "range",
+      "url_params": {
+        "min": "yearMin",
+        "max": "yearMax"
+      },
+      "selector": "input[name='yearMin'], input[name='yearMax']"
+    },
+    {
+      "name": "Condition Details",
+      "type": "checkbox",
+      "url_params": {
+        "certified": "certified",
+        "noAccidents": "historyGroup=noAccidents",
+        "cleanTitle": "historyGroup=cleanTitle",
+        "oneOwner": "historyGroup=oneOwner"
+      },
+      "options": [
+        { "label": "CPO (Certified Pre-Owned)", "value": "true", "param": "certified" },
+        { "label": "No accidents reported", "value": "noAccidents", "param": "historyGroup" },
+        { "label": "Clean title only", "value": "cleanTitle", "param": "historyGroup" },
+        { "label": "One owner", "value": "oneOwner", "param": "historyGroup" }
+      ]
+    },
+    {
+      "name": "Exterior Color",
+      "type": "checkbox",
+      "url_param": "exteriorColor",
+      "options": [
+        { "label": "Black", "value": "black" },
+        { "label": "White", "value": "white" },
+        { "label": "Gray", "value": "gray" },
+        { "label": "Silver", "value": "silver" },
+        { "label": "Blue", "value": "blue" },
+        { "label": "Red", "value": "red" },
+        { "label": "Green", "value": "green" },
+        { "label": "Brown", "value": "brown" },
+        { "label": "Beige", "value": "beige" },
+        { "label": "Gold", "value": "gold" }
+      ]
+    },
+    {
+      "name": "Interior Color",
+      "type": "checkbox",
+      "url_param": "interiorColor",
+      "options": [
+        { "label": "Black", "value": "black" },
+        { "label": "Gray", "value": "gray" },
+        { "label": "Beige", "value": "beige" },
+        { "label": "Brown", "value": "brown" },
+        { "label": "Red", "value": "red" },
+        { "label": "White", "value": "white" },
+        { "label": "Tan", "value": "tan" }
+      ]
+    },
+    {
+      "name": "Body Style",
+      "type": "checkbox",
+      "url_param": "bodyStyleGroup",
+      "options": [
+        { "label": "SUV", "value": "suv" },
+        { "label": "Sedan", "value": "sedan" },
+        { "label": "Truck", "value": "truck" },
+        { "label": "Coupe", "value": "coupe" },
+        { "label": "Hatchback", "value": "hatchback" },
+        { "label": "Convertible", "value": "convertible" },
+        { "label": "Van", "value": "van" },
+        { "label": "Wagon", "value": "wagon" }
+      ]
+    },
+    {
+      "name": "Features",
+      "type": "checkbox",
+      "url_param": "features",
+      "options": [
+        { "label": "Adaptive Cruise Control", "value": "adaptiveCruiseControl" },
+        { "label": "Android Auto", "value": "androidAuto" },
+        { "label": "Apple CarPlay", "value": "appleCarPlay" },
+        { "label": "Backup Camera", "value": "backupCamera" },
+        { "label": "Blind Spot System", "value": "blindSpotSystem" },
+        { "label": "Bluetooth", "value": "bluetooth" },
+        { "label": "Front Cooled Seats", "value": "frontCooledSeats" },
+        { "label": "Front Heated Seats", "value": "frontHeatedSeats" },
+        { "label": "Lane Keep Assist", "value": "laneKeepAssist" },
+        { "label": "Moonroof/Sunroof", "value": "moonroof" },
+        { "label": "Multi-Zone Climate Control", "value": "multiZoneClimateControl" },
+        { "label": "Navigation", "value": "navigation" },
+        { "label": "Parking Sensors", "value": "parkingSensors" },
+        { "label": "Power Trunk/Liftgate", "value": "powerTrunk" },
+        { "label": "Premium Audio", "value": "premiumAudio" },
+        { "label": "Premium Seat Material", "value": "premiumSeats" },
+        { "label": "Premium Wheels", "value": "premiumWheels" },
+        { "label": "Remote Engine Start", "value": "remoteStart" },
+        { "label": "Third Row Seating", "value": "thirdRowSeating" },
+        { "label": "Tow Hitch", "value": "towHitch" }
+      ]
+    },
+    {
+      "name": "Fuel Type",
+      "type": "checkbox",
+      "url_param": "fuelTypeGroup",
+      "options": [
+        { "label": "Gasoline", "value": "gas" },
+        { "label": "Hybrid", "value": "hybrid" },
+        { "label": "Electric (EV)", "value": "electric" },
+        { "label": "Plug-in Hybrid (PHEV)", "value": "plugInHybrid" },
+        { "label": "Diesel", "value": "diesel" },
+        { "label": "Hydrogen", "value": "hydrogen" }
+      ]
+    },
+    {
+      "name": "Transmission",
+      "type": "radio",
+      "url_param": "transmission",
+      "options": [
+        { "label": "Automatic", "value": "automatic" },
+        { "label": "Manual", "value": "manual" }
+      ]
+    },
+    {
+      "name": "Drivetrain",
+      "type": "checkbox",
+      "url_param": "driveGroup",
+      "options": [
+        { "label": "AWD (All-Wheel Drive)", "value": "awd" },
+        { "label": "4WD (Four-Wheel Drive)", "value": "fourWheelDrive" },
+        { "label": "FWD (Front-Wheel Drive)", "value": "fwd" },
+        { "label": "RWD (Rear-Wheel Drive)", "value": "rwd" }
+      ]
+    },
+    {
+      "name": "Price Drop",
+      "type": "checkbox",
+      "url_param": "priceDrop",
+      "options": [
+        { "label": "Recent price drop", "value": "true" }
+      ]
+    },
+    {
+      "name": "Payment Type",
+      "type": "radio",
+      "url_param": "paymentType",
+      "options": [
+        { "label": "Cash", "value": "cash" },
+        { "label": "Finance", "value": "loan" }
+      ]
+    },
+    {
+      "name": "Delivery / Location",
+      "type": "checkbox",
+      "url_params": {
+        "include_non_local": "expandSearch",
+        "distance": "distance",
+        "zip": "zip"
+      },
+      "options": [
+        { "label": "Include non-local listings", "value": "true", "param": "expandSearch" }
+      ]
+    }
+  ],
+  "example_urls": {
+    "basic_search": "https://www.truecar.com/used-cars-for-sale/listings/",
+    "under_25k": "https://www.truecar.com/used-cars-for-sale/listings/?priceMax=25000",
+    "under_30k_miles": "https://www.truecar.com/used-cars-for-sale/listings/?mileageMax=30000",
+    "suv_awd": "https://www.truecar.com/used-cars-for-sale/listings/?bodyStyleGroup=suv&driveGroup=awd",
+    "hybrid_ev": "https://www.truecar.com/used-cars-for-sale/listings/?fuelTypeGroup=hybrid,plugInHybrid,electric",
+    "one_owner_no_accidents": "https://www.truecar.com/used-cars-for-sale/listings/?historyGroup=oneOwner,noAccidents",
+    "price_drop": "https://www.truecar.com/used-cars-for-sale/listings/?priceDrop=true",
+    "with_features": "https://www.truecar.com/used-cars-for-sale/listings/?features=appleCarPlay,androidAuto,backupCamera"
+  },
+  "selector_patterns": {
+    "filter_button": "[data-test='filtersButton']",
+    "filter_section": "fieldset, [class*='filter-section']",
+    "checkbox_input": "input[type='checkbox']",
+    "radio_input": "input[type='radio']",
+    "popular_filters": "[data-test='popularFilters']",
+    "reset_button": "a[href*='/inventory/']"
   }
 }

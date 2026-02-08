@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { ScraperService } from '../scraper/scraper.service';
+import { VehicleFilterService } from '../scraper/vehicle-filter.service';
 
 export interface ExecutedCommand {
   type: string;
@@ -11,6 +12,21 @@ export interface ExecutedCommand {
   goal?: any;
   subgoal?: any;
   error?: string;
+  proposalType?: 'accept_decline' | 'confirm_edit_cancel';
+  awaitingConfirmation?: boolean;
+}
+
+// Mapping of command types to their proposal types
+const COMMAND_PROPOSAL_TYPES: Record<string, 'accept_decline' | 'confirm_edit_cancel'> = {
+  REFRESH_CANDIDATES: 'accept_decline',
+  // All other commands default to confirm_edit_cancel
+};
+
+/**
+ * Get the proposal type for a command
+ */
+function getProposalType(commandType: string): 'accept_decline' | 'confirm_edit_cancel' {
+  return COMMAND_PROPOSAL_TYPES[commandType] || 'confirm_edit_cancel';
 }
 
 /**
@@ -24,6 +40,7 @@ export class GoalCommandService {
   constructor(
     private prisma: PrismaService,
     private scraperService: ScraperService,
+    private vehicleFilterService: VehicleFilterService,
   ) {}
 
   /**
@@ -42,6 +59,8 @@ export class GoalCommandService {
             success: true,
             goalId: goal.id,
             goal,
+            proposalType: getProposalType('CREATE_GOAL'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'CREATE_SUBGOAL') {
           const subgoal = await this.createSubgoal(userId, command.data);
@@ -50,6 +69,8 @@ export class GoalCommandService {
             success: true,
             subgoalId: subgoal.id,
             subgoal,
+            proposalType: getProposalType('CREATE_SUBGOAL'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'UPDATE_PROGRESS') {
           await this.updateProgress(userId, command.data);
@@ -57,6 +78,8 @@ export class GoalCommandService {
             type: 'UPDATE_PROGRESS',
             success: true,
             goalId: command.data.goalId,
+            proposalType: getProposalType('UPDATE_PROGRESS'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'UPDATE_TITLE') {
           const goal = await this.updateTitle(userId, command.data);
@@ -65,6 +88,26 @@ export class GoalCommandService {
             success: true,
             goalId: goal.id,
             goal,
+            proposalType: getProposalType('UPDATE_TITLE'),
+            awaitingConfirmation: true,
+          });
+        } else if (command.type === 'UPDATE_SEARCHTERM') {
+          const itemData = await this.updateSearchTerm(userId, command.data);
+          executedCommands.push({
+            type: 'UPDATE_SEARCHTERM',
+            success: true,
+            goalId: command.data.goalId,
+            proposalType: getProposalType('UPDATE_SEARCHTERM'),
+            awaitingConfirmation: true,
+          });
+        } else if (command.type === 'REFRESH_CANDIDATES') {
+          const result = await this.refreshCandidates(userId, command.data);
+          executedCommands.push({
+            type: 'REFRESH_CANDIDATES',
+            success: true,
+            goalId: command.data.goalId,
+            proposalType: getProposalType('REFRESH_CANDIDATES'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'UPDATE_FILTERS') {
           const goal = await this.updateFilters(userId, command.data);
@@ -73,6 +116,8 @@ export class GoalCommandService {
             success: true,
             goalId: goal.id,
             goal,
+            proposalType: getProposalType('UPDATE_FILTERS'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'ADD_TASK') {
           const goal = await this.addTask(userId, command.data);
@@ -81,6 +126,8 @@ export class GoalCommandService {
             success: true,
             goalId: goal.id,
             goal,
+            proposalType: getProposalType('ADD_TASK'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'REMOVE_TASK') {
           const goal = await this.removeTask(userId, command.data);
@@ -88,6 +135,8 @@ export class GoalCommandService {
             type: 'REMOVE_TASK',
             success: true,
             taskId: goal.taskId,
+            proposalType: getProposalType('REMOVE_TASK'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'ARCHIVE_GOAL') {
           const goal = await this.archiveGoal(userId, command.data);
@@ -95,6 +144,8 @@ export class GoalCommandService {
             type: 'ARCHIVE_GOAL',
             success: true,
             goalId: goal.id,
+            proposalType: getProposalType('ARCHIVE_GOAL'),
+            awaitingConfirmation: true,
           });
         } else if (command.type === 'TOGGLE_TASK') {
           const goal = await this.toggleTask(userId, command.data);
@@ -103,6 +154,8 @@ export class GoalCommandService {
             success: true,
             goalId: goal.id,
             goal,
+            proposalType: getProposalType('TOGGLE_TASK'),
+            awaitingConfirmation: true,
           });
         }
       } catch (error) {
@@ -111,6 +164,7 @@ export class GoalCommandService {
           type: command.type,
           success: false,
           error: error.message,
+          proposalType: getProposalType(command.type),
         });
       }
     }
@@ -162,6 +216,23 @@ export class GoalCommandService {
 
     // For item/finance goals, create with minimal defaults
     if (type === 'item') {
+      // For vehicle goals, use LLM to generate retailer-specific filters
+      let retailerFilters = null;
+      const category = data.category || null;
+
+      if (category === 'vehicle') {
+        const searchQuery = data.searchTerm || title;
+        this.logger.log(`Vehicle goal detected, parsing query: "${searchQuery}"`);
+
+        retailerFilters = await this.vehicleFilterService.parseQuery(searchQuery);
+
+        if (retailerFilters) {
+          this.logger.log(`Generated retailer-specific filters for ${Object.keys(retailerFilters.retailers || {}).length} retailers`);
+        } else {
+          this.logger.warn(`Failed to generate retailer filters, will fall back to generic filters`);
+        }
+      }
+
       const goal = await this.prisma.goal.create({
         data: {
           type: 'item',
@@ -179,8 +250,9 @@ export class GoalCommandService {
               retailerName: 'TBD',
               statusBadge: 'pending_search',
               searchTerm: data.searchTerm || null,
-              category: data.category || null,
+              category: category,
               searchFilters: data.searchFilters || null,
+              retailerFilters: retailerFilters,
             },
           },
         },
@@ -193,6 +265,32 @@ export class GoalCommandService {
       await this.scraperService.queueCandidateAcquisition(goal.id);
 
       return goal;
+    }
+
+    if (type === 'group') {
+      return this.prisma.goal.create({
+        data: {
+          type: 'group',
+          title,
+          description: description || `Project: ${title}`,
+          status: 'active',
+          deadline: deadlineDate,
+          userId,
+          groupData: {
+            create: {
+              icon: data.icon || '📦',
+              color: data.color || 'from-cyan-500 to-purple-500',
+              layout: data.layout || 'grid',
+              progressType: data.progressType || 'average',
+              progress: 0,
+            },
+          },
+        },
+        include: {
+          groupData: true,
+          subgoals: true,
+        },
+      });
     }
 
     if (type === 'finance') {
@@ -302,6 +400,23 @@ export class GoalCommandService {
 
     // Handle item subgoals (e.g., vehicle as part of a larger goal)
     if (type === 'item') {
+      // For vehicle goals, use LLM to generate retailer-specific filters
+      let retailerFilters = null;
+      const category = data.category || null;
+
+      if (category === 'vehicle') {
+        const searchQuery = data.searchTerm || title;
+        this.logger.log(`Vehicle subgoal detected, parsing query: "${searchQuery}"`);
+
+        retailerFilters = await this.vehicleFilterService.parseQuery(searchQuery);
+
+        if (retailerFilters) {
+          this.logger.log(`Generated retailer-specific filters for ${Object.keys(retailerFilters.retailers || {}).length} retailers`);
+        } else {
+          this.logger.warn(`Failed to generate retailer filters, will fall back to generic filters`);
+        }
+      }
+
       const subgoal = await this.prisma.goal.create({
         data: {
           type: 'item',
@@ -320,8 +435,9 @@ export class GoalCommandService {
               retailerName: 'TBD',
               statusBadge: 'pending_search',
               searchTerm: data.searchTerm || null,
-              category: data.category || null,
+              category: category,
               searchFilters: data.searchFilters || null,
+              retailerFilters: retailerFilters,
             },
           },
         },
@@ -395,7 +511,7 @@ export class GoalCommandService {
   }
 
   /**
-   * Update goal title
+   * Update goal title (display name only)
    */
   async updateTitle(userId: string, data: { goalId: string; title: string }) {
     const { goalId, title } = data;
@@ -415,7 +531,82 @@ export class GoalCommandService {
   }
 
   /**
+   * Refresh candidates - queues a scrape job for an item goal
+   */
+  async refreshCandidates(userId: string, data: { goalId: string }) {
+    const { goalId } = data;
+
+    // Verify goal exists and belongs to user
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    if (goal.type !== 'item') {
+      throw new Error('Can only refresh candidates for item goals');
+    }
+
+    // Queue scraping job
+    await this.scraperService.queueCandidateAcquisition(goalId);
+
+    return {
+      message: 'Scraping job queued successfully',
+      goalId,
+      note: 'Candidates will be updated within 2 minutes',
+    };
+  }
+
+  /**
+   * Update search term and regenerate retailer filters
+   * For vehicle goals, this triggers LLM-based filter generation
+   */
+  async updateSearchTerm(userId: string, data: { goalId: string; searchTerm: string }) {
+    const { goalId, searchTerm } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+      include: { itemData: true },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    if (goal.type !== 'item') {
+      throw new Error(`Search term can only be updated for item goals`);
+    }
+
+    const category = goal.itemData?.category;
+
+    // For vehicle goals, regenerate retailer-specific filters
+    let retailerFilters = null;
+    if (category === 'vehicle') {
+      this.logger.log(`Vehicle goal searchTerm updated, regenerating retailer-specific filters from: "${searchTerm}"`);
+
+      retailerFilters = await this.vehicleFilterService.parseQuery(searchTerm);
+
+      if (retailerFilters) {
+        this.logger.log(`Regenerated retailer-specific filters for ${Object.keys(retailerFilters.retailers || {}).length} retailers`);
+      } else {
+        this.logger.warn(`Failed to regenerate retailer filters, keeping existing ones`);
+      }
+    }
+
+    return this.prisma.itemGoalData.update({
+      where: { goalId },
+      data: {
+        searchTerm,
+        retailerFilters,
+      },
+    });
+  }
+
+  /**
    * Update search filters for an item goal
+   * For vehicle goals, also regenerates retailer-specific LLM filters
    */
   async updateFilters(userId: string, data: { goalId: string; filters: any }) {
     const { goalId, filters } = data;
@@ -437,9 +628,34 @@ export class GoalCommandService {
     const existingFilters = (goal.itemData?.searchFilters as Record<string, any> | undefined) || {};
     const mergedFilters: Record<string, any> = { ...existingFilters, ...(filters as Record<string, any>) };
 
+    // For vehicle goals, regenerate retailer-specific LLM filters
+    let retailerFilters = goal.itemData?.retailerFilters;
+    const category = goal.itemData?.category;
+
+    if (category === 'vehicle') {
+      // Build a query from the updated filters to regenerate LLM filters
+      // Start with the original searchTerm or title
+      const searchQuery = goal.itemData?.searchTerm || goal.title;
+
+      this.logger.log(`Vehicle goal filters updated, regenerating retailer-specific filters from: "${searchQuery}"`);
+
+      retailerFilters = await this.vehicleFilterService.parseQuery(searchQuery);
+
+      if (retailerFilters) {
+        this.logger.log(`Regenerated retailer-specific filters for ${Object.keys(retailerFilters.retailers || {}).length} retailers`);
+      } else {
+        this.logger.warn(`Failed to regenerate retailer filters, keeping existing ones`);
+        // Keep existing retailerFilters if regeneration fails
+        retailerFilters = goal.itemData?.retailerFilters;
+      }
+    }
+
     return this.prisma.itemGoalData.update({
       where: { goalId },
-      data: { searchFilters: mergedFilters },
+      data: {
+        searchFilters: mergedFilters,
+        retailerFilters: retailerFilters,
+      },
     });
   }
 

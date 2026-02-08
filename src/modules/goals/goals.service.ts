@@ -1,13 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { GoalType, GoalStatus } from '@prisma/client';
 import { ScraperService } from '../scraper/scraper.service';
+import { VehicleFilterService } from '../scraper/vehicle-filter.service';
 
 @Injectable()
 export class GoalsService {
+  private readonly logger = new Logger(GoalsService.name);
+
   constructor(
     private prisma: PrismaService,
     private scraperService: ScraperService,
+    private vehicleFilterService: VehicleFilterService,
   ) {}
 
   async findAll(userId: string, filters?: { type?: GoalType; status?: GoalStatus }) {
@@ -230,7 +234,24 @@ export class GoalsService {
   }
 
   async updateItemGoal(id: string, userId: string, data: any) {
-    await this.findOne(id, userId);
+    const goal = await this.findOne(id, userId);
+
+    // For vehicle goals, regenerate retailerFilters if searchTerm is being updated
+    let retailerFilters = goal.itemData?.retailerFilters;
+    const category = goal.itemData?.category;
+
+    if (category === 'vehicle' && data.searchTerm && data.searchTerm !== goal.itemData?.searchTerm) {
+      this.logger.log(`Vehicle goal searchTerm updated, regenerating retailer-specific filters from: "${data.searchTerm}"`);
+
+      retailerFilters = await this.vehicleFilterService.parseQuery(data.searchTerm);
+
+      if (retailerFilters) {
+        this.logger.log(`Regenerated retailer-specific filters for ${Object.keys(retailerFilters.retailers || {}).length} retailers`);
+      } else {
+        this.logger.warn(`Failed to regenerate retailer filters, keeping existing ones`);
+        retailerFilters = goal.itemData?.retailerFilters;
+      }
+    }
 
     await this.prisma.itemGoalData.update({
       where: { goalId: id },
@@ -241,6 +262,10 @@ export class GoalsService {
         retailerName: data.retailerName,
         statusBadge: data.statusBadge,
         searchResults: data.searchResults,
+        searchTerm: data.searchTerm,
+        category: data.category,
+        searchFilters: data.searchFilters,
+        retailerFilters: retailerFilters,
         candidates: data.candidates !== undefined ? data.candidates : undefined,
         selectedCandidateId: data.selectedCandidateId !== undefined ? data.selectedCandidateId : undefined,
         shortlistedCandidates: data.shortlistedCandidates !== undefined ? data.shortlistedCandidates : undefined,

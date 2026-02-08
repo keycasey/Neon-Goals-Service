@@ -1,10 +1,349 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "last_updated": "2026-02-06T00:00:00",
-  "note": "Carvana uses interactive UI filters selected via checkbox.",
-  "global_filters": {
-    "body_types": ["Convertible", "Coupe", "Hatchback", "Sedan", "SUV", "Truck", "Van", "Wagon"],
-    "fuel_types": ["Diesel", "Electric", "Gas", "Hybrid"],
-    "drivetrains": ["AWD", "4WD", "FWD", "RWD"]
+  "retailer": "Carvana",
+  "base_url": "https://www.carvana.com",
+  "search_path": "/cars",
+  "note": "Carvana uses interactive UI filters selected via checkbox/button. The site loads filters dynamically. URL structure is /cars/{make}-{model} for specific vehicles.",
+  "url_format": {
+    "pattern": "/cars/{make}-{model}",
+    "example": "https://www.carvana.com/cars/gmc-sierra-3500",
+    "important_note": "Carvana uses hyphenated format. HD suffix is typically removed (3500HD -> 3500). Use lowercase for URL.",
+    "path_components": {
+      "make": "Vehicle make in lowercase (gmc, ford, chevrolet, etc.)",
+      "model": "Vehicle model with hyphens, NO HD suffix (sierra-3500, f-150, silverado-1500, etc.)"
+    },
+    "examples": {
+      "gmc_sierra_1500": "/cars/gmc-sierra-1500",
+      "gmc_sierra_2500": "/cars/gmc-sierra-2500",
+      "gmc_sierra_3500": "/cars/gmc-sierra-3500",
+      "ford_f_150": "/cars/ford-f-150",
+      "chevrolet_silverado_1500": "/cars/chevrolet-silverado-1500"
+    },
+    "body_type_path": "/cars/{bodyType}",
+    "body_type_example": "https://www.carvana.com/cars/suv"
+  },
+  "filters": [
+    {
+      "name": "Make & Model",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "checkbox_selector": "input[type='checkbox']",
+      "options": [
+        { "label": "Acura", "value": "acura" },
+        { "label": "Audi", "value": "audi" },
+        { "label": "Buick", "value": "buick" },
+        { "label": "Cadillac", "value": "cadillac" },
+        { "label": "Chevrolet", "value": "chevrolet" },
+        { "label": "Chrysler", "value": "chrysler" },
+        { "label": "Dodge", "value": "dodge" },
+        { "label": "Ford", "value": "ford" },
+        { "label": "Genesis", "value": "genesis" },
+        { "label": "Honda", "value": "honda" },
+        { "label": "Hyundai", "value": "hyundai" },
+        { "label": "Jaguar", "value": "jaguar" },
+        { "label": "Jeep", "value": "jeep" },
+        { "label": "Kia", "value": "kia" },
+        { "label": "Lexus", "value": "lexus" },
+        { "label": "Lincoln", "value": "lincoln" },
+        { "label": "Lucid", "value": "lucid" },
+        { "label": "Maserati", "value": "maserati" },
+        { "label": "Mazda", "value": "mazda" },
+        { "label": "Mitsubishi", "value": "mitsubishi" },
+        { "label": "Nissan", "value": "nissan" },
+        { "label": "Polestar", "value": "polestar" },
+        { "label": "Porsche", "value": "porsche" },
+        { "label": "Ram", "value": "ram" },
+        { "label": "Rivian", "value": "rivian" },
+        { "label": "Scion", "value": "scion" },
+        { "label": "Subaru", "value": "subaru" },
+        { "label": "Tesla", "value": "tesla" },
+        { "label": "Toyota", "value": "toyota" },
+        { "label": "Volkswagen", "value": "volkswagen" },
+        { "label": "Volvo", "value": "volvo" }
+      ],
+      "note": "Makes are selected via checkboxes. Models are available after selecting a make."
+    },
+    {
+      "name": "Body Type",
+      "type": "path-based",
+      "url_format": "/cars/{bodyType}",
+      "selector": "button[class*='Filter']",
+      "options": [
+        { "label": "SUVs", "value": "suv", "url": "/cars/suv" },
+        { "label": "Sedans", "value": "sedan", "url": "/cars/sedan" },
+        { "label": "Hatchbacks", "value": "hatchback", "url": "/cars/hatchback" },
+        { "label": "Wagons", "value": "wagon", "url": "/cars/wagon" },
+        { "label": "Coupes", "value": "coupe", "url": "/cars/coupe" },
+        { "label": "Convertibles", "value": "convertible", "url": "/cars/convertible" },
+        { "label": "Trucks", "value": "truck", "url": "/cars/truck" },
+        { "label": "Minivans", "value": "minivan", "url": "/cars/minivan" }
+      ],
+      "note": "Body types can be navigated via URL path or filter selection"
+    },
+    {
+      "name": "Price",
+      "type": "dual-slider",
+      "selector": "input[type='range']",
+      "range": {
+        "min": 7000,
+        "max": 180000,
+        "step": 1000
+      },
+      "url_param": "price",
+      "note": "Dual slider for min/max price range from $7,000 to $180,000"
+    },
+    {
+      "name": "Monthly Payment",
+      "type": "slider",
+      "selector": "input[type='range']",
+      "range": {
+        "min": 50,
+        "max": 2000
+      },
+      "url_param": "monthlyPayment",
+      "note": "Maximum monthly payment slider from $50 to $2,000"
+    },
+    {
+      "name": "Cash Down Payment",
+      "type": "slider",
+      "selector": "input[type='range']",
+      "range": {
+        "min": 0,
+        "max": 10000
+      },
+      "url_param": "cashDown",
+      "note": "Cash down payment slider from $0 to $10,000"
+    },
+    {
+      "name": "Year & Mileage",
+      "type": "combined",
+      "selector": "button[class*='Filter']",
+      "filters": [
+        {
+          "name": "Year",
+          "type": "quick-select",
+          "options": [
+            { "label": "2024 or newer", "value": "2024+" },
+            { "label": "2020 or newer", "value": "2020+" }
+          ]
+        },
+        {
+          "name": "Mileage",
+          "type": "range",
+          "note": "Mileage filter in miles"
+        }
+      ]
+    },
+    {
+      "name": "Fuel Type",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "Diesel", "value": "diesel" },
+        { "label": "Electric", "value": "electric" },
+        { "label": "Gas", "value": "gas" },
+        { "label": "Hybrid", "value": "hybrid" },
+        { "label": "Plug-In Hybrid", "value": "plug-in-hybrid" }
+      ],
+      "note": "Quick filter buttons available: 'Diesel Vehicles (1,141)', 'Gas Vehicles (37,242)'"
+    },
+    {
+      "name": "Drivetrain",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "AWD (All-Wheel Drive)", "value": "awd" },
+        { "label": "4WD (Four-Wheel Drive)", "value": "4wd" },
+        { "label": "FWD (Front-Wheel Drive)", "value": "fwd" },
+        { "label": "RWD (Rear-Wheel Drive)", "value": "rwd" }
+      ]
+    },
+    {
+      "name": "Transmission",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "Automatic", "value": "automatic" },
+        { "label": "Manual", "value": "manual" }
+      ]
+    },
+    {
+      "name": "Exterior Color",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "Black", "value": "black" },
+        { "label": "White", "value": "white" },
+        { "label": "Gray", "value": "gray" },
+        { "label": "Silver", "value": "silver" },
+        { "label": "Blue", "value": "blue" },
+        { "label": "Red", "value": "red" },
+        { "label": "Green", "value": "green" },
+        { "label": "Brown", "value": "brown" },
+        { "label": "Beige", "value": "beige" },
+        { "label": "Gold", "value": "gold" },
+        { "label": "Orange", "value": "orange" },
+        { "label": "Yellow", "value": "yellow" }
+      ],
+      "note": "Quick filter button available: 'Blue Exterior (3,690)'"
+    },
+    {
+      "name": "Interior Color",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "Black", "value": "black" },
+        { "label": "Gray", "value": "gray" },
+        { "label": "Beige", "value": "beige" },
+        { "label": "Brown", "value": "brown" },
+        { "label": "Tan", "value": "tan" },
+        { "label": "White", "value": "white" },
+        { "label": "Red", "value": "red" },
+        { "label": "Blue", "value": "blue" }
+      ],
+      "note": "Quick filter button available: 'Black Interior (30,844)'"
+    },
+    {
+      "name": "Features",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "Sunroof", "value": "sunroof" },
+        { "label": "Navigation", "value": "navigation" },
+        { "label": "Backup Camera", "value": "backup-camera" },
+        { "label": "Bluetooth", "value": "bluetooth" },
+        { "label": "Heated Seats", "value": "heated-seats" },
+        { "label": "Leather Seats", "value": "leather-seats" },
+        { "label": "Remote Start", "value": "remote-start" },
+        { "label": "Apple CarPlay", "value": "apple-carplay" },
+        { "label": "Android Auto", "value": "android-auto" },
+        { "label": "Premium Audio", "value": "premium-audio" },
+        { "label": "Third Row Seating", "value": "third-row-seating" }
+      ],
+      "note": "Quick filter button available: 'Sunroof (14,253)'"
+    },
+    {
+      "name": "Cylinders",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "4 Cylinder", "value": "4" },
+        { "label": "6 Cylinder", "value": "6" },
+        { "label": "8 Cylinder", "value": "8" },
+        { "label": "10 Cylinder", "value": "10" },
+        { "label": "12 Cylinder", "value": "12" }
+      ]
+    },
+    {
+      "name": "Seating Capacity",
+      "type": "checkbox",
+      "selector": "label.Checkbox-module_checkbox",
+      "options": [
+        { "label": "2 Seats", "value": "2" },
+        { "label": "4 Seats", "value": "4" },
+        { "label": "5 Seats", "value": "5" },
+        { "label": "6 Seats", "value": "6" },
+        { "label": "7 Seats", "value": "7" },
+        { "label": "8 Seats", "value": "8" }
+      ]
+    },
+    {
+      "name": "MPG",
+      "type": "range",
+      "selector": "button[class*='Filter']",
+      "url_param": "mpg",
+      "note": "Miles per gallon filter"
+    },
+    {
+      "name": "Free Shipping & Deals",
+      "type": "combined",
+      "selector": "button[class*='Filter']",
+      "filters": [
+        {
+          "name": "Free Shipping",
+          "type": "checkbox",
+          "value": "free-shipping",
+          "note": "Filter for vehicles with free shipping"
+        },
+        {
+          "name": "Deals",
+          "type": "checkbox",
+          "value": "deals",
+          "note": "Filter for vehicles with deals/discounts"
+        }
+      ]
+    }
+  ],
+  "quick_filters": {
+    "description": "Quick filter buttons shown on the search results page",
+    "filters": [
+      { "label": "Diesel Vehicles", "value": "diesel", "count": 1141 },
+      { "label": "GMC", "value": "gmc", "count": 1502 },
+      { "label": "Sunroof", "value": "sunroof", "count": 14253 },
+      { "label": "2024 or newer", "value": "2024+", "count": 14501 },
+      { "label": "Gas Vehicles", "value": "gas", "count": 37242 },
+      { "label": "Tesla", "value": "tesla", "count": 1642 },
+      { "label": "Under $20,000", "value": "priceMax=20000", "count": 9698 },
+      { "label": "Black Interior", "value": "interiorColor=black", "count": 30844 },
+      { "label": "2020 or newer", "value": "2020+", "count": 29736 },
+      { "label": "Blue Exterior", "value": "exteriorColor=blue", "count": 3690 }
+    ]
+  },
+  "popular_models": {
+    "description": "Popular make/model combinations with URL paths",
+    "models": [
+      { "make": "Jeep", "model": "Wrangler", "url": "/cars/jeep-wrangler" },
+      { "make": "Tesla", "model": "Model 3", "url": "/cars/tesla-model-3" },
+      { "make": "Ford", "model": "Mustang", "url": "/cars/ford-mustang" },
+      { "make": "Dodge", "model": "Charger", "url": "/cars/dodge-charger" },
+      { "make": "Toyota", "model": "4Runner", "url": "/cars/toyota-4runner" },
+      { "make": "Dodge", "model": "Challenger", "url": "/cars/dodge-challenger" },
+      { "make": "Ford", "model": "Explorer", "url": "/cars/ford-explorer" },
+      { "make": "Honda", "model": "Civic Type R", "url": "/cars/honda-civic-type-r" },
+      { "make": "Chevrolet", "model": "Camaro", "url": "/cars/chevrolet-camaro" },
+      { "make": "Nissan", "model": "370Z", "url": "/cars/nissan-370z" },
+      { "make": "Tesla", "model": "Model X", "url": "/cars/tesla-model-x" },
+      { "make": "Ford", "model": "F150 Super Cab", "url": "/cars/ford-f150-super-cab" },
+      { "make": "Subaru", "model": "WRX", "url": "/cars/subaru-wrx" },
+      { "make": "Ford", "model": "Edge", "url": "/cars/ford-edge" },
+      { "make": "Honda", "model": "Pilot", "url": "/cars/honda-pilot" },
+      { "make": "Jeep", "model": "Grand Cherokee", "url": "/cars/jeep-grand-cherokee" },
+      { "make": "Audi", "model": "Q5", "url": "/cars/audi-q5" },
+      { "make": "BMW", "model": "i3", "url": "/cars/bmw-i3" },
+      { "make": "Honda", "model": "CR-V", "url": "/cars/honda-cr-v" },
+      { "make": "Mazda", "model": "CX-5", "url": "/cars/mazda-cx-5" }
+    ]
+  },
+  "example_urls": {
+    "basic_search": "https://www.carvana.com/cars",
+    "by_make_model": "https://www.carvana.com/cars/jeep-wrangler",
+    "by_body_type": "https://www.carvana.com/cars/suv",
+    "by_tesla": "https://www.carvana.com/cars/tesla-model-3",
+    "by_truck": "https://www.carvana.com/cars/truck"
+  },
+  "selector_patterns": {
+    "filter_button": "button[class*='Filter']",
+    "checkbox_label": "label.Checkbox-module_checkbox",
+    "checkbox_input": "input[type='checkbox']",
+    "price_slider": "input[type='range'][min='7000']",
+    "make_checkbox": "label.Checkbox-module_checkbox input[type='checkbox']",
+    "body_type_link": "a[href^='/cars/']:not([href*='/cars/in-'])",
+    "quick_filter_button": "button[class*='chip']"
+  },
+  "interaction_notes": {
+    "filter_ui": "Filters use interactive UI with checkboxes and sliders",
+    "make_selection": "Selecting a make opens model options",
+    "body_type_selection": "Body types can be selected via filter or direct URL",
+    "price_filter": "Uses dual slider for price range",
+    "payment_filter": "Monthly payment and cash down sliders for financing",
+    "quick_filters": "Quick filter buttons shown at top of results for common filters",
+    "dynamic_loading": "Filters are loaded dynamically after clicking filter buttons"
+  },
+  "notes": {
+    "url_structure": "Carvana uses path-based URLs for make/model (/cars/{make}-{model})",
+    "interactive_selection": "Filters are primarily selected via interactive UI, not URL parameters",
+    "financing_filters": "Unique to Carvana - monthly payment and cash down payment filters",
+    "free_shipping": "Carvana offers free shipping on many vehicles"
   }
 }

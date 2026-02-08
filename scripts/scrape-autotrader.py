@@ -40,29 +40,62 @@ def adapt_structured_to_autotrader(structured: dict) -> str:
     """
     Convert structured query format to AutoTrader URL.
 
-    The structured format is the universal format output by parse_vehicle_query.py.
-    Each scraper has its own adapter to convert this to scraper-specific params.
+    Handles two formats:
+    1. LLM retailer-specific format: {url_params, path_components, body_params}
+    2. Legacy format: {makes, models, trims, zip, location, year, ...}
 
     AutoTrader specifics:
     - URL format: /cars-for-sale/{make}/{model}/{trim}/{location}?{params}
     - Example: /cars-for-sale/gmc/sierra-3500/denali-ultimate/san-mateo-ca?endYear=2024&searchRadius=500
-    - Supports trim, location, and year filters in URL
 
     Args:
-        structured: The structured query dict with keys like makes, models, trims, etc.
+        structured: The structured query dict
 
     Returns:
         AutoTrader URL string
     """
-    # Get make (first one if multiple) - handle both singular and plural
+    base_url = "https://www.autotrader.com"
+
+    # Handle LLM retailer-specific format (new format from parse_vehicle_query.py)
+    if 'url_params' in structured or 'path_components' in structured:
+        path_components = structured.get('path_components', {})
+        url_params = structured.get('url_params', {})
+
+        # Build path from path_components
+        path_parts = ["cars-for-sale"]
+        make = path_components.get('make', '')
+        model = path_components.get('model', '')
+        trim = path_components.get('trim', '')
+
+        if make:
+            path_parts.append(make.lower())
+        if model:
+            path_parts.append(model.lower())
+        if trim:
+            path_parts.append(trim.lower())
+
+        url_path = '/' + '/'.join(path_parts)
+
+        # Build query params from url_params
+        params = []
+        for key, value in url_params.items():
+            if value:  # Skip empty values
+                params.append(f"{key}={value}")
+
+        # Add default search radius if not specified
+        if not any('searchRadius' in p for p in params):
+            params.append("searchRadius=500")
+
+        query_string = '&'.join(params)
+        return f"{base_url}{url_path}?{query_string}"
+
+    # Handle legacy format {makes, models, trims, zip, location, year, ...}
     makes = structured.get('makes') or ([structured.get('make')] if structured.get('make') else [])
     make = makes[0].lower().replace(' ', '-') if makes else ''
 
-    # Get model (first one if multiple) - handle both singular and plural
     models = structured.get('models') or ([structured.get('model')] if structured.get('model') else [])
     model = models[0].lower().replace(' ', '-') if models else ''
 
-    # Get trim (first one if multiple)
     trims = structured.get('trims', [])
     trim = trims[0].lower().replace(' ', '-') if trims else ''
 
@@ -78,12 +111,12 @@ def adapt_structured_to_autotrader(structured: dict) -> str:
     # Add location to path - handle both location dict and zip code
     location = structured.get('location', {})
     zip_code = structured.get('zip')
-    
+
     # If we have a zip code, skip adding location to path (use query param instead)
     if not zip_code:
         city = location.get('city', '').lower().replace(' ', '-') if location.get('city') else ''
         state = location.get('state', '').lower() if location.get('state') else ''
-        
+
         if city or state:
             location_part = f"{city}-{state}" if city and state else (city or state)
             path_parts.append(location_part)
@@ -122,7 +155,6 @@ def adapt_structured_to_autotrader(structured: dict) -> str:
         params.append(f"maxPrice={structured['maxPrice']}")
 
     # Build final URL
-    base_url = "https://www.autotrader.com"
     query_string = '&'.join(params)
     url = f"{base_url}{url_path}?{query_string}"
 

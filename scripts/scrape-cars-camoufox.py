@@ -64,8 +64,9 @@ def adapt_structured_to_cargurus(structured: dict) -> dict:
     """
     Convert structured query format to CarGurus-specific parameters.
 
-    The structured format is the universal format output by parse_vehicle_query.py.
-    Each scraper has its own adapter to convert this to scraper-specific params.
+    Supports two formats:
+    1. New retailer-specific format from LLM: {url_params: {make, model, trim, ...}, path_components: {}}
+    2. Legacy generic format: {makes: [], models: [], trims: [], ...}
 
     CarGurus specifics:
     - Uses entity codes for makes/models (discovered dynamically)
@@ -74,70 +75,99 @@ def adapt_structured_to_cargurus(structured: dict) -> dict:
     - Only supports single make/model per search
 
     Args:
-        structured: The structured query dict with keys like makes, models, trims, etc.
+        structured: The structured query dict (either format)
 
     Returns:
         CarGurus-specific parameter dict for scrape_cars()
     """
     params = {}
 
-    # CarGurus only supports single make/model (take first if multiple)
-    makes = structured.get('makes', [])
-    models = structured.get('models', [])
+    # Check for new retailer-specific format from LLM
+    url_params = structured.get('url_params', {})
 
-    if makes:
-        params['make'] = makes[0]
-    if models:
-        params['model'] = models[0]
+    if url_params:
+        # New LLM format - extract directly from url_params
+        if url_params.get('make'):
+            params['make'] = url_params['make']
+        if url_params.get('model'):
+            params['model'] = url_params['model']
+        if url_params.get('trim'):
+            params['trim'] = url_params['trim']
+        if url_params.get('drivetrain'):
+            params['drivetrain'] = url_params['drivetrain']
+        if url_params.get('fuelType'):
+            params['fuelType'] = url_params['fuelType']
+        if url_params.get('exteriorColor'):
+            params['exteriorColor'] = url_params['exteriorColor']
+        if url_params.get('yearMin'):
+            params['yearMin'] = url_params['yearMin']
+        if url_params.get('yearMax'):
+            params['yearMax'] = url_params['yearMax']
+        if url_params.get('year'):
+            params['yearMin'] = url_params['year']
+        if url_params.get('minPrice') is not None:
+            params['minPrice'] = url_params['minPrice']
+        if url_params.get('maxPrice') is not None:
+            params['maxPrice'] = url_params['maxPrice']
+    else:
+        # Legacy generic format - convert from old structure
+        # CarGurus only supports single make/model (take first if multiple)
+        makes = structured.get('makes', [])
+        models = structured.get('models', [])
 
-    # Trim (single value for CarGurus)
-    if structured.get('trims'):
-        params['trim'] = structured['trims'][0]
+        if makes:
+            params['make'] = makes[0]
+        if models:
+            params['model'] = models[0]
 
-    # Drivetrain (CarGurus uses specific codes)
-    if structured.get('drivetrain'):
-        dt = structured['drivetrain']
-        # Convert to CarGurus format
-        drivetrain_map = {
-            'Four Wheel Drive': 'FOUR_WHEEL_DRIVE',
-            'All Wheel Drive': 'ALL_WHEEL_DRIVE',
-            'Rear Wheel Drive': 'REAR_WHEEL_DRIVE',
-            'Front Wheel Drive': 'FRONT_WHEEL_DRIVE'
-        }
-        params['drivetrain'] = drivetrain_map.get(dt, dt.upper().replace(' ', '_'))
+        # Trim (single value for CarGurus)
+        if structured.get('trims'):
+            params['trim'] = structured['trims'][0]
 
-    # Fuel type
-    if structured.get('fuelType'):
-        ft = structured['fuelType']
-        fuel_map = {
-            'Gas': 'GASOLINE',
-            'Electric': 'ELECTRIC',
-            'Hybrid': 'HYBRID',
-            'Plug-In Hybrid': 'PLUG_IN_HYBRID',
-            'Diesel': 'DIESEL'
-        }
-        params['fuelType'] = fuel_map.get(ft, ft.upper())
+        # Drivetrain (CarGurus uses specific codes)
+        if structured.get('drivetrain'):
+            dt = structured['drivetrain']
+            # Convert to CarGurus format
+            drivetrain_map = {
+                'Four Wheel Drive': 'FOUR_WHEEL_DRIVE',
+                'All Wheel Drive': 'ALL_WHEEL_DRIVE',
+                'Rear Wheel Drive': 'REAR_WHEEL_DRIVE',
+                'Front Wheel Drive': 'FRONT_WHEEL_DRIVE'
+            }
+            params['drivetrain'] = drivetrain_map.get(dt, dt.upper().replace(' ', '_'))
 
-    # Color (CarGurus uses 'colors' parameter)
-    if structured.get('exteriorColor'):
-        params['exteriorColor'] = structured['exteriorColor']
+        # Fuel type
+        if structured.get('fuelType'):
+            ft = structured['fuelType']
+            fuel_map = {
+                'Gas': 'GASOLINE',
+                'Electric': 'ELECTRIC',
+                'Hybrid': 'HYBRID',
+                'Plug-In Hybrid': 'PLUG_IN_HYBRID',
+                'Diesel': 'DIESEL'
+            }
+            params['fuelType'] = fuel_map.get(ft, ft.upper())
 
-    # Year range
-    if structured.get('yearMin'):
-        params['yearMin'] = structured['yearMin']
-    elif structured.get('year'):
-        params['yearMin'] = structured['year']
+        # Color (CarGurus uses 'colors' parameter)
+        if structured.get('exteriorColor'):
+            params['exteriorColor'] = structured['exteriorColor']
 
-    if structured.get('yearMax'):
-        params['yearMax'] = structured['yearMax']
+        # Year range
+        if structured.get('yearMin'):
+            params['yearMin'] = structured['yearMin']
+        elif structured.get('year'):
+            params['yearMin'] = structured['year']
 
-    # Price range
-    if structured.get('minPrice') is not None:
-        params['minPrice'] = structured['minPrice']
-    if structured.get('maxPrice') is not None:
-        params['maxPrice'] = structured['maxPrice']
+        if structured.get('yearMax'):
+            params['yearMax'] = structured['yearMax']
 
-    # Location (required for CarGurus)
+        # Price range
+        if structured.get('minPrice') is not None:
+            params['minPrice'] = structured['minPrice']
+        if structured.get('maxPrice') is not None:
+            params['maxPrice'] = structured['maxPrice']
+
+    # Location (required for CarGurus) - use from either format
     location = structured.get('location', {})
     params['zip'] = location.get('zip') or '94002'  # Default zip
     params['distance'] = location.get('distance') or 200  # Default distance
@@ -458,9 +488,9 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                         continue
 
                 if not search_input:
-                    logging.error("Could not find search input on homepage")
+                    logging.error("Could not find search input on homepage - likely bot detection")
                     await page.screenshot(path='/tmp/cargurus-no-search.png')
-                    return [{"error": "Could not find search box on CarGurus homepage"}]
+                    return None  # Signal bot detection to worker for VPN retry
 
                 # Enter search query
                 search_query = f"{make} {model}"
@@ -480,8 +510,8 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                 # Check for access restriction
                 page_text = await page.inner_text('body')
                 if any(indicator in page_text.lower() for indicator in ['access is temporarily restricted', 'bot detection', 'please verify you are human']):
-                    logging.error("Bot detection detected")
-                    return [{"error": "Access restricted - bot detection"}]
+                    logging.error("Bot detection detected - returning None for VPN retry")
+                    return None  # Signal bot detection to worker for VPN retry
 
                 # Check for no results
                 if any(indicator in page_text for indicator in ['No matching vehicles', 'No results found', '0 results']):
@@ -608,12 +638,12 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
             'please verify you are human'
         ]
         if any(indicator in page_text.lower() for indicator in restricted_indicators):
-            logging.error("[CarGurus] Access restricted by bot detection!")
+            logging.error("[CarGurus] Access restricted by bot detection! - returning None for VPN retry")
             try:
                 await page.screenshot(path='/tmp/cargurus-restricted.png')
             except:
                 pass
-            return [{"error": "Access restricted - bot detection"}]
+            return None  # Signal bot detection to worker for VPN retry
 
         # Check for no results
         no_results_indicators = [

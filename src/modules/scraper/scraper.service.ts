@@ -352,7 +352,7 @@ export class ScraperService {
    * trimCode format: {seriesCode}|{trimName} (e.g., GMC3500PU|Denali Ultimate)
    */
   private buildAutoTraderUrl(filters: any): string {
-    const { make, model, series, trims, year } = filters || {};
+    const { make, model, series, trims, year, startYear, endYear } = filters || {};
 
     if (!make || !model) {
       return null; // Fall back to text search
@@ -422,8 +422,17 @@ export class ScraperService {
     }
 
     // Add year filter if provided
+    // Support both single year and year ranges
     if (year) {
       params.push(`year=${year}`);
+    } else {
+      // Use startYear/endYear for year ranges (e.g., 2023-2024)
+      if (startYear) {
+        params.push(`startYear=${startYear}`);
+      }
+      if (endYear) {
+        params.push(`endYear=${endYear}`);
+      }
     }
 
     return params.length > 1 ? `${path}?${params.join('&')}` : path;
@@ -682,10 +691,10 @@ export class ScraperService {
         }
 
         return {
-          id: `${item.retailer?.toLowerCase() || 'scraper'}-${Date.now()}-${index}`,
+          id: `${item.retailer?.toLowerCase() || item.source?.toLowerCase() || 'scraper'}-${Date.now()}-${index}`,
           name: item.name,
           price: Math.round(item.price),
-          retailer: item.retailer || 'Unknown',
+          retailer: item.retailer || item.source || 'Unknown',
           url: item.url,
           image: item.image || this.getRandomTruckImage(),
           condition: 'used',
@@ -1011,6 +1020,7 @@ export class ScraperService {
   /**
    * Dispatch a scraping job to the remote worker
    * For vehicles, uses /run-all to run all scrapers in parallel
+   * Now uses retailer-specific LLM filters if available
    */
   async dispatchJobToWorker(goalId: number): Promise<void> {
     const job = await this.prisma.scrapeJob.findUnique({
@@ -1031,6 +1041,7 @@ export class ScraperService {
     const workerUrl = 'http://100.91.29.119:5000';
     const query = job.goal.itemData?.searchTerm || job.goal.title;
     const vehicleFilters = job.goal.itemData?.searchFilters || null;
+    const retailerFilters = job.goal.itemData?.retailerFilters || null;
     const category = job.goal.itemData?.category || 'general';
 
     // For vehicles, use /run-all endpoint to run all scrapers in parallel
@@ -1038,11 +1049,22 @@ export class ScraperService {
     const endpoint = category === 'vehicle' ? '/run-all' : '/run/browser-use';
 
     try {
+      // Use retailer-specific filters if available, otherwise fall back to generic filters
+      const filtersToSend = retailerFilters || vehicleFilters;
+
+      if (retailerFilters) {
+        const retailerCount = Object.keys((retailerFilters as any).retailers || {}).length;
+        this.logger.log(`Using retailer-specific LLM filters for ${retailerCount} retailers`);
+      } else if (vehicleFilters) {
+        this.logger.log(`Using generic vehicle filters (LLM parsing may have failed)`);
+      }
+
       await firstValueFrom(
         this.httpService.post(`${workerUrl}${endpoint}`, {
           jobId: job.id,
           query,
-          vehicleFilters: vehicleFilters,
+          vehicleFilters: filtersToSend,
+          useRetailerFilters: !!retailerFilters, // Flag to tell worker which format we're using
         })
       );
 
@@ -1053,7 +1075,8 @@ export class ScraperService {
       });
 
       const scrapersDesc = category === 'vehicle' ? 'all scrapers' : endpoint;
-      this.logger.log(`✅ Dispatched job ${job.id} to worker (${scrapersDesc})`);
+      const filterDesc = retailerFilters ? 'with retailer-specific filters' : 'with generic filters';
+      this.logger.log(`✅ Dispatched job ${job.id} to worker (${scrapersDesc}, ${filterDesc})`);
     } catch (error) {
       this.logger.error(`Failed to dispatch job ${job.id}: ${error.message}`);
 
@@ -1092,6 +1115,15 @@ export class ScraperService {
       retailerCounts[retailer] = (retailerCounts[retailer] || 0) + 1;
     });
     this.logger.log(`Job ${jobId} received ${data.length} listings by retailer: ${JSON.stringify(retailerCounts)}`);
+
+    // DEBUG: Log items without retailer field
+    const itemsWithoutRetailer = data.filter((item: any) => !item.retailer);
+    if (itemsWithoutRetailer.length > 0) {
+      this.logger.warn(`⚠️ Found ${itemsWithoutRetailer.length} items WITHOUT retailer field:`);
+      itemsWithoutRetailer.forEach((item: any, idx: number) => {
+        this.logger.warn(`  [${idx}] name="${item.name?.substring(0, 40)}" url="${item.url?.substring(0, 60)}" source="${item.source}" retailer="${item.retailer}"`);
+      });
+    }
 
     // Get denied and shortlisted candidates to filter out
     const deniedCandidates = (job.goal.itemData?.deniedCandidates as any[]) || [];
@@ -1132,10 +1164,10 @@ export class ScraperService {
     const candidates = data
       .filter((item: any) => item.url && !excludedUrls.has(item.url))
       .map((item: any, index: number) => ({
-        id: `${item.retailer?.toLowerCase() || 'scraper'}-${Date.now()}-${index}`,
+        id: `${item.retailer?.toLowerCase() || item.source?.toLowerCase() || 'scraper'}-${Date.now()}-${index}`,
         name: item.name,
         price: Math.round(item.price) || 0,
-        retailer: item.retailer || 'Unknown',
+        retailer: item.retailer || item.source || 'Unknown',
         url: item.url,
         image: item.image || this.getRandomTruckImage(),
         condition: item.condition || 'used',

@@ -65,6 +65,7 @@ Goal types:
 - Item/Product: Things they want to buy (budget, product specs, timeline)
 - Finance: Savings, investments, debt payoff (target amount, current amount, timeline)
 - Action/Skill: Habits to build, skills to learn (specific steps, practice frequency, milestones)
+- Group: Collection of related goals (for projects with multiple components like "Build a gaming setup", "Plan a vacation", "Home renovation")
 
 Keep responses concise (2-4 sentences typically) but thorough enough to be helpful.`;
     }
@@ -99,6 +100,23 @@ Your role:
 - Help them adjust their approach if needed
 
 Focus on progress, not perfection!`,
+
+      group: `You are a Project Organizer 📦 helping the user manage collections of related goals.
+
+Your role:
+- Help them organize multiple related goals into cohesive groups
+- Suggest what items/goals should be included in the group
+- Track overall progress across all components
+- Celebrate milestones when sections of the project are complete
+- Recommend which items to prioritize within the group
+
+Examples of group goals:
+- "Custom longboard build" (deck, trucks, wheels, bearings)
+- "Gaming setup" (PC, monitor, keyboard, mouse, desk, chair)
+- "Home office" (equipment, furniture, savings fund, organization tasks)
+- "Japan trip" (travel fund, prep tasks, photography gear)
+
+Help them build their vision step by step!`,
     };
 
     return goalPrompts[goalType as keyof typeof goalPrompts] || goalPrompts.action;
@@ -213,7 +231,8 @@ Focus on progress, not perfection!`,
         'create a goal', 'create goal', 'create finance goal', 'create item goal', 'create action goal',
         'make this a goal', 'make it a goal', 'add this as a goal', 'set a goal',
         'track this as a goal', 'start a goal', 'new goal', 'add goal',
-        'want to create', 'want to save', 'want to buy', 'want to learn'
+        'want to create', 'want to save', 'want to buy', 'want to learn',
+        'i want to buy', 'i want to purchase', 'looking for a', 'interested in'
       ];
 
       const isGoalCreationRequest = goalCreationPhrases.some(phrase => lastMessage.includes(phrase));
@@ -222,8 +241,17 @@ Focus on progress, not perfection!`,
         return "Perfect! Let me help you create a goal for that. [ENTER_GOAL_CREATION]";
       }
 
-      if (lastMessage.includes('buy') || lastMessage.includes('purchase') || lastMessage.includes('laptop')) {
-        return "That sounds like an exciting purchase! 🛍️ To help you track this item goal, I need a few more details:\n\n• **Product**: What specific laptop are you looking for?\n• **Budget**: What's your price range?\n• **Timeline**: When are you hoping to buy it?\n\nOnce you give me these details, I'll create a goal markdown for you to review!";
+      // Vehicle-related phrases should trigger goal creation immediately
+      const vehiclePhrases = [
+        'gmc', 'chevy', 'chevrolet', 'ford', 'toyota', 'honda', 'truck', 'car', 'suv', 'denali',
+        'sierra', 'yukon', 'silverado', 'tahoe', 'suburban', 'camry', 'rav4', 'cr-v',
+        'f-150', 'f-150 lightning', 'electric vehicle', 'ev'
+      ];
+
+      const hasVehicleIntent = vehiclePhrases.some(phrase => lastMessage.includes(phrase));
+
+      if (hasVehicleIntent || (lastMessage.includes('buy') || lastMessage.includes('purchase'))) {
+        return "That sounds like an exciting purchase! 🛍️ Let me help you create a goal for that. [ENTER_GOAL_CREATION]";
       }
 
       if (lastMessage.includes('save') || lastMessage.includes('money') || lastMessage.includes('invest')) {
