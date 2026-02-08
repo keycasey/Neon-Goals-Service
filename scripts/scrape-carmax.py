@@ -237,7 +237,7 @@ def build_carmax_url(
 
     # Add query parameters
     params = []
-    if min_price is not None or max_price is not None:
+    if min_price or max_price:
         min_str = str(min_price) if min_price else ''
         max_str = str(max_price) if max_price else ''
         params.append(f"price={min_str}-{max_str}")
