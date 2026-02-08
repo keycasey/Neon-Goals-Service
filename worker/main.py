@@ -52,6 +52,46 @@ SCRAPER_SCRIPTS: Dict[str, str] = {
 # Individual scrapers return None on bot detection, worker retries with VPN
 
 
+def send_callback_with_retry(callback_url: str, data: dict, max_retries: int = 3) -> requests.Response:
+    """
+    Send callback with retry logic and increasing timeouts.
+
+    Retries with increasing timeouts: 3s → 8s → 12s
+
+    Args:
+        callback_url: URL to send callback to
+        data: JSON payload to send
+        max_retries: Maximum number of retry attempts (default: 3)
+
+    Returns:
+        Response object from successful callback
+
+    Raises:
+        requests.exceptions.RequestException: If all retries fail
+    """
+    timeouts = [3, 8, 12]
+
+    for attempt, timeout in enumerate(timeouts[:max_retries], 1):
+        try:
+            response = requests.post(
+                callback_url,
+                json=data,
+                timeout=timeout
+            )
+            logger.info(f"✅ Callback succeeded on attempt {attempt} with {timeout}s timeout")
+            return response
+        except requests.exceptions.Timeout:
+            logger.warning(f"⚠️ Callback attempt {attempt}/{max_retries} timed out after {timeout}s")
+            if attempt >= max_retries:
+                logger.error(f"❌ Callback failed after {max_retries} attempts (timeouts: {timeouts[:max_retries]})")
+                raise
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Callback error on attempt {attempt}/{max_retries}: {e}")
+            if attempt >= max_retries:
+                raise
+            # For non-timeout errors, still retry but log the error
+
+
 def run_scraper_and_callback(
     scraper_name: str,
     query: str,
@@ -134,17 +174,16 @@ def run_scraper_and_callback(
             error_msg = result.stderr or "Unknown error"
             logger.error(f"Scraper failed: {error_msg}")
 
-            # Send error callback
-            requests.post(
+            # Send error callback with retry
+            send_callback_with_retry(
                 callback_url,
-                json={
+                {
                     "jobId": job_id,
                     "scraper": scraper_name,
                     "status": "error",
                     "error": error_msg,
                     "data": None
-                },
-                timeout=10
+                }
             )
             return
 
@@ -174,68 +213,64 @@ def run_scraper_and_callback(
 
             logger.info(f"Scraper returned {len(data)} listings")
 
-            # Send success callback
-            requests.post(
+            # Send success callback with retry
+            send_callback_with_retry(
                 callback_url,
-                json={
+                {
                     "jobId": job_id,
                     "scraper": scraper_name,
                     "status": "success",
                     "error": None,
                     "data": data
-                },
-                timeout=10
+                }
             )
 
         except Exception as e:
             logger.error(f"Failed to parse scraper output: {e}")
 
-            # Send error callback
-            requests.post(
+            # Send error callback with retry
+            send_callback_with_retry(
                 callback_url,
-                json={
+                {
                     "jobId": job_id,
                     "scraper": scraper_name,
                     "status": "error",
                     "error": str(e),
                     "data": None
-                },
-                timeout=10
+                }
             )
 
     except subprocess.TimeoutExpired:
         error_msg = f"Scraper timeout after 180 seconds"
         logger.error(error_msg)
 
-        requests.post(
+        send_callback_with_retry(
             callback_url,
-            json={
+            {
                 "jobId": job_id,
                 "scraper": scraper_name,
                 "status": "error",
                 "error": error_msg,
                 "data": None
-            },
-            timeout=10
+            }
         )
 
     except Exception as e:
         logger.error(f"Failed to run scraper: {e}")
 
         try:
-            requests.post(
+            send_callback_with_retry(
                 callback_url,
-                json={
+                {
                     "jobId": job_id,
                     "scraper": scraper_name,
                     "status": "error",
                     "error": str(e),
                     "data": None
-                },
-                timeout=10
+                }
             )
         except Exception as callback_error:
-            logger.error(f"Failed to send error callback: {callback_error}")
+            logger.error(f"Failed to send error callback after retries: {callback_error}")
 
 
 @app.get("/health")
@@ -466,39 +501,37 @@ def run_all_scrapers_and_callback(
         logger.info("Cleaning up ALL VPNs after job finished, returning to residential IP...")
         vpn.cleanup_all()
 
-    # Send combined callback
+    # Send combined callback with retry
     try:
         if len(all_results) > 0:
-            requests.post(
+            send_callback_with_retry(
                 callback_url,
-                json={
+                {
                     "jobId": job_id,
                     "scraper": "all",
                     "status": "success",
                     "error": None,
                     "data": all_results
-                },
-                timeout=10
+                }
             )
             logger.info(f"✅ Sent combined callback with {len(all_results)} listings")
         else:
             # No results from any scraper
             error_message = f"No listings found. Errors: {'; '.join(errors) if errors else 'All scrapers returned empty'}"
-            requests.post(
+            send_callback_with_retry(
                 callback_url,
-                json={
+                {
                     "jobId": job_id,
                     "scraper": "all",
                     "status": "error",
                     "error": error_message,
                     "data": None
-                },
-                timeout=10
+                }
             )
             logger.error(f"❌ Sent error callback: {error_message}")
 
     except Exception as callback_error:
-        logger.error(f"Failed to send callback: {callback_error}")
+        logger.error(f"Failed to send callback after retries: {callback_error}")
 
 
 def run_single_scraper(
