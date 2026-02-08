@@ -85,25 +85,31 @@ def run_scraper_and_callback(
         # Different scrapers expect different parameter formats
         import json as json_mod
 
-        if scraper_name == "carvana" and vehicle_filters:
-            # Carvana interactive expects {"structured": {...}} format for filter selection
-            filters_json = json_mod.dumps({"structured": vehicle_filters})
+        if scraper_name == "autotrader" and vehicle_filters:
+            # AutoTrader: LLM generates URL string directly
+            # Check if it's a URL (new format) or needs adapter (old format)
+            if isinstance(vehicle_filters, str) and vehicle_filters.startswith('http'):
+                # New format: URL string directly
+                scraper_input = vehicle_filters
+            else:
+                # Old format: structured data, use adapter
+                scraper_input = json_mod.dumps({"structured": vehicle_filters})
             command = [
                 "xvfb-run", "--server-args=-screen 0 1920x1080x24",
-                python_bin, script_path, filters_json, "5"
+                python_bin, script_path, scraper_input, "10"
             ]
-        elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "autotrader"] and vehicle_filters:
-            # CarGurus, TrueCar, CarMax, AutoTrader expect {"structured": {...}} format
-            filters_json = json_mod.dumps({"structured": vehicle_filters})
+        elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "carvana"] and vehicle_filters:
+            # These scrapers expect dict with their specific keys - pass JSON directly
+            filters_json = json_mod.dumps(vehicle_filters)
             command = [
                 "xvfb-run", "--server-args=-screen 0 1920x1080x24",
-                python_bin, script_path, filters_json, "5"
+                python_bin, script_path, filters_json, "10"
             ]
         else:
-            # Fallback to plain query string for scrapers without structured support
+            # Fallback to plain query string for scrapers without filters
             command = [
                 "xvfb-run", "--server-args=-screen 0 1920x1080x24",
-                python_bin, script_path, f"'{query}'", "5"
+                python_bin, script_path, f"'{query}'", "10"
             ]
 
         logger.info(f"Running command: {' '.join(command)}")
@@ -248,6 +254,7 @@ async def trigger_scraper(
     Trigger a scraper to run in a Kitty terminal window.
 
     The scraper runs asynchronously and calls back with results when complete.
+    Now supports retailer-specific LLM filters for better accuracy.
     """
     # Validate scraper name
     if scraper_name not in SCRAPER_SCRIPTS:
@@ -262,12 +269,33 @@ async def trigger_scraper(
     job_id = body.get("jobId")
     query = body.get("query")
     vehicle_filters = body.get("vehicleFilters")
+    use_retailer_filters = body.get("useRetailerFilters", False)
 
     if not job_id:
         raise HTTPException(status_code=400, detail="Missing required field: jobId")
 
     if not query:
         raise HTTPException(status_code=400, detail="Missing required field: query")
+
+    # Extract retailer-specific filters if provided
+    scraper_filters = vehicle_filters
+    if use_retailer_filters and vehicle_filters and "retailers" in vehicle_filters:
+        # Map scraper names to retailer keys in LLM output
+        retailer_key_map = {
+            "cargurus-camoufox": "cargurus",
+            "carmax": "carmax",
+            "autotrader": "autotrader",
+            "truecar": "truecar",
+            "carvana": "carvana",
+        }
+        retailer_key = retailer_key_map.get(scraper_name, scraper_name)
+        retailer_data = vehicle_filters["retailers"].get(retailer_key)
+
+        if retailer_data and "filters" in retailer_data:
+            scraper_filters = retailer_data["filters"]
+            logger.info(f"Using LLM-generated filters for {scraper_name}")
+        else:
+            scraper_filters = None
 
     # Build callback URL from origin IP
     origin_ip = request.client.host
@@ -282,7 +310,7 @@ async def trigger_scraper(
         run_scraper_and_callback,
         scraper_name,
         query,
-        vehicle_filters,
+        scraper_filters,
         job_id,
         callback_url
     )
@@ -291,6 +319,7 @@ async def trigger_scraper(
         "status": "dispatched",
         "jobId": job_id,
         "scraper": scraper_name,
+        "useRetailerFilters": use_retailer_filters,
         "message": f"Scraper {scraper_name} is running in background"
     }
 
@@ -305,6 +334,8 @@ async def trigger_all_scrapers(
 
     This is the preferred method for vehicle searches as it aggregates results
     from all sources (CarGurus, CarMax, AutoTrader, TrueCar, Carvana).
+
+    Now supports retailer-specific LLM filters for better accuracy.
     """
     # Get request body
     body = await request.json()
@@ -312,6 +343,7 @@ async def trigger_all_scrapers(
     job_id = body.get("jobId")
     query = body.get("query")
     vehicle_filters = body.get("vehicleFilters")
+    use_retailer_filters = body.get("useRetailerFilters", False)
 
     if not job_id:
         raise HTTPException(status_code=400, detail="Missing required field: jobId")
@@ -326,6 +358,9 @@ async def trigger_all_scrapers(
     logger.info(f"Dispatching ALL scrapers for job {job_id}")
     logger.info(f"Query: {query}")
     logger.info(f"Callback URL: {callback_url}")
+    if use_retailer_filters and vehicle_filters:
+        retailer_count = len(vehicle_filters.get("retailers", {}))
+        logger.info(f"Using retailer-specific LLM filters for {retailer_count} retailers")
 
     # Add background task to run all scrapers
     background_tasks.add_task(
@@ -333,13 +368,15 @@ async def trigger_all_scrapers(
         query,
         vehicle_filters,
         job_id,
-        callback_url
+        callback_url,
+        use_retailer_filters
     )
 
     return {
         "status": "dispatched",
         "jobId": job_id,
         "scrapers": list(SCRAPER_SCRIPTS.keys()),
+        "useRetailerFilters": use_retailer_filters,
         "message": f"Running all {len(SCRAPER_SCRIPTS)} scrapers in background"
     }
 
@@ -348,10 +385,18 @@ def run_all_scrapers_and_callback(
     query: str,
     vehicle_filters: Optional[Dict[str, Any]],
     job_id: str,
-    callback_url: str
+    callback_url: str,
+    use_retailer_filters: bool = False
 ) -> None:
     """
     Run all scrapers in parallel and combine results into one callback.
+
+    Args:
+        query: Natural language search query
+        vehicle_filters: Either generic filters or retailer-specific LLM filters
+        job_id: Job ID for tracking
+        callback_url: URL to send results back to
+        use_retailer_filters: If True, vehicle_filters contains retailer-specific filters
     """
     import asyncio
     import concurrent.futures
@@ -360,6 +405,8 @@ def run_all_scrapers_and_callback(
     errors = []
 
     logger.info(f"Starting all scrapers for job {job_id}")
+    if use_retailer_filters and vehicle_filters:
+        logger.info(f"Using retailer-specific LLM filters")
 
     # Run all scrapers sequentially (one at a time) for better debugging
     for scraper_name in SCRAPER_SCRIPTS.keys():
@@ -367,11 +414,37 @@ def run_all_scrapers_and_callback(
         # Add breathing room between scraper launches
         import time
         time.sleep(2)
+
         try:
+            # Extract retailer-specific filters if available
+            scraper_filters = None
+            if use_retailer_filters and vehicle_filters and "retailers" in vehicle_filters:
+                # Map scraper names to retailer keys in LLM output
+                retailer_key_map = {
+                    "cargurus-camoufox": "cargurus",
+                    "carmax": "carmax",
+                    "autotrader": "autotrader",
+                    "truecar": "truecar",
+                    "carvana": "carvana",
+                }
+                retailer_key = retailer_key_map.get(scraper_name, scraper_name)
+                retailer_data = vehicle_filters["retailers"].get(retailer_key)
+
+                if retailer_data:
+                    # New LLM format: retailer-specific data directly
+                    # AutoTrader: URL string
+                    # Others: Dict with scraper-specific keys
+                    scraper_filters = retailer_data
+                    logger.info(f"Using LLM-generated filters for {scraper_name}")
+                else:
+                    # Fall back to generic filters if retailer not found
+                    scraper_filters = None
+                    logger.warning(f"No LLM filters for {retailer_key}, using query")
+
             result = run_single_scraper(
                 scraper_name,
                 query,
-                vehicle_filters,
+                scraper_filters,
                 job_id
             )
             if result and len(result) > 0:
@@ -474,25 +547,31 @@ def run_single_scraper(
             # Different scrapers expect different parameter formats
             import json as json_mod
 
-            if scraper_name == "carvana" and vehicle_filters:
-                # Carvana interactive expects {"structured": {...}} format for filter selection
-                filters_json = json_mod.dumps({"structured": vehicle_filters})
+            if scraper_name == "autotrader" and vehicle_filters:
+                # AutoTrader: LLM generates URL string directly
+                # Check if it's a URL (new format) or needs adapter (old format)
+                if isinstance(vehicle_filters, str) and vehicle_filters.startswith('http'):
+                    # New format: URL string directly
+                    scraper_input = vehicle_filters
+                else:
+                    # Old format: structured data, use adapter
+                    scraper_input = json_mod.dumps({"structured": vehicle_filters})
                 command = [
                     "xvfb-run", "--server-args=-screen 0 1920x1080x24",
-                    python_bin, script_path, filters_json, "5"
+                    python_bin, script_path, scraper_input, "10"
                 ]
-            elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "autotrader"] and vehicle_filters:
-                # CarGurus, TrueCar, CarMax, AutoTrader expect {"structured": {...}} format
-                filters_json = json_mod.dumps({"structured": vehicle_filters})
+            elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "carvana"] and vehicle_filters:
+                # These scrapers expect dict with their specific keys - pass JSON directly
+                filters_json = json_mod.dumps(vehicle_filters)
                 command = [
                     "xvfb-run", "--server-args=-screen 0 1920x1080x24",
-                    python_bin, script_path, filters_json, "5"
+                    python_bin, script_path, filters_json, "10"
                 ]
             else:
-                # Fallback to plain query string for scrapers without structured support
+                # Fallback to plain query string for scrapers without filters
                 command = [
                     "xvfb-run", "--server-args=-screen 0 1920x1080x24",
-                    python_bin, script_path, f"'{query}'", "5"
+                    python_bin, script_path, f"'{query}'", "10"
                 ]
 
             logger.info(f"Running command: {' '.join(command)}")

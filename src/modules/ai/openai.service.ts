@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { ConversationSummaryService } from './conversation-summary.service';
+import { SPECIALIST_PROMPTS } from './specialist-prompts';
 import OpenAI from 'openai';
 import { ChatCompletionMessageParam } from 'openai/resources';
 
@@ -215,17 +216,16 @@ When a user mentions buying a vehicle (car, truck, motorcycle, etc.):
    - **Body Style** (required): "Any preference on body style? (Crew Cab, Extended Cab, etc.)"
    - **Drivetrain** (required): "Any preference on drivetrain? (4WD/AWD, 2WD, RWD)"
 
-3. **Collect Multiple Preferences**: Users can specify multiple options:
-   - Multiple trims: "I'm open to either Denali or Denali Ultimate"
-   - Multiple colors: "Black, White, or Silver would work"
-   - Store these as ARRAYS in the searchFilters
+3. **Construct Natural Language searchTerm**: After collecting preferences, construct a clear, descriptive searchTerm that includes all the collected criteria. The system will automatically generate retailer-specific filters from this searchTerm.
 
 4. **Output Format for Vehicle Goals**:
 \`\`\`
-EXTRACT_DATA: {"goalType":"item","title":"2025 GMC Sierra Denali 3500HD","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali 3500HD dually","searchFilters":{"category":"vehicle","make":"GMC","model":"Sierra","year":2025,"trims":["Denali","Denali Ultimate"],"series":"3500HD","colors":["Black","White"],"bodyStyle":"Crew Cab","drivetrain":"4WD"}}
+EXTRACT_DATA: {"goalType":"item","title":"2025 GMC Sierra Denali 3500HD","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually"}
 \`\`\`
 
-5. **Extract When Complete**: Once you have make, model, year, and budget, you MUST ask about trims, colors, body style, and drivetrain BEFORE extracting. Only output EXTRACT_DATA after you have collected these preferences from the user. Do NOT extract immediately after getting just make/model/year/budget - the configuration preferences are required.
+5. **Extract When Complete**: Once you have make, model, year, and budget, you MUST ask about trims, colors, body style, and drivetrain BEFORE extracting. Only output EXTRACT_DATA after you have collected these preferences from the user. Include ALL collected preferences in the searchTerm as a natural language description.
+
+**Note**: The system automatically parses the searchTerm and generates retailer-specific filters for AutoTrader, CarGurus, CarMax, Carvana, and TrueCar. You do NOT need to extract structured filter data - just provide a clear natural language description in searchTerm.
 
 ## Required Fields by Goal Type
 
@@ -233,9 +233,8 @@ EXTRACT_DATA: {"goalType":"item","title":"2025 GMC Sierra Denali 3500HD","budget
 - The \`category\` field is REQUIRED for all item goals - choose the appropriate category based on what type of product it is
 
 **Item Goals**: In addition to the fields above, item goals may include:
-- \`searchTerm\` (optimized search query for listing sites)
-- \`searchFilters\` (JSON with category-specific preferences - UI displays this for editing)
-  - Vehicles: { category, make, model, year, trims (array), series, colors (array), bodyStyle, drivetrain, fuelType, transmission }
+- \`searchTerm\` (optimized search query for listing sites) - For vehicle goals, this is used to automatically generate retailer-specific filters
+- \`searchFilters\` (DEPRECATED for vehicle goals - use searchTerm only. For non-vehicle categories, this JSON contains category-specific preferences that UI displays for editing)
   - Technology: { category, brands (array), minRam, minStorage, screenSize, processor, gpu }
   - Furniture: { category, brands (array), colors (array), material, style, dimensions }
   - Sporting Goods: { category, brands (array), size, sport, condition }
@@ -278,9 +277,9 @@ Item Goal (Furniture):
 EXTRACT_DATA: {"goalType":"item","title":"Herman Miller Aeron Chair","budget":895,"category":"furniture"}
 \`\`\`
 
-Item Goal (Vehicle - includes searchTerm and searchFilters):
+Item Goal (Vehicle - includes searchTerm, retailerFilters auto-generated):
 \`\`\`
-EXTRACT_DATA: {"goalType":"item","title":"2025 GMC Sierra Denali 3500HD","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali 3500HD dually","searchFilters":{"category":"vehicle","make":"GMC","model":"Sierra","year":2025,"trims":["Denali"],"series":"3500HD"}}
+EXTRACT_DATA: {"goalType":"item","title":"2025 GMC Sierra Denali 3500HD","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black color 4WD crew cab dually"}
 \`\`\`
 
 Item Goal (Technology - includes searchFilters):
@@ -368,9 +367,8 @@ Your response:
 
       // Call OpenAI Chat Completion
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         messages,
-        temperature: 0.7,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -478,6 +476,45 @@ Your response:
    * Get system prompt for goal view with subgoal creation support
    */
   private getGoalViewSystemPrompt(goalContext: any): string {
+    // For item goals, use the specialist prompt that includes update commands
+    if (goalContext.type === 'item') {
+      return `${SPECIALIST_PROMPTS.items}
+
+**Current Goal Context:**
+You are helping with the specific item goal: "${goalContext.title}" (ID: ${goalContext.id})
+- Description: ${goalContext.description || 'No description'}
+
+**Available Commands:**
+When the user wants to modify their goal, output commands in this EXACT format:
+
+\`\`\`
+UPDATE_TITLE: {"goalId":"${goalContext.id}","title":"<new display title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+UPDATE_SEARCHTERM: {"goalId":"${goalContext.id}","searchTerm":"<new search query>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+REFRESH_CANDIDATES: {"goalId":"${goalContext.id}","proposalType":"accept_decline","awaitingConfirmation":true}
+ARCHIVE_GOAL: {"goalId":"${goalContext.id}","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+\`\`\`
+
+**Command Usage:**
+- **UPDATE_TITLE**: Changes the display name of the goal only (e.g., "New Truck" → "My Dream Truck")
+- **UPDATE_SEARCHTERM**: Updates the search criteria and regenerates retailer filters (use when user wants to modify search parameters)
+- **REFRESH_CANDIDATES**: Queues a scrape job to find new candidates using the current search criteria
+- **ARCHIVE_GOAL**: Archives the goal
+
+**Proposal Types:**
+- **accept_decline**: For REFRESH_CANDIDATES - shows Accept/Decline buttons
+- **confirm_edit_cancel**: For all other commands - shows Confirm/Edit/Cancel options
+
+**Important:**
+- Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command output
+- When user asks to change the NAME/DISPLAY TITLE → Output UPDATE_TITLE
+- When user asks to change/modify SEARCH CRITERIA → Output UPDATE_SEARCHTERM (after asking clarifying questions)
+- After UPDATE_SEARCHTERM is confirmed, ALWAYS offer REFRESH_CANDIDATES as a follow-up proposal
+- When user asks to archive/delete → Output ARCHIVE_GOAL
+- After outputting any command, end your response with "Does this look good?"
+`;
+    }
+
+    // Default prompt for action/finance goals
     return `You are a Goal Achievement Coach helping the user with their specific goal: "${goalContext.title}".
 
 **Goal Details:**
@@ -527,7 +564,7 @@ Be conversational, supportive, and help them succeed!`;
     userId: string,
     message: string,
     goalContext: any,
-  ): Promise<{ content: string; commands?: any[] }> {
+  ): Promise<{ content: string; commands?: any[]; goalPreview?: string; awaitingConfirmation?: boolean; proposalType?: string }> {
     // Load history from database if not in cache
     let history = this.threadHistories.get(threadId);
     if (!history) {
@@ -550,9 +587,8 @@ ${message}`;
       ];
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         messages,
-        temperature: 0.7,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -571,10 +607,22 @@ ${message}`;
       // Parse structured commands
       const commands = this.parseCommands(content);
 
-      return {
+      const apiResponse: { content: string; commands?: any[]; goalPreview?: string; awaitingConfirmation?: boolean; proposalType?: string } = {
         content: this.cleanCommandsFromContent(content),
         commands
       };
+
+      // Add confirmation data if commands exist
+      if (commands.length > 0) {
+        apiResponse.goalPreview = this.generateGoalPreview(commands);
+        apiResponse.awaitingConfirmation = true;
+        // Extract proposalType from the first command's data
+        if (commands[0]?.data?.proposalType) {
+          apiResponse.proposalType = commands[0].data.proposalType;
+        }
+      }
+
+      return apiResponse;
     } catch (error) {
       this.logger.error('OpenAI API error:', error);
       throw error;
@@ -728,95 +776,64 @@ CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","bud
 
 **IMPORTANT**: Always include the \`category\` field for item goals with the appropriate value from the list above.
 
-**Item Detection & Structured Search Data:**
+**Item Detection & Search Data:**
 When a user wants to buy an item, you MUST:
 1. Set \`category\` (vehicle, technology, furniture, sporting_goods, clothing, pets, etc.)
-2. Extract details into a structured \`searchFilters\` object (UI displays this for user editing)
-3. Also generate an optimized \`searchTerm\` for listing sites
+2. For **vehicles**: Generate a clear, descriptive \`searchTerm\` - the system automatically generates retailer-specific filters
+3. For **non-vehicles**: Extract structured \`searchFilters\` object (UI displays this for user editing) and \`searchTerm\`
 
-**For item goals, use the searchFilters object:**
+**For vehicle item goals:**
 \`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","searchTerm":"<search-term>","searchFilters":{<filters>}}
-\`\`\`
-
-**Universal Structured Format for Vehicles (single source of truth):**
-The system uses a universal structured format for vehicle searches. Each scraper has its own adapter to convert this to scraper-specific parameters.
-
-\`\`\`
-{
-  "makes": ["GMC"],                    // Array of makes (multiple supported by some scrapers)
-  "models": ["Sierra"],                // Array of models
-  "trims": ["Denali", "Denali Ultimate"], // Array of trim preferences
-  "year": null,                        // Single year
-  "yearMin": 2015,                     // Year range start
-  "yearMax": 2025,                     // Year range end
-  "minPrice": 10000,                   // Min price
-  "maxPrice": 50000,                   // Max price/budget
-  "drivetrain": "Four Wheel Drive",    // Human-readable (adapters convert to scraper codes)
-  "fuelType": "Diesel",                // Human-readable (adapters convert to scraper codes)
-  "bodyType": "Pickup Trucks",         // Body type
-  "transmission": "Automatic",
-  "exteriorColor": "Black",            // Human-readable color name
-  "interiorColor": "Gray",
-  "features": ["Seat Massagers", "Sunroof"], // Additional features
-  "location": {
-    "zip": "94002",
-    "distance": 200,
-    "city": null,
-    "state": null
-  }
-}
+CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"vehicle","searchTerm":"<natural-language-description>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
 \`\`\`
 
-**Scraper Adapters (converts universal format to scraper-specific):**
-- **CarMax**: makes[], models[], trims[], colors[], bodyType, fuelType, drivetrain
-- **CarGurus**: make (single), model (single), drivetrain → FOUR_WHEEL_DRIVE, fuelType → DIESEL
-- **AutoTrader**: Converts to text query "GMC Sierra Denali near 94002"
-- **TrueCar**: make, model, trims[], year/yearMin/yearMax, budget, bodyStyle
-- **Carvana**: make, model, trims[], year
+**CRITICAL - Title format for item goals:**
+- The title should be the **ITEM NAME ONLY** - NEVER start with action verbs!
+- ❌ FORBIDDEN WORDS in title: "Buy", "Purchase", "Get", "Find", "Look for", "Search for", "I want", "Need"
+- ✅ CORRECT: "GMC Sierra 3500HD Denali Ultimate", "MacBook Pro 14", "Toyota Camry"
+- ❌ WRONG: "Buy a GMC Sierra", "Purchase MacBook Pro", "Get Toyota Camry", "I want a truck"
+- Keep titles SHORT and DESCRIPTIVE - 3-6 words maximum for vehicle names
+- The title is displayed on goal cards - make it succinct!
+- IMPORTANT: If the user says "I want to buy a X", the title should be just "X", NOT "Buy a X"
 
-**Important**: When extracting vehicle searchFilters, use the universal structured format above. The scraper service will handle the conversion to scraper-specific parameters.
-
-**searchFilters structure (all fields OPTIONAL, varies by category):**
+**Example CREATE_GOAL:**
 \`\`\`
-// Vehicles (Universal format - adapters handle scraper conversion):
-{
-  "category": "vehicle",
-  "makes": ["GMC"],                // Array of makes
-  "models": ["Sierra"],            // Array of models
-  "trims": ["Denali", "AT4"],      // Array of trim preferences
-  "year": 2025,                    // Single year OR use yearMin/yearMax for range
-  "yearMin": 2015,                 // Year range start
-  "yearMax": 2025,                 // Year range end
-  "minPrice": 10000,               // Min price
-  "maxPrice": 50000,               // Max budget
-  "mileageMax": 50000,             // Max mileage
-  "drivetrain": "Four Wheel Drive",// Human-readable format
-  "fuelType": "Diesel",           // Human-readable format
-  "bodyType": "Pickup Trucks",
-  "transmission": "Automatic",
-  "exteriorColor": "Black",
-  "interiorColor": "Gray",
-  "features": ["Seat Massagers", "Tow Hitch", "Sunroof"],
-  "location": {
-    "zip": "94002",
-    "distance": 200,
-    "city": null,
-    "state": null
-  }
-}
+CREATE_GOAL: {"type":"item","title":"GMC Sierra 3500HD Denali Ultimate","description":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually under 85000","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+\`\`\`
 
-// IMPORTANT: trims is an array of trim names (e.g., ["Denali Ultimate", "SLE", "AT4"])
-// Drivetrain is a SEPARATE filter - do NOT include "4WD" or "AWD" in trim values!
-// Examples:
-// - trims: ["Denali Ultimate"] (correct)
-// - trims: ["Denali Ultimate 4WD"] (WRONG - 4WD goes in drivetrain field)
+**CRITICAL - Ask for essential vehicle filters BEFORE creating the goal:**
+When the user wants to create a vehicle goal and hasn't specified these details, you MUST ask:
+1. **Make & Model** - If not specified (e.g., "GMC Yukon", "Toyota Camry")
+2. **ZIP Code** - Required for local search
+3. **Search Distance** - Miles from ZIP (e.g., 50, 100, 200 miles)
+4. **Budget Range** - minPrice/maxPrice
+5. **Year Range** - yearMin/yearMax (e.g., 2015-2022)
+6. **Color** - Exterior color preference (Black, White, Gray, Blue, etc.)
 
-// Valid drivetrain values (human-readable): Four Wheel Drive, All Wheel Drive, Four by Two (4X2), Rear Wheel Drive, Front Wheel Drive
-// Valid exterior colors (human-readable): Black, White, Gray, Blue, Silver, Red, Brown, Gold, Green
-// Valid interior colors (human-readable): Black, Gray, Brown, White
-// Valid fuel types (human-readable): Gas, Diesel, Flex Fuel Vehicle, Hybrid, Plug-In Hybrid, Electric
+Only after gathering missing details should you output the CREATE_GOAL command with a complete searchTerm.
 
+**searchTerm format:** Include ALL vehicle criteria in natural language:
+- Make, Model, Trim Level
+- Year Range (yearMin to yearMax)
+- Budget/Price range
+- Location (ZIP code and search distance)
+- Exterior color
+- Drivetrain (if specified: 4WD, AWD, 4X2)
+- Mileage limit (if specified)
+
+**Example searchTerm:** "2023-2024 GMC Sierra 3500HD Denali Ultimate within 500 miles of 94002 under $100000 black color 4WD"
+
+The system will automatically parse this searchTerm and generate retailer-specific filters for AutoTrader, CarGurus, CarMax, Carvana, and TrueCar.
+
+**For non-vehicle item goals:**
+\`\`\`
+CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","searchTerm":"<search-term>","searchFilters":{<filters>},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+\`\`\`
+
+**IMPORTANT**: Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command output.
+
+**searchFilters structure for non-vehicle categories (all fields OPTIONAL):**
+\`\`\`
 // Technology:
 {
   "category": "technology",
@@ -835,69 +852,58 @@ The system uses a universal structured format for vehicle searches. Each scraper
   "material": "leather",
   "style": "modern"
 }
+
+// Sporting Goods:
+{
+  "category": "sporting_goods",
+  "brands": ["Nike"],
+  "size": "Medium",
+  "sport": "running"
+}
+
+// Clothing:
+{
+  "category": "clothing",
+  "brands": ["Levi's"],
+  "sizes": ["32", "34"],
+  "colors": ["Blue"],
+  "gender": "men"
+}
+
+// Pets:
+{
+  "category": "pets",
+  "breeds": ["Golden Retriever"],
+  "age": "puppy",
+  "size": "large"
+}
 \`\`\`
 
-**Important:** Extract what you can from what the user says. If user only says "Denali truck", extract make="GMC" and model="Sierra", leave others null.
-
-**Vehicle brands/keywords to recognize:**
-- **Cars**: Toyota, Honda, Ford, Chevy, BMW, Mercedes, Tesla, etc.
-- **Trucks**: F-150, Silverado, Ram, Tacoma, Sierra, etc.
-- **SUVs**: RAV4, CR-V, Explorer, Highlander, Grand Cherokee, etc.
-- **Luxury**: Denali (GMC), Escalade (Cadillac), Lexus, Porsche, etc.
-- **Motorcycles**: Harley, Honda, Kawasaki, Ducati, etc.
-
-**Extraction examples (with category):**
-- "I want to buy a 2025 GMC Sierra Denali Ultimate 3500 under $50k, max 50k miles" → {category:"vehicle",makes:["GMC"],models:["Sierra 3500"],trims:["Denali Ultimate"],year:2025,maxPrice:50000,mileageMax:50000,searchTerm:"2025 GMC Sierra Denali Ultimate 3500"}
-- "I want either a Denali or Denali Ultimate" → {category:"vehicle",makes:["GMC"],models:["Sierra"],trims:["Denali","Denali Ultimate"]}
-- "I want a Ford F-150 under $30k within 100 miles of 94002" → {category:"vehicle",makes:["Ford"],models:["F-150"],location:{zip:"94002",distance:100},maxPrice:30000,searchTerm:"Ford F-150 under 30000"}
-- "Looking for a Tesla Model 3, white exterior" → {category:"vehicle",makes:["Tesla"],models:["Model 3"],exteriorColor:"White",searchTerm:"Tesla Model 3 white"}
-- "Want a Honda CR-V with AWD within 50 miles" → {category:"vehicle",makes:["Honda"],models:["CR-V"],drivetrain:"All Wheel Drive",location:{distance:50},searchTerm:"Honda CR-V AWD"}
-- "Just want a Denali truck near me" → {category:"vehicle",makes:["GMC"],models:["Sierra"],trims:["Denali"],searchTerm:"GMC Sierra Denali"}
-- "Need a red or black truck" → {category:"vehicle",exteriorColor:"Red",searchTerm:"red or black truck"}
-- "Looking for a diesel dually" → {category:"vehicle",fuelType:"Diesel",makes:["GMC"],models:["Sierra 3500"],searchTerm:"diesel dually truck"}
-- "GMC Sierra Denali Dually" → {category:"vehicle",makes:["GMC"],models:["Sierra 3500"],trims:["Denali"],searchTerm:"GMC Sierra Denali 3500 dually"}
-- "MacBook Pro with 16GB RAM" → {category:"technology",brands:["Apple"],minRam:"16GB",searchTerm:"MacBook Pro 16GB RAM"}
-- "2015-2020 Toyota 4Runner under $25k" → {category:"vehicle",makes:["Toyota"],models:["4Runner"],yearMin:2015,yearMax:2020,maxPrice:25000,searchTerm:"2015-2020 Toyota 4Runner"}
-
-**Inference rules:**
-- "Denali" → makes=["GMC"], models=["Sierra"], trims=["Denali"]
-- "Denali Ultimate" → makes=["GMC"], models=["Sierra"], trims=["Denali Ultimate"]
-- "Escalade" → makes=["Cadillac"], models=["Escalade"]
-- "AWD" or "All-Wheel Drive" → drivetrain="All Wheel Drive"
-- "4WD" or "Four-Wheel Drive" → drivetrain="Four Wheel Drive"
-- "4x2" or "2WD" → drivetrain="Four by Two (4X2)"
-- "dually" or "dual rear wheel" → models=["Sierra 3500"]
-- "3500HD", "3500", "1 ton" → models=["Sierra 3500"]
-- "2500HD", "2500", "3/4 ton" → models=["Sierra 2500"]
-- "1500", "150", "half ton" → models=["Sierra 1500"]
-- "Lariat", "Platinum", "Limited", "AT4 Ultimate" → trim values (add to trims array)
-- User can say "Denali or AT4" → Add both to trims array: ["Denali", "AT4"]
-- Colors should use exteriorColor with Title Case: "Black", "White", "Gray", "Blue", "Silver", "Red", "Brown", "Gold", "Green"
-- Fuel types: "Gas", "Diesel", "Flex Fuel Vehicle", "Hybrid", "Plug-In Hybrid", "Electric"
+**Important:** For vehicle goals, describe the vehicle specifications in natural language within searchTerm. The system will automatically extract and convert to retailer-specific filters.
 
 **Create a subgoal (under an existing goal):**
 \`\`\`
-CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item|finance|action","title":"<title>","description":"<description>"}
+CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item|finance|action","title":"<title>","description":"<description>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
 \`\`\`
 
 For item subgoals (vehicles, etc.), also include category and searchTerm:
 \`\`\`
-CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item","title":"<title>","category":"vehicle","searchTerm":"<search-term>"}
+CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item","title":"<title>","category":"vehicle","searchTerm":"<search-term>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
 \`\`\`
 
 **Update goal progress:**
 \`\`\`
-UPDATE_PROGRESS: {"goalId":"<goal-id>","completionPercentage":50}
+UPDATE_PROGRESS: {"goalId":"<goal-id>","completionPercentage":50,"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
 \`\`\`
 
 **Modify existing goals:**
 \`\`\`
-UPDATE_TITLE: {"goalId":"<goal-id>","title":"<new title>"}
-UPDATE_FILTERS: {"goalId":"<goal-id>","filters":{"zip":"94002","distance":200,"yearMin":2015,"yearMax":2022,"maxPrice":50000,"mileageMax":50000,"drivetrain":"Four Wheel Drive","exteriorColor":"Black"}}
-ADD_TASK: {"goalId":"<goal-id>","task":{"title":"<task title>","priority":"medium"}}
-REMOVE_TASK: {"taskId":"<task-id>"}
-TOGGLE_TASK: {"taskId":"<task-id>"}
-ARCHIVE_GOAL: {"goalId":"<goal-id>"}
+UPDATE_TITLE: {"goalId":"<goal-id>","title":"<new title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+UPDATE_FILTERS: {"goalId":"<goal-id>","filters":{"zip":"94002","distance":200,"yearMin":2015,"yearMax":2022,"maxPrice":50000,"mileageMax":50000,"drivetrain":"Four Wheel Drive","exteriorColor":"Black"},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+ADD_TASK: {"goalId":"<goal-id>","task":{"title":"<task title>","priority":"medium"},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+REMOVE_TASK: {"taskId":"<task-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+TOGGLE_TASK: {"taskId":"<task-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+ARCHIVE_GOAL: {"goalId":"<goal-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
 \`\`\`
 
 **Important Workflow:**
@@ -906,13 +912,24 @@ ARCHIVE_GOAL: {"goalId":"<goal-id>"}
 - For subgoals under existing goals, use the actual goal ID
 
 **CRITICAL - When to output commands:**
-- When user asks to CREATE a goal → Output CREATE_GOAL command immediately
+- When user asks to CREATE a goal → First ask clarifying questions if details are missing, then output CREATE_GOAL command
 - When user asks to ADD a subgoal → Output CREATE_SUBGOAL command immediately
 - When user asks to CHANGE/UPDATE title, progress, filters → Output the appropriate command immediately
 - When user asks to ADD a task → Output ADD_TASK command immediately
 - When user asks to REMOVE/DELETE a task → Output REMOVE_TASK command immediately
 - When user asks to TOGGLE/CHECK/UNCHECK a task → Output TOGGLE_TASK command immediately
 - When user asks to ARCHIVE a goal → Output ARCHIVE_GOAL command immediately
+
+**For vehicle goals specifically:** Before outputting CREATE_GOAL, ensure you have:
+- Make & Model (e.g., "GMC Sierra 3500HD")
+- Trim level if important (e.g., "Denali Ultimate")
+- Year range (e.g., "2023-2024")
+- Budget/Price max
+- ZIP code for search location
+- Search distance (e.g., 500 miles)
+- Exterior color preference
+
+If ANY of these are missing, ask the user for clarification first. DO NOT create the goal until all essential details are provided.
 
 **CRITICAL**: After outputting CREATE_GOAL, CREATE_SUBGOAL, or UPDATE_PROGRESS commands, end your response with: "Does this look good?"
 After outputting UPDATE_TITLE, ADD_TASK, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL, or UPDATE_FILTERS commands, end your response with: "Does this look good?"
@@ -962,9 +979,8 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       ];
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         messages,
-        temperature: 0.7,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -984,10 +1000,22 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       // Parse structured commands
       const commands = this.parseCommands(content);
 
-      return {
+      const apiResponse: { content: string; commands?: any[]; goalPreview?: string; awaitingConfirmation?: boolean; proposalType?: string } = {
         content: this.cleanCommandsFromContent(content),
         commands
       };
+
+      // Add confirmation data if commands exist
+      if (commands.length > 0) {
+        apiResponse.goalPreview = this.generateGoalPreview(commands);
+        apiResponse.awaitingConfirmation = true;
+        // Extract proposalType from the first command's data
+        if (commands[0]?.data?.proposalType) {
+          apiResponse.proposalType = commands[0].data.proposalType;
+        }
+      }
+
+      return apiResponse;
     } catch (error) {
       this.logger.error('Overview chat error:', error);
       throw error;
@@ -1093,6 +1121,128 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
         commands.push({ type: 'UPDATE_TITLE', data });
       } catch (e) {
         this.logger.warn('Failed to parse UPDATE_TITLE command:', e);
+      }
+    }
+
+    // Parse UPDATE_SEARCHTERM commands (with nested object support for longer JSON)
+    const searchtermKeywordIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = content.indexOf('UPDATE_SEARCHTERM:', searchStart);
+      if (keywordIndex === -1) break;
+      searchtermKeywordIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'UPDATE_SEARCHTERM:'.length;
+    }
+
+    for (const keywordIndex of searchtermKeywordIndices) {
+      let startIndex = content.indexOf('{', keywordIndex);
+      if (startIndex === -1) continue;
+
+      // Count braces to find matching closing brace
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let i = startIndex; i < content.length; i++) {
+        const char = content[i];
+
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+        }
+      }
+
+      if (endIndex !== -1) {
+        const jsonStr = content.substring(startIndex, endIndex);
+        try {
+          const data = JSON.parse(jsonStr);
+          commands.push({ type: 'UPDATE_SEARCHTERM', data });
+        } catch (e) {
+          this.logger.warn('Failed to parse UPDATE_SEARCHTERM command:', e);
+        }
+      }
+    }
+
+    // Parse REFRESH_CANDIDATES commands (with nested object support)
+    const refreshKeywordIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = content.indexOf('REFRESH_CANDIDATES:', searchStart);
+      if (keywordIndex === -1) break;
+      refreshKeywordIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'REFRESH_CANDIDATES:'.length;
+    }
+
+    for (const keywordIndex of refreshKeywordIndices) {
+      let startIndex = content.indexOf('{', keywordIndex);
+      if (startIndex === -1) continue;
+
+      // Count braces to find matching closing brace
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let i = startIndex; i < content.length; i++) {
+        const char = content[i];
+
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) {
+              endIndex = i + 1;
+              break;
+            }
+          }
+        }
+      }
+
+      if (endIndex !== -1) {
+        const jsonStr = content.substring(startIndex, endIndex);
+        try {
+          const data = JSON.parse(jsonStr);
+          commands.push({ type: 'REFRESH_CANDIDATES', data });
+        } catch (e) {
+          this.logger.warn('Failed to parse REFRESH_CANDIDATES command:', e);
+        }
       }
     }
 
@@ -1406,6 +1556,90 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
     }
 
+    // Remove UPDATE_SEARCHTERM commands (with nested objects support)
+    const searchtermCleanIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = cleaned.indexOf('UPDATE_SEARCHTERM:', searchStart);
+      if (keywordIndex === -1) break;
+      searchtermCleanIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'UPDATE_SEARCHTERM:'.length;
+    }
+
+    for (let i = searchtermCleanIndices.length - 1; i >= 0; i--) {
+      const keywordIndex = searchtermCleanIndices[i];
+      let startIndex = cleaned.indexOf('{', keywordIndex);
+      if (startIndex === -1) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(keywordIndex + 'UPDATE_SEARCHTERM:'.length);
+        continue;
+      }
+
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let j = startIndex; j < cleaned.length; j++) {
+        const char = cleaned[j];
+        if (escapeNext) { escapeNext = false; continue; }
+        if (char === '\\') { escapeNext = true; continue; }
+        if (char === '"') { inString = !inString; continue; }
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) { endIndex = j + 1; break; }
+          }
+        }
+      }
+
+      if (endIndex > startIndex) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(endIndex + 1);
+      }
+    }
+
+    // Remove REFRESH_CANDIDATES commands (with nested objects support)
+    const refreshCleanIndices = [];
+    searchStart = 0;
+    while (true) {
+      const keywordIndex = cleaned.indexOf('REFRESH_CANDIDATES:', searchStart);
+      if (keywordIndex === -1) break;
+      refreshCleanIndices.push(keywordIndex);
+      searchStart = keywordIndex + 'REFRESH_CANDIDATES:'.length;
+    }
+
+    for (let i = refreshCleanIndices.length - 1; i >= 0; i--) {
+      const keywordIndex = refreshCleanIndices[i];
+      let startIndex = cleaned.indexOf('{', keywordIndex);
+      if (startIndex === -1) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(keywordIndex + 'REFRESH_CANDIDATES:'.length);
+        continue;
+      }
+
+      let depth = 0;
+      let inString = false;
+      let escapeNext = false;
+      let endIndex = -1;
+
+      for (let j = startIndex; j < cleaned.length; j++) {
+        const char = cleaned[j];
+        if (escapeNext) { escapeNext = false; continue; }
+        if (char === '\\') { escapeNext = true; continue; }
+        if (char === '"') { inString = !inString; continue; }
+        if (!inString) {
+          if (char === '{') depth++;
+          if (char === '}') {
+            depth--;
+            if (depth === 0) { endIndex = j + 1; break; }
+          }
+        }
+      }
+
+      if (endIndex > startIndex) {
+        cleaned = cleaned.substring(0, keywordIndex) + cleaned.substring(endIndex + 1);
+      }
+    }
+
     // Remove CREATE_SUBGOAL, UPDATE_PROGRESS, UPDATE_TITLE, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL commands (simple non-nested)
     cleaned = cleaned
       .replace(/CREATE_SUBGOAL:\s*{[^}]+}/g, '')
@@ -1449,33 +1683,15 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
         if (goalData.budget) {
           preview += `**Budget:** $${goalData.budget?.toLocaleString()}\n`;
         }
-        // Generic searchFilters display for ALL item categories
-        if (goalData.searchFilters) {
+        // Vehicle goals: display searchTerm (retailerFilters auto-generated)
+        if (goalData.category === 'vehicle' && goalData.searchTerm) {
+          preview += `\n**Search Query:** ${goalData.searchTerm}\n`;
+          preview += `Retailer-specific filters will be generated automatically.\n`;
+        }
+        // Non-vehicle goals: display structured searchFilters
+        if (goalData.searchFilters && goalData.category !== 'vehicle') {
           const sf = goalData.searchFilters;
-          if (goalData.category === 'vehicle') {
-            preview += `\n**Vehicle Details:**\n`;
-            if (sf.make && sf.model) {
-              preview += `- Make/Model: ${sf.make} ${sf.model}\n`;
-            }
-            if (sf.year) {
-              preview += `- Year: ${sf.year}\n`;
-            }
-            if (sf.trims && sf.trims.length > 0) {
-              preview += `- Trims: ${sf.trims.join(', ')}\n`;
-            }
-            if (sf.series) {
-              preview += `- Series: ${sf.series}\n`;
-            }
-            if (sf.colors && sf.colors.length > 0) {
-              preview += `- Colors: ${sf.colors.join(', ')}\n`;
-            }
-            if (sf.bodyStyle) {
-              preview += `- Body Style: ${sf.bodyStyle}\n`;
-            }
-            if (sf.drivetrain) {
-              preview += `- Drivetrain: ${sf.drivetrain}\n`;
-            }
-          } else if (goalData.category === 'technology') {
+          if (goalData.category === 'technology') {
             preview += `\n**Technology Details:**\n`;
             if (sf.brands && sf.brands.length > 0) {
               preview += `- Brands: ${sf.brands.join(', ')}\n`;
@@ -1632,9 +1848,8 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       ];
 
       const stream = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         messages,
-        temperature: 0.7,
         stream: true,
       }, {
         signal: controller.signal,
@@ -1654,7 +1869,7 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       const commands = this.parseCommands(fullContent);
 
       // Prepare final chunk
-      const finalChunk: { content: string; done: true; goalPreview?: string; awaitingConfirmation?: boolean; commands?: any[] } = {
+      const finalChunk: { content: string; done: true; goalPreview?: string; awaitingConfirmation?: boolean; proposalType?: string; commands?: any[] } = {
         content: '',
         done: true,
       };
@@ -1664,6 +1879,10 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
         finalChunk.goalPreview = this.generateGoalPreview(commands);
         finalChunk.awaitingConfirmation = true;
         finalChunk.commands = commands;
+        // Extract proposalType from the first command's data
+        if (commands[0]?.data?.proposalType) {
+          finalChunk.proposalType = commands[0].data.proposalType;
+        }
       }
 
       // Add assistant response to history
@@ -1768,9 +1987,8 @@ You can reference and modify these goals through conversational commands. Refere
       ];
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         messages,
-        temperature: 0.7,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -1858,9 +2076,8 @@ You can reference and modify these goals through conversational commands. Refere
       ];
 
       const stream = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-nano',
         messages,
-        temperature: 0.7,
         stream: true,
       }, {
         signal: controller.signal,
@@ -1880,13 +2097,19 @@ You can reference and modify these goals through conversational commands. Refere
       const commands = this.parseCommands(fullContent);
 
       // Prepare final chunk
-      const finalChunk: { content: string; done: true; commands?: any[] } = {
+      const finalChunk: { content: string; done: true; goalPreview?: string; awaitingConfirmation?: boolean; proposalType?: string; commands?: any[] } = {
         content: '',
         done: true,
       };
 
       if (commands.length > 0) {
+        finalChunk.goalPreview = this.generateGoalPreview(commands);
+        finalChunk.awaitingConfirmation = true;
         finalChunk.commands = commands;
+        // Extract proposalType from the first command's data
+        if (commands[0]?.data?.proposalType) {
+          finalChunk.proposalType = commands[0].data.proposalType;
+        }
       }
 
       // Add assistant response to history

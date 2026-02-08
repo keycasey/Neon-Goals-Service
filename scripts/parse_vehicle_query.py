@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Vehicle Query Parser
+Vehicle Query Parser - Per-Retailer Filter Mapping
 
-Converts natural language vehicle queries into a structured format
-compatible with all car scrapers (CarMax, CarGurus, AutoTrader, TrueCar, Carvana).
+Converts natural language vehicle queries into retailer-specific filter formats
+using LLM calls with each retailer's filter JSON as context.
 
-The structured output is the single source of truth - each scraper
-has its own adapter to convert this to scraper-specific parameters.
+The LLM generates filters in the exact format each scraper expects, minimizing
+adapter work. Each retailer gets filters matching their scraper's input format.
 
 Usage:
     python3 parse_vehicle_query.py "GMC Sierra Denali under $50000"
@@ -15,10 +15,10 @@ Usage:
 import asyncio
 import json
 import sys
-import re
+import os
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -30,257 +30,167 @@ except ImportError:
 
 logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=sys.stderr)
 
-# Load filter catalog
-FILTER_CATALOG_PATH = Path(__file__).parent / 'data' / 'carmax-filters.json'
 
-
-def load_filter_catalog() -> dict:
-    """Load the CarMax filter catalog for available filter options."""
-    if FILTER_CATALOG_PATH.exists():
-        with open(FILTER_CATALOG_PATH, 'r') as f:
-            return json.load(f)
-    return {'global_filters': {}, 'filters': {}}
-
-
-def parse_with_patterns(query: str, catalog: dict) -> dict:
-    """
-    Parse query using regex patterns (fast, no LLM needed).
-
-    This handles common patterns like:
-    - "GMC Sierra Denali under $50000"
-    - "2024 black Toyota RAV4 with heated seats"
-    - "Ford F-150 or Chevy Silverado"
-    """
-    query_lower = query.lower()
-    result = {
-        "query": query,
-        "structured": {
-            "makes": [],
-            "models": [],
-            "trims": [],
-            "year": None,
-            "yearMin": None,
-            "yearMax": None,
-            "minPrice": None,
-            "maxPrice": None,
-            "drivetrain": None,
-            "fuelType": None,
-            "bodyType": None,
-            "transmission": None,
-            "doors": None,
-            "cylinders": None,
-            "exteriorColor": None,
-            "interiorColor": None,
-            "features": [],
-            "location": {
-                "zip": None,
-                "distance": None,
-                "city": None,
-                "state": None
-            }
-        }
+def load_all_filter_jsons() -> Dict[str, dict]:
+    """Load all retailer filter JSON files."""
+    data_dir = Path(__file__).parent / 'data'
+    retailers = {
+        'autotrader': 'autotrader-filters.json',
+        'cargurus': 'cargurus-filters.json',
+        'carmax': 'carmax-filters.json',
+        'carvana': 'carvana-filters.json',
+        'truecar': 'truecar-filters.json'
     }
 
-    global_filters = catalog.get('global_filters', {})
-
-    # Extract price (under $50000, $20000-$40000, etc.)
-    price_patterns = [
-        r'under\s*\$?(\d+)',
-        r'below\s*\$?(\d+)',
-        r'less than\s*\$?(\d+)',
-        r'max\s*\$?(\d+)',
-        r'\$?(\d+)\s*-\s*\$?(\d+)',
-        r'between\s*\$?(\d+)\s*and\s*\$?(\d+)',
-        r'up to\s*\$?(\d+)'
-    ]
-
-    for pattern in price_patterns:
-        match = re.search(pattern, query_lower)
-        if match:
-            if len(match.groups()) == 2 and match.group(2):
-                result["structured"]["minPrice"] = int(match.group(1))
-                result["structured"]["maxPrice"] = int(match.group(2))
-            else:
-                result["structured"]["maxPrice"] = int(match.group(1))
-            break
-
-    # Extract year
-    year_match = re.search(r'\b(20\d{2})\b', query)
-    if year_match:
-        result["structured"]["year"] = int(year_match.group(1))
-
-    # Extract color
-    colors = global_filters.get('exterior_colors', [])
-    for color in colors:
-        if color.lower() in query_lower:
-            result["structured"]["exteriorColor"] = color
-            break
-
-    # Extract body type
-    body_types = global_filters.get('body_types', [])
-    for body_type in body_types:
-        if body_type.lower() in query_lower:
-            result["structured"]["bodyType"] = body_type
-            break
-
-    # Extract drivetrain
-    drivetrains = global_filters.get('drivetrains', [])
-    for dt in drivetrains:
-        if dt.lower() in query_lower:
-            result["structured"]["drivetrain"] = dt
-            break
-
-    # Extract fuel type
-    fuel_types = global_filters.get('fuel_types', [])
-    for ft in fuel_types:
-        if ft.lower() in query_lower:
-            result["structured"]["fuelType"] = ft
-            break
-
-    # Extract features
-    features = global_filters.get('features', [])
-    for feature in features:
-        if feature.lower() in query_lower:
-            result["structured"]["features"].append(feature)
-
-    # Common make names (capitalized for matching)
-    common_makes = {
-        'gmc': 'GMC', 'ford': 'Ford', 'chevrolet': 'Chevrolet', 'chevy': 'Chevrolet',
-        'toyota': 'Toyota', 'honda': 'Honda', 'jeep': 'Jeep', 'ram': 'Ram',
-        'dodge': 'Dodge', 'nissan': 'Nissan', 'bmw': 'BMW', 'mercedes': 'Mercedes',
-        'lexus': 'Lexus', 'audi': 'Audi', 'cadillac': 'Cadillac', 'buick': 'Buick',
-        'lincoln': 'Lincoln', 'acura': 'Acura', 'infiniti': 'Infiniti',
-        'volkswagen': 'Volkswagen', 'volvo': 'Volvo', 'subaru': 'Subaru',
-        'mazda': 'Mazda', 'kia': 'Kia', 'hyundai': 'Hyundai', 'mitsubishi': 'Mitsubishi'
-    }
-
-    for make_lower, make_proper in common_makes.items():
-        if make_lower in query_lower:
-            result["structured"]["makes"].append(make_proper)
-
-    # Common model names (simplified - in production would use catalog)
-    # This is a basic implementation - production should use the filter catalog
-    if 'sierra' in query_lower or 'silverado' in query_lower:
-        if '3500' in query_lower or '1500' in query_lower:
-            model = 'Sierra 3500' if 'sierra' in query_lower else 'Silverado 1500'
+    filters = {}
+    for retailer, filename in retailers.items():
+        filepath = data_dir / filename
+        if filepath.exists():
+            with open(filepath, 'r') as f:
+                filters[retailer] = json.load(f)
         else:
-            model = 'Sierra' if 'sierra' in query_lower else 'Silverado'
-        result["structured"]["models"].append(model)
-    elif 'f-150' in query_lower or 'f150' in query_lower:
-        result["structured"]["models"].append('F-150')
-    elif 'rav4' in query_lower:
-        result["structured"]["models"].append('RAV4')
-    elif 'cr-v' in query_lower or 'crv' in query_lower:
-        result["structured"]["models"].append('CR-V')
-    elif 'wrangler' in query_lower:
-        result["structured"]["models"].append('Wrangler')
-    elif 'grand cherokee' in query_lower:
-        result["structured"]["models"].append('Grand Cherokee')
-    elif 'tacoma' in query_lower:
-        result["structured"]["models"].append('Tacoma')
-    elif 'tundra' in query_lower:
-        result["structured"]["models"].append('Tundra')
-    elif 'camry' in query_lower:
-        result["structured"]["models"].append('Camry')
-    elif 'corvette' in query_lower:
-        result["structured"]["models"].append('Corvette')
-    elif 'mustang' in query_lower:
-        result["structured"]["models"].append('Mustang')
+            logging.error(f"Warning: {filepath} not found")
 
-    # Common trims
-    trim_patterns = {
-        'denali ultimate': 'Denali Ultimate',
-        'denali': 'Denali',
-        'at4': 'AT4',
-        'lariat': 'Lariat',
-        'king ranch': 'King Ranch',
-        'platinum': 'Platinum',
-        'limited': 'Limited',
-        'rubicon': 'Rubicon',
-        'sahara': 'Sahara',
-        'xle': 'XLE',
-        'xse': 'XSE'
-    }
-
-    for trim_pattern, trim_name in trim_patterns.items():
-        if trim_pattern in query_lower:
-            result["structured"]["trims"].append(trim_name)
-
-    return result
+    return filters
 
 
-async def parse_with_llm(query: str, catalog: dict, api_key: str = None) -> dict:
-    """
-    Parse query using LLM (handles complex natural language).
+def build_system_prompt(filters: Dict[str, dict]) -> str:
+    """Build system prompt with full filter definitions for each retailer."""
 
-    Falls back to pattern parsing if OpenAI is not available.
-    """
-    if not AsyncOpenAI or not api_key:
-        logging.error("OpenAI not available, using pattern matching")
-        return parse_with_patterns(query, catalog)
+    # Build detailed filter context for each retailer
+    retailer_context = []
 
-    global_filters = catalog.get('global_filters', {})
+    for retailer, data in filters.items():
+        retailer_name = data.get('retailer', retailer.capitalize())
 
-    system_prompt = f"""You are a vehicle search query parser. Convert natural language queries into a structured JSON format for car scrapers.
+        # Include the FULL filters JSON so LLM can see exact options
+        filters_json = json.dumps(data.get('filters', []), indent=2)
 
-Available filter values (use these exact values when found in the query):
+        retailer_context.append(f"""
+**{retailer_name}** ({retailer})
 
-Body Types: {', '.join(global_filters.get('body_types', [])[:10])}
-Fuel Types: {', '.join(global_filters.get('fuel_types', []))}
-Drivetrains: {', '.join(global_filters.get('drivetrains', []))}
-Colors: {', '.join(global_filters.get('exterior_colors', [])[:10])}
-Features (common): Seat Massagers, Sunroof, Navigation, Heated Seats, Tow Hitch, Remote Start, Backup Camera, Leather Seats, Moonroof, Panoramic Sunroof, Apple CarPlay, Android Auto
+Full filters definition:
+```json
+{filters_json}
+```
 
-Rules:
-1. Extract makes/models/trims from the query (handle abbreviations like "chevy" → "Chevrolet")
-2. Price: "under $50000" → maxPrice: 50000, "$20000-$40000" → minPrice: 20000, maxPrice: 40000
-3. Year: "2024" or "2020+" → yearMin: 2020
-4. Multiple makes/models supported - return as arrays
-5. If a filter value isn't found, don't include it (null instead of empty string)
-6. features should be an array of feature names
-7. Return ONLY valid JSON, no explanation
+URL format: {data.get('url_format', {})}
+""")
+        )
 
-Output format:
+    # Build the prompt with expected output formats for each scraper
+    return f"""You are a vehicle search filter mapper. Convert natural language queries into retailer-specific filter formats.
+
+Each retailer's scraper expects a different input format. Generate the exact format each scraper expects.
+
+{''.join(retailer_context)}
+
+**SCRAPER INPUT FORMATS (generate exactly these formats):**
+
+1. **autotrader** - Generate a URL string directly:
+   - URL format: https://www.autotrader.com/cars-for-sale/{{make}}/{{model}}/{{trim}}?{{params}}
+   - Example: https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali-ultimate?startYear=2023&endYear=2024&searchRadius=500
+   - Make/model/trim should be lowercase with hyphens
+
+2. **cargurus** - Generate a dict with these exact keys:
+   {{make, model, zip, trim, yearMin, yearMax, minPrice, maxPrice, exteriorColor, interiorColor, drivetrain, fuelType, transmission, mileageMax}}
+   - drivetrain values: "FOUR_WHEEL_DRIVE", "ALL_WHEEL_DRIVE", "FOUR_BY_TWO"
+   - fuelType values: "GASOLINE", "DIESEL", "FLEX_FUEL_VEHICLE", "ELECTRIC", "HYBRID"
+   - transmission values: "AUTOMATIC", "MANUAL"
+
+3. **carmax** - Generate a dict with these exact keys:
+   {{makes, models, trims, colors, bodyType, fuelType, drivetrain, transmission, minPrice, maxPrice, carSize, doors, cylinders, features}}
+   - makes, models, trims, colors, features are arrays
+   - Other values are strings
+
+4. **carvana** - Generate a dict with these exact keys:
+   {{make, model, series, trims, year}}
+   - make, model, series are strings
+   - trims is an array of trim names
+   - year is an integer
+
+5. **truecar** - Generate a dict with these exact keys:
+   {{make, model, trims, startYear, endYear, budget, bodyStyle, drivetrain, fuelType}}
+   - make, model are strings
+   - trims is an array
+   - budget = maxPrice
+
+**IMPORTANT:**
+- Use the EXACT filter values from each retailer's filters JSON above
+- For makes/models/trims, use the "label" field (what users see in UI), NOT the "value" field
+- If a retailer doesn't support a filter, omit it
+- For year ranges:
+  - AutoTrader: startYear + endYear (both required)
+  - CarMax: yearMin + yearMax
+  - TrueCar: startYear + endYear
+  - CarGurus: yearMin + yearMax
+  - Carvana: year (single integer)
+
+**OUTPUT FORMAT:**
+
+Return ONLY JSON:
 {{
-  "query": "original query string",
-  "structured": {{
-    "makes": ["Make1", "Make2"],
-    "models": ["Model1"],
-    "trims": ["Trim1"],
-    "year": null,
-    "yearMin": 2020,
-    "yearMax": null,
-    "minPrice": null,
-    "maxPrice": 50000,
-    "drivetrain": "Four Wheel Drive",
-    "fuelType": null,
-    "bodyType": "Pickup Trucks",
-    "transmission": null,
-    "doors": null,
-    "cylinders": null,
-    "exteriorColor": "Black",
-    "interiorColor": null,
-    "features": ["Seat Massagers", "Tow Hitch"],
-    "location": {{
-      "zip": null,
-      "distance": null,
-      "city": null,
-      "state": null
-    }}
+  "query": "original query",
+  "retailers": {{
+    "autotrader": "https://www.autotrader.com/...",
+    "cargurus": {{"make": "GMC", "model": "Sierra 3500", ...}},
+    "carmax": {{"makes": ["GMC"], "models": ["Sierra 3500"], ...}},
+    "carvana": {{"make": "GMC", "model": "Sierra 3500", ...}},
+    "truecar": {{"make": "GMC", "model": "Sierra 3500", ...}}
   }}
-}}"""
+}}
+"""
+
+
+async def parse_with_llm(query: str, filters: Dict[str, dict]) -> Dict[str, Any]:
+    """Parse query using LLM with retailer-specific filter contexts."""
+
+    system_prompt = build_system_prompt(filters)
+    user_prompt = f"""Map this vehicle search query to retailer-specific filters for all 5 retailers:
+
+Query: "{query}"
+
+Provide the complete filter mapping for all retailers."""
+
+    # Check for API keys
+    api_key = os.environ.get('OPENAI_API_KEY')
+    base_url = None
+    model = "gpt-4o-mini"
+
+    if not api_key:
+        # Try GLM API
+        api_key = os.environ.get('GLM_API_KEY') or os.environ.get('ZHIPU_API_KEY')
+        if api_key:
+            base_url = os.environ.get('GLM_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4')
+            model = os.environ.get('GLM_MODEL', 'glm-4-plus')
+        else:
+            # Try other providers
+            api_key = os.environ.get('DEEPSEEK_API_KEY')
+            if api_key:
+                base_url = os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
+                model = "deepseek-chat"
+
+    if not api_key:
+        return {
+            "error": "No API key found. Set OPENAI_API_KEY, GLM_API_KEY, or DEEPSEEK_API_KEY environment variable.",
+            "query": query,
+            "retailers": {}
+        }
 
     try:
-        client = AsyncOpenAI(api_key=api_key)
+        if base_url:
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        else:
+            client = AsyncOpenAI(api_key=api_key)
 
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",  # Fast and cheap
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Parse this vehicle query: {query}"}
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0,
-            max_tokens=500
+            max_tokens=3000
         )
 
         content = response.choices[0].message.content.strip()
@@ -290,41 +200,179 @@ Output format:
             content = content.split('\n', 1)[-1].rsplit('\n', 1)[0]
 
         result = json.loads(content)
-        result["query"] = query  # Ensure original query is preserved
+        result["query"] = query
 
         return result
 
     except Exception as e:
-        logging.error(f"LLM parsing failed: {e}, falling back to pattern matching")
-        return parse_with_patterns(query, catalog)
+        logging.error(f"LLM parsing failed: {e}")
+        return {
+            "error": f"LLM call failed: {str(e)}",
+            "query": query,
+            "retailers": {}
+        }
+
+
+def parse_with_patterns_fallback(query: str, filters: Dict[str, dict]) -> Dict[str, Any]:
+    """Fallback pattern-based parsing if LLM fails."""
+    import re
+
+    query_lower = query.lower()
+
+    # Extract basic info with regex
+    makes = []
+    models = []
+    year_min = None
+    year_max = None
+    max_price = None
+    color = None
+
+    # Year extraction
+    year_matches = re.findall(r'(20\d{2})', query)
+    if year_matches:
+        years = sorted(set(int(y) for y in year_matches))
+        if len(years) >= 2:
+            year_min = min(years)
+            year_max = max(years)
+        elif len(years) == 1:
+            year_min = years[0]
+            year_max = years[0]
+
+    # Price extraction
+    price_match = re.search(r'under\s*\$?(\d+)', query_lower)
+    if price_match:
+        max_price = int(price_match.group(1))
+
+    # Color extraction
+    colors = ['black', 'white', 'gray', 'silver', 'blue', 'red', 'green', 'brown', 'beige', 'gold']
+    for c in colors:
+        if c in query_lower:
+            color = c.capitalize()
+            break
+
+    # Common makes
+    common_makes = {
+        'gmc': 'GMC', 'ford': 'Ford', 'chevrolet': 'Chevrolet', 'chevy': 'Chevrolet',
+        'toyota': 'Toyota', 'honda': 'Honda', 'jeep': 'Jeep', 'ram': 'Ram'
+    }
+    for make_lower, make_proper in common_makes.items():
+        if make_lower in query_lower:
+            makes.append(make_proper)
+
+    # Common models
+    if 'sierra' in query_lower:
+        models.append('Sierra 3500HD' if '3500' in query_lower or 'hd' in query_lower else 'Sierra')
+    elif 'silverado' in query_lower:
+        models.append('Silverado')
+    elif 'f-150' in query_lower or 'f150' in query_lower:
+        models.append('F-150')
+
+    # Build retailer-specific outputs in scraper-specific formats
+    retailers = {}
+
+    # AutoTrader - URL string
+    make = makes[0].lower() if makes else 'all'
+    model = models[0].lower().replace(' ', '-') if models else 'all'
+    autotrader_url = f"https://www.autotrader.com/cars-for-sale/{make}/{model}"
+    if year_min:
+        autotrader_url += f"?startYear={year_min}"
+    if year_max:
+        autotrader_url += f"&endYear={year_max}"
+    retailers['autotrader'] = autotrader_url
+
+    # CarGurus - dict format
+    retailers['cargurus'] = {}
+    if makes:
+        retailers['cargurus']['make'] = makes[0]
+    if models:
+        retailers['cargurus']['model'] = models[0]
+    retailers['cargurus']['zip'] = '94002'
+    retailers['cargurus']['distance'] = 200
+    if year_min:
+        retailers['cargurus']['yearMin'] = str(year_min)
+    if year_max:
+        retailers['cargurus']['yearMax'] = str(year_max)
+
+    # CarMax - dict format with arrays
+    retailers['carmax'] = {}
+    if makes:
+        retailers['carmax']['makes'] = makes
+    if models:
+        retailers['carmax']['models'] = models
+    if year_min:
+        retailers['carmax']['yearMin'] = str(year_min)
+    if year_max:
+        retailers['carmax']['yearMax'] = str(year_max)
+
+    # Carvana - dict format
+    retailers['carvana'] = {}
+    if makes:
+        retailers['carvana']['make'] = makes[0]
+    if models:
+        retailers['carvana']['model'] = models[0]
+        # Extract series (HD) from model
+        if '3500' in models[0]:
+            retailers['carvana']['series'] = 'HD'
+    if year_min:
+        retailers['carvana']['year'] = year_min
+
+    # TrueCar - dict format
+    retailers['truecar'] = {}
+    if makes:
+        retailers['truecar']['make'] = makes[0]
+    if models:
+        retailers['truecar']['model'] = models[0]
+    if year_min:
+        retailers['truecar']['startYear'] = str(year_min)
+    if year_max:
+        retailers['truecar']['endYear'] = str(year_max)
+
+    return {
+        "query": query,
+        "retailers": retailers,
+        "method": "pattern_fallback"
+    }
+
+
+async def parse_query_async(query: str, use_llm: bool = True) -> Dict[str, Any]:
+    """Parse query asynchronously (for use in async contexts)."""
+    filters = load_all_filter_jsons()
+
+    if not filters:
+        return {
+            "error": "No filter JSONs found in data/ directory",
+            "query": query,
+            "retailers": {}
+        }
+
+    if use_llm:
+        result = await parse_with_llm(query, filters)
+        if 'error' not in result and result.get('retailers'):
+            return result
+        # Fall back to pattern matching on error
+        logging.error("LLM parsing failed, using pattern fallback")
+        return parse_with_patterns_fallback(query, filters)
+    else:
+        return parse_with_patterns_fallback(query, filters)
+
+
+def parse_query(query: str, use_llm: bool = True) -> Dict[str, Any]:
+    """Parse query (synchronous wrapper)."""
+    return asyncio.run(parse_query_async(query, use_llm))
 
 
 def main():
+    """Main entry point for CLI usage."""
     if len(sys.argv) < 2:
         print(json.dumps({
-            "error": "Usage: parse_vehicle_query.py '<vehicle query>' [use_llm=true]"
-        }))
+            "error": "Usage: parse_vehicle_query.py '<vehicle query>' [--use-patterns]"
+        }, indent=2))
         sys.exit(1)
 
     query = sys.argv[1]
-    use_llm = len(sys.argv) > 2 and sys.argv[2].lower() == 'true'
+    use_patterns = '--use-patterns' in sys.argv or '-p' in sys.argv
 
-    # Load filter catalog
-    catalog = load_filter_catalog()
-
-    # Get OpenAI API key from env if using LLM
-    api_key = None
-    if use_llm:
-        import os
-        api_key = os.environ.get('OPENAI_API_KEY')
-
-    # Parse the query
-    if use_llm and api_key:
-        # Run async LLM parsing
-        result = asyncio.run(parse_with_llm(query, catalog, api_key))
-    else:
-        # Use pattern matching
-        result = parse_with_patterns(query, catalog)
+    result = parse_query(query, use_llm=not use_patterns)
 
     print(json.dumps(result, indent=2))
 
