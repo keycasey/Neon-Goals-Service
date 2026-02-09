@@ -559,8 +559,11 @@ export class PlaidService {
             date: new Date(txn.date),
             name: txn.name,
             merchantName: txn.merchant_name || null,
-            category: txn.category?.[0] || null, // Primary category (first element)
-            categories: txn.category || [], // All categories from Plaid
+            // Use personal_finance_category (newer) or category (legacy)
+            category: txn.personal_finance_category?.primary || txn.category?.[0] || null,
+            categories: txn.personal_finance_category
+              ? [txn.personal_finance_category.primary, txn.personal_finance_category.detailed].filter(Boolean)
+              : (txn.category || []),
             paymentChannel: txn.payment_channel,
             pending: txn.pending,
             authorizedDate: txn.authorized_date ? new Date(txn.authorized_date) : null,
