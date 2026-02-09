@@ -26,29 +26,19 @@ export class AuthService {
       });
 
       if (existingUserByEmail) {
-        // Email user exists but githubId is different - check if githubId is taken by another user
-        const existingUserByGithubId = await this.prisma.user.findUnique({
-          where: { githubId },
+        // Link GitHub account to existing email user
+        user = await this.prisma.user.update({
+          where: { email },
+          data: {
+            githubId,
+            name: profile.displayName || profile.username,
+            avatar: profile._json?.avatar_url,
+            githubLogin: profile.username,
+            githubBio: profile._json?.bio,
+            githubLocation: profile._json?.location,
+            githubBlog: profile._json?.blog,
+          },
         });
-
-        if (existingUserByGithubId) {
-          // Another user already has this githubId - use that account instead
-          user = existingUserByGithubId;
-        } else {
-          // Update existing email user with GitHub info (githubId is available)
-          user = await this.prisma.user.update({
-            where: { email },
-            data: {
-              githubId,
-              name: profile.displayName || profile.username,
-              avatar: profile._json?.avatar_url,
-              githubLogin: profile.username,
-              githubBio: profile._json?.bio,
-              githubLocation: profile._json?.location,
-              githubBlog: profile._json?.blog,
-            },
-          });
-        }
       } else {
         // Create new user
         user = await this.prisma.user.create({
