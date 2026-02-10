@@ -568,6 +568,91 @@ python3 parse_vehicle_query.py "2023-2024 GMC Sierra 3500HD Denali Ultimate blac
 
 ---
 
+## Production Deployment
+
+### Server Access
+
+Production is hosted on EC2 via SSH alias `ssh ec2`:
+
+```bash
+# Backend service
+ssh ec2
+cd /var/www/Neon-Goals-Service
+
+# Frontend build
+cd /var/www/Neon-Goals-UI
+```
+
+### Backend Deployment (NestJS)
+
+The backend is managed by PM2 under the process name `neon-goals-service`:
+
+```bash
+# Deploy latest code
+ssh ec2
+cd /var/www/Neon-Goals-Service
+git pull origin main
+npm run build
+pm2 restart neon-goals-service
+
+# View logs
+pm2 logs neon-goals-service
+
+# Check status
+pm2 status
+```
+
+**Important environment variables:**
+- `PORT=3001` - Backend port
+- `DATABASE_URL` - PostgreSQL connection string
+- `GITHUB_CALLBACK_URL=http://localhost:3001/api/auth/github/callback` (includes `/api` prefix)
+- `PLAID_ENV=sandbox` - Plaid environment
+
+**API Prefix:** All backend routes have `/api` global prefix (set in `src/main.ts`).
+
+### Frontend Deployment (React)
+
+The frontend is built as static files served by Caddy:
+
+```bash
+# Deploy frontend
+ssh ec2
+cd /var/www/Neon-Goals-UI
+npm run build
+
+# Files are served from dist/ by Caddy
+```
+
+**Important environment variables (.env):**
+- `VITE_API_URL=https://goals.keycasey.com` (NO `/api` prefix - apiClient auto-adds it)
+- `VITE_GITHUB_CALLBACK_URL=https://goals.keycasey.com/api/auth/github/callback`
+
+**Note:** The `VITE_API_URL` should NOT include `/api` prefix because the `apiClient` automatically prepends `/api` to all endpoints.
+
+### Caddy Configuration
+
+Caddy handles:
+1. **SSL/TLS** - Automatic HTTPS with Let's Encrypt
+2. **Reverse proxy** - `/api/*` → Backend (port 3001)
+3. **Static files** - `/*` → React frontend (from `/var/www/Neon-Goals-UI/dist`)
+
+### Database Management
+
+```bash
+# Sync schema (use carefully in production)
+ssh ec2
+cd /var/www/Neon-Goals-Service
+npx prisma db push --accept-data-loss
+
+# Check migration status
+npx prisma migrate status
+
+# Run pending migrations
+npx prisma migrate deploy
+```
+
+---
+
 ## Security Considerations
 
 1. **Password hashing** - bcrypt with 10 salt rounds
