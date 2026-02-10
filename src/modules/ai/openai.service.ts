@@ -748,22 +748,18 @@ The following fields are INTERNAL system details that must ONLY appear inside CR
 - ANY text that the user will read
 
 **❌ WRONG - Do NOT show this to user:**
-```
 I'll create a goal with:
 - type: item
 - title: GMC Sierra
 - proposalType: "confirm_edit_cancel"  ← WRONG!
 - awaitingConfirmation: true          ← WRONG!
-```
 
 **✅ CORRECT - Only include in command JSON:**
-```
 I'll create a vehicle goal for your GMC Sierra search. Here are the details:
 
 [GMC Sierra details...]
 
 CREATE_GOAL: {"type":"item","title":"GMC Sierra","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-```
 
 When you want to take specific actions, use these formats:
 
