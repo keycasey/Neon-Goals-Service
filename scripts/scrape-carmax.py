@@ -367,16 +367,36 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
                 return []
 
         # Filter out tiles from the "recommendations" section (similar vehicles)
+        # Two cases:
+        # 1. When results exist: <section aria-label="recommendations">
+        # 2. When no results (empty page): <div> with <h5>Cars we think you'll like</h5>
         filtered_tiles = []
         for tile in tiles:
             # Check if this tile is inside a recommendations section
-            recommendations_section = await tile.evaluate('''
+            is_recommendation = await tile.evaluate('''
                 (element) => {
+                    // Case 1: Standard recommendations section
                     let parent = element.closest('section[aria-label="recommendations"]');
-                    return parent !== null;
+                    if (parent) return true;
+
+                    // Case 2: Empty page recommendations with heading text
+                    let container = element.closest('div, section');
+                    if (container) {
+                        let headings = container.querySelectorAll('h5, h4, h3, h2');
+                        for (let h of headings) {
+                            let text = h.textContent.toLowerCase();
+                            if (text.includes('cars we think') ||
+                                text.includes('recommend') ||
+                                text.includes('you might also like') ||
+                                text.includes('similar vehicles')) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
                 }
             ''')
-            if not recommendations_section:
+            if not is_recommendation:
                 filtered_tiles.append(tile)
         logging.error(f"[CarMax] Filtered out {len(tiles) - len(filtered_tiles)} recommendations, processing {len(filtered_tiles)} listings")
 
