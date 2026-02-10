@@ -1128,8 +1128,27 @@ export class ScraperService {
     const workerUrl = 'http://100.91.29.119:5000';
     const query = job.goal.itemData?.searchTerm || job.goal.title;
     const vehicleFilters = job.goal.itemData?.searchFilters || null;
-    const retailerFilters = job.goal.itemData?.retailerFilters || null;
+    let retailerFilters = job.goal.itemData?.retailerFilters || null;
     const category = job.goal.itemData?.category || 'general';
+
+    // For vehicles, generate retailerFilters on-demand if missing
+    if (category === 'vehicle' && !retailerFilters) {
+      this.logger.log(`No retailerFilters found for goal ${job.goal.id}, generating on-demand...`);
+      try {
+        const generatedFilters = await this.vehicleFilterService.parseQuery(query);
+        if (generatedFilters && generatedFilters.retailers) {
+          retailerFilters = generatedFilters;
+          // Save the generated filters to the goal for future use
+          await this.prisma.itemGoalData.update({
+            where: { goalId: job.goal.id },
+            data: { retailerFilters: generatedFilters },
+          });
+          this.logger.log(`✅ Generated and saved retailerFilters for goal ${job.goal.id}`);
+        }
+      } catch (error) {
+        this.logger.error(`Failed to generate retailerFilters: ${error.message}`);
+      }
+    }
 
     // For vehicles, use /run-all endpoint to run all scrapers in parallel
     // For other categories, we should not get here (they're filtered out in queueCandidateAcquisition)
