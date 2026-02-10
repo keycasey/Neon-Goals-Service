@@ -737,7 +737,8 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                 await asyncio.sleep(0.5)
             # Scroll back to top
             await page.evaluate('window.scrollTo(0, 0)')
-            await asyncio.sleep(2)
+            # Wait longer for lazy-loaded content to finish loading
+            await asyncio.sleep(5)
             logging.error("Scrolling complete, images should be loaded")
         except Exception as e:
             logging.error(f"Scrolling failed: {e}")

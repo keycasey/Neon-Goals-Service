@@ -73,6 +73,13 @@ export class ScraperService {
         status: 'pending',
       },
     });
+
+    // Set statusBadge to pending_search so frontend knows to poll for job status
+    await this.prisma.itemGoalData.update({
+      where: { goalId },
+      data: { statusBadge: 'pending_search' },
+    });
+
     this.logger.log(`✅ Queued scraping job for vehicle goal: ${goalId}`);
   }
 
@@ -1343,7 +1350,13 @@ export class ScraperService {
     }
 
     // Update goal with candidates
-    const statusBadge = candidates.length > 0 ? 'in_stock' : 'not_found';
+    // in_stock should only be true when user has selected a candidate (selectedCandidateId is not null)
+    const hasSelection = job.goal.itemData?.selectedCandidateId !== null;
+    const statusBadge = hasSelection
+      ? 'in_stock'
+      : candidates.length > 0
+      ? 'pending_search' // Candidates found but user hasn't selected one yet
+      : 'not_found';
 
     await this.prisma.itemGoalData.update({
       where: { goalId: job.goal.id },
