@@ -36,9 +36,12 @@ async def poll_for_jobs():
     global should_poll
     poll_interval = 30  # seconds
 
+    logger.info("🔄 Polling task started - will poll every 30s")
+
     async with aiohttp.ClientSession() as session:
         while should_poll:
             try:
+                logger.info("Polling for jobs...")
                 # Poll backend for pending jobs (async HTTP)
                 async with session.post(
                     f"{BACKEND_API_URL}/api/scrapers/poll",
