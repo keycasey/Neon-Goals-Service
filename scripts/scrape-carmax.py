@@ -297,6 +297,8 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
             # Build URL from search filters (supports global filters + makes/models)
             makes = search_filters.get('makes', [])
             models = search_filters.get('models', [])
+            # Normalize model names for CarMax (e.g., Sierra 3500HD -> Sierra 3500)
+            models = normalize_models_for_site(models, 'carmax')
 
             # Ensure equal length for makes/models if both provided
             if makes and models:

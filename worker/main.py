@@ -69,7 +69,7 @@ async def poll_for_jobs():
                                     asyncio.to_thread(
                                         run_all_scrapers_and_callback,
                                         query=search_term,
-                                        vehicle_filters={"retailers": retailer_filters} if retailer_filters else None,
+                                        vehicle_filters=retailer_filters if retailer_filters else None,
                                         job_id=job_id,
                                         callback_url=callback_url,
                                         use_retailer_filters=bool(retailer_filters)
