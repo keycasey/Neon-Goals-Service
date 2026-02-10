@@ -4,11 +4,12 @@ import os
 import logging
 import asyncio
 import time
+import aiohttp
+import requests
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
 from fastapi.responses import JSONResponse
-import requests
 
 # Configure logging
 logging.basicConfig(
@@ -30,59 +31,60 @@ async def poll_for_jobs():
     """
     Background polling loop that periodically checks the backend for pending jobs.
     This avoids Tailscale TCP-over-DERP issues where backend can't connect to worker.
+    Uses aiohttp for non-blocking async HTTP requests.
     """
     global should_poll
     poll_interval = 30  # seconds
 
-    while should_poll:
-        try:
-            # Poll backend for pending jobs
-            response = requests.post(
-                f"{BACKEND_API_URL}/api/scrapers/poll",
-                timeout=10
-            )
+    async with aiohttp.ClientSession() as session:
+        while should_poll:
+            try:
+                # Poll backend for pending jobs (async HTTP)
+                async with session.post(
+                    f"{BACKEND_API_URL}/api/scrapers/poll",
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status in (200, 201):
+                        data = await response.json()
+                        job = data.get("job")
 
-            if response.status_code in (200, 201):
-                data = response.json()
-                job = data.get("job")
+                        if job:
+                            job_id = job.get("id")
+                            goal_id = job.get("goalId")
+                            search_term = job.get("searchTerm")
+                            retailer_filters = job.get("retailerFilters")
+                            category = job.get("category", "general")
 
-                if job:
-                    job_id = job.get("id")
-                    goal_id = job.get("goalId")
-                    search_term = job.get("searchTerm")
-                    retailer_filters = job.get("retailerFilters")
-                    category = job.get("category", "general")
+                            logger.info(f"📋 Pulled job {job_id} for goal {goal_id}: {search_term}")
 
-                    logger.info(f"📋 Pulled job {job_id} for goal {goal_id}: {search_term}")
+                            if category == "vehicle":
+                                # Build callback URL (worker calls back to backend)
+                                callback_url = f"{BACKEND_API_URL}/api/scrapers/callback"
 
-                    if category == "vehicle":
-                        # Build callback URL (worker calls back to backend)
-                        callback_url = f"{BACKEND_API_URL}/api/scrapers/callback"
-
-                        # Run all scrapers in background
-                        asyncio.create_task(
-                            run_all_scrapers_and_callback(
-                                query=search_term,
-                                vehicle_filters={"retailers": retailer_filters} if retailer_filters else None,
-                                job_id=str(job_id),
-                                callback_url=callback_url,
-                                use_retailer_filters=bool(retailer_filters)
-                            )
-                        )
+                                # Run all scrapers in background
+                                asyncio.create_task(
+                                    run_all_scrapers_and_callback(
+                                        query=search_term,
+                                        vehicle_filters={"retailers": retailer_filters} if retailer_filters else None,
+                                        job_id=str(job_id),
+                                        callback_url=callback_url,
+                                        use_retailer_filters=bool(retailer_filters)
+                                    )
+                                )
+                            else:
+                                logger.warning(f"Unsupported category: {category}")
                     else:
-                        logger.warning(f"Unsupported category: {category}")
-            else:
-                logger.warning(f"Poll failed with status {response.status_code}")
+                        logger.warning(f"Poll failed with status {response.status}")
 
-        except requests.exceptions.Timeout:
-            logger.warning("Poll request timed out")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Poll request failed: {e}")
-        except Exception as e:
-            logger.error(f"Poll loop error: {e}")
+            except asyncio.TimeoutError:
+                logger.warning("Poll request timed out")
+            except aiohttp.ClientError as e:
+                logger.error(f"Poll request failed: {e}")
+            except Exception as e:
+                logger.error(f"Poll loop error: {e}")
 
-        # Wait before next poll
-        await asyncio.sleep(poll_interval)
+            # Wait before next poll
+            await asyncio.sleep(poll_interval)
 
 
 @asynccontextmanager
