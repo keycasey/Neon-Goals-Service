@@ -490,10 +490,10 @@ You are helping with the specific item goal: "${goalContext.title}" (ID: ${goalC
 When the user wants to modify their goal, output commands in this EXACT format:
 
 \`\`\`
-UPDATE_TITLE: {"goalId":"${goalContext.id}","title":"<new display title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-UPDATE_SEARCHTERM: {"goalId":"${goalContext.id}","searchTerm":"<new search query>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-REFRESH_CANDIDATES: {"goalId":"${goalContext.id}","proposalType":"accept_decline","awaitingConfirmation":true}
-ARCHIVE_GOAL: {"goalId":"${goalContext.id}","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+UPDATE_TITLE: {"goalId":"${goalContext.id}","title":"<new display title>"}
+UPDATE_SEARCHTERM: {"goalId":"${goalContext.id}","searchTerm":"<new search query>"}
+REFRESH_CANDIDATES: {"goalId":"${goalContext.id}"}
+ARCHIVE_GOAL: {"goalId":"${goalContext.id}"}
 \`\`\`
 
 **Command Usage:**
@@ -502,12 +502,8 @@ ARCHIVE_GOAL: {"goalId":"${goalContext.id}","proposalType":"confirm_edit_cancel"
 - **REFRESH_CANDIDATES**: Queues a scrape job to find new candidates using the current search criteria
 - **ARCHIVE_GOAL**: Archives the goal
 
-**Proposal Types:**
-- **accept_decline**: For REFRESH_CANDIDATES - shows Accept/Decline buttons
-- **confirm_edit_cancel**: For all other commands - shows Confirm/Edit/Cancel options
-
 **Important:**
-- Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command output
+- Output ONLY the command JSON - do NOT include proposalType or awaitingConfirmation (these are added automatically by the system)
 - When user asks to change the NAME/DISPLAY TITLE → Output UPDATE_TITLE
 - When user asks to change/modify SEARCH CRITERIA → Output UPDATE_SEARCHTERM (after asking clarifying questions)
 - After UPDATE_SEARCHTERM is confirmed, ALWAYS offer REFRESH_CANDIDATES as a follow-up proposal
@@ -747,25 +743,20 @@ The following fields are INTERNAL system details that must ONLY appear inside CR
 - "Here's what I'm creating:" lists
 - ANY text that the user will read
 
-**❌ WRONG - Do NOT show this to user:**
-I'll create a goal with:
-- type: item
-- title: GMC Sierra
-- proposalType: "confirm_edit_cancel"  ← WRONG!
-- awaitingConfirmation: true          ← WRONG!
-
-**✅ CORRECT - Only include in command JSON:**
-I'll create a vehicle goal for your GMC Sierra search. Here are the details:
-
-[GMC Sierra details...]
-
+**❌ WRONG - Do NOT include in command JSON:**
 CREATE_GOAL: {"type":"item","title":"GMC Sierra","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+                                      ↑ REMOVE THIS ↑        ↑ AND REMOVE THIS ↑
+
+**✅ CORRECT - Only include the command data:**
+CREATE_GOAL: {"type":"item","title":"GMC Sierra"}
+
+The system will automatically add proposalType and awaitingConfirmation - do NOT include them in your command output.
 
 When you want to take specific actions, use these formats:
 
 **Create a new main goal:**
 \`\`\`
-CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","deadline":"<optional-ISO-8601-date>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","deadline":"<optional-ISO-8601-date>"}
 \`\`\`
 
 **Deadline format:** Use ISO 8601 format (YYYY-MM-DDTHH:mm:ss). Example: "2025-02-02T23:59:59"
@@ -773,12 +764,12 @@ CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","d
 
 For action goals, you can also include tasks:
 \`\`\`
-CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","tasks":[{"title":"<task1>"},{"title":"<task2>"},{"title":"<task3>}],"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","tasks":[{"title":"<task1>"},{"title":"<task2>"},{"title":"<task3>}]}
 \`\`\`
 
 **For finance goals (savings, budgets, financial targets):**
 \`\`\`
-CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","targetBalance":<number>,"currentBalance":<number>,"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","targetBalance":<number>,"currentBalance":<number>}
 \`\`\`
 
 **Important for finance goals:**
@@ -788,7 +779,7 @@ CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","
 
 **For item goals (products to buy):**
 \`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>"}
 \`\`\`
 
 **Item categories** - You MUST determine the appropriate category based on what the user is buying:
@@ -811,7 +802,7 @@ When a user wants to buy an item, you MUST:
 
 **For vehicle item goals:**
 \`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"vehicle","searchTerm":"<natural-language-description>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"vehicle","searchTerm":"<natural-language-description>"}
 \`\`\`
 
 **CRITICAL - For vehicle goals, NEVER include searchFilters:**
@@ -836,7 +827,7 @@ CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","bud
 
 **Example CREATE_GOAL:**
 \`\`\`
-CREATE_GOAL: {"type":"item","title":"GMC Sierra 3500HD Denali Ultimate","description":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually under 85000","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"item","title":"GMC Sierra 3500HD Denali Ultimate","description":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually under 85000"}
 \`\`\`
 
 **CRITICAL - Ask for essential vehicle filters BEFORE creating the goal:**
@@ -868,10 +859,10 @@ The system will automatically parse this searchTerm and generate retailer-specif
 
 **For non-vehicle item goals:**
 \`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","searchTerm":"<search-term>","searchFilters":{<filters>},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","searchTerm":"<search-term>","searchFilters":{<filters>}}
 \`\`\`
 
-**IMPORTANT**: Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command JSON only (never mention them in conversation).
+**IMPORTANT**: NEVER include proposalType or awaitingConfirmation in your command JSON - the system adds these automatically.
 
 **searchFilters structure for non-vehicle categories (all fields OPTIONAL):**
 \`\`\`
@@ -924,27 +915,27 @@ CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","bud
 
 **Create a subgoal (under an existing goal):**
 \`\`\`
-CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item|finance|action","title":"<title>","description":"<description>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item|finance|action","title":"<title>","description":"<description>"}
 \`\`\`
 
 For item subgoals (vehicles, etc.), also include category and searchTerm:
 \`\`\`
-CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item","title":"<title>","category":"vehicle","searchTerm":"<search-term>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+CREATE_SUBGOAL: {"parentGoalId":"<goal-id>","type":"item","title":"<title>","category":"vehicle","searchTerm":"<search-term>"}
 \`\`\`
 
 **Update goal progress:**
 \`\`\`
-UPDATE_PROGRESS: {"goalId":"<goal-id>","completionPercentage":50,"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+UPDATE_PROGRESS: {"goalId":"<goal-id>","completionPercentage":50}
 \`\`\`
 
 **Modify existing goals:**
 \`\`\`
-UPDATE_TITLE: {"goalId":"<goal-id>","title":"<new title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-UPDATE_FILTERS: {"goalId":"<goal-id>","filters":{"zip":"94002","distance":200,"yearMin":2015,"yearMax":2022,"maxPrice":50000,"mileageMax":50000,"drivetrain":"Four Wheel Drive","exteriorColor":"Black"},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-ADD_TASK: {"goalId":"<goal-id>","task":{"title":"<task title>","priority":"medium"},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-REMOVE_TASK: {"taskId":"<task-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-TOGGLE_TASK: {"taskId":"<task-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-ARCHIVE_GOAL: {"goalId":"<goal-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+UPDATE_TITLE: {"goalId":"<goal-id>","title":"<new title>"}
+UPDATE_FILTERS: {"goalId":"<goal-id>","filters":{"zip":"94002","distance":200,"yearMin":2015,"yearMax":2022,"maxPrice":50000,"mileageMax":50000,"drivetrain":"Four Wheel Drive","exteriorColor":"Black"}}
+ADD_TASK: {"goalId":"<goal-id>","task":{"title":"<task title>","priority":"medium"}}
+REMOVE_TASK: {"taskId":"<task-id>"}
+TOGGLE_TASK: {"taskId":"<task-id>"}
+ARCHIVE_GOAL: {"goalId":"<goal-id>"}
 \`\`\`
 
 **Important Workflow:**
@@ -1814,6 +1805,63 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
     const commands = data;
     const mainGoals = commands.filter(c => c.type === 'CREATE_GOAL');
     const subgoals = commands.filter(c => c.type === 'CREATE_SUBGOAL');
+    const updateCommands = commands.filter(c => c.type.startsWith('UPDATE_') || c.type === 'REFRESH_CANDIDATES' || c.type === 'ARCHIVE_GOAL' || c.type === 'ADD_TASK' || c.type === 'REMOVE_TASK' || c.type === 'TOGGLE_TASK');
+
+    // Handle update/modification commands first
+    if (updateCommands.length > 0) {
+      preview += `## Changes to Apply\n\n`;
+
+      for (const cmd of updateCommands) {
+        const cmdData = cmd.data;
+        switch (cmd.type) {
+          case 'UPDATE_TITLE':
+            preview += `**Change Goal Title**\n`;
+            preview += `New title: "${cmdData.title}"\n\n`;
+            break;
+          case 'UPDATE_SEARCHTERM':
+            preview += `**Update Search Criteria**\n`;
+            preview += `New search query: "${cmdData.searchTerm}"\n`;
+            preview += `*Retailer-specific filters will be regenerated automatically.*\n\n`;
+            break;
+          case 'UPDATE_FILTERS':
+            preview += `**Update Search Filters**\n`;
+            const filters = cmdData.filters;
+            if (filters.zip) preview += `- ZIP: ${filters.zip}\n`;
+            if (filters.distance) preview += `- Distance: ${filters.distance} miles\n`;
+            if (filters.yearMin || filters.yearMax) preview += `- Year: ${filters.yearMin || '?'} - ${filters.yearMax || '?'}\n`;
+            if (filters.maxPrice) preview += `- Max Price: $${filters.maxPrice?.toLocaleString()}\n`;
+            if (filters.mileageMax) preview += `- Max Mileage: ${filters.mileageMax?.toLocaleString()}\n`;
+            if (filters.drivetrain) preview += `- Drivetrain: ${filters.drivetrain}\n`;
+            if (filters.exteriorColor) preview += `- Color: ${filters.exteriorColor}\n`;
+            preview += `\n`;
+            break;
+          case 'UPDATE_PROGRESS':
+            preview += `**Update Progress**\n`;
+            preview += `Completion: ${cmdData.completionPercentage}%\n\n`;
+            break;
+          case 'REFRESH_CANDIDATES':
+            preview += `**Refresh Candidates**\n`;
+            preview += `Find new candidates using current search criteria.\n\n`;
+            break;
+          case 'ARCHIVE_GOAL':
+            preview += `**Archive Goal**\n`;
+            preview += `This goal will be archived.\n\n`;
+            break;
+          case 'ADD_TASK':
+            preview += `**Add Task**\n`;
+            preview += `- ${cmdData.task?.title || 'New task'}\n\n`;
+            break;
+          case 'REMOVE_TASK':
+            preview += `**Remove Task**\n`;
+            preview += `Remove task: ${cmdData.taskId}\n\n`;
+            break;
+          case 'TOGGLE_TASK':
+            preview += `**Toggle Task**\n`;
+            preview += `Toggle task: ${cmdData.taskId}\n\n`;
+            break;
+        }
+      }
+    }
 
     // Add main goals
     for (const cmd of mainGoals) {
