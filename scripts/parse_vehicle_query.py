@@ -412,6 +412,8 @@ def parse_with_patterns_fallback(query: str, filters: Dict[str, dict]) -> Dict[s
     if drivetrain:
         truecar_drivetrain = drivetrain.replace('_', ' ').replace('Four Wheel Drive', '4WD').replace('All Wheel Drive', 'AWD')
         retailers['truecar']['drivetrain'] = truecar_drivetrain
+    retailers['truecar']['postalCode'] = '94002'
+    retailers['truecar']['searchRadius'] = 500
 
     return {
         "query": query,

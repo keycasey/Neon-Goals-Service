@@ -178,7 +178,12 @@ def send_callback_with_retry(callback_url: str, data: dict, max_retries: int = 3
                 json=data,
                 timeout=timeout
             )
-            logger.info(f"✅ Callback succeeded on attempt {attempt} with {timeout}s timeout")
+            if response.status_code >= 400:
+                logger.error(f"❌ Callback returned HTTP {response.status_code} on attempt {attempt}/{max_retries}: {response.text[:200]}")
+                if attempt >= max_retries:
+                    raise requests.exceptions.HTTPError(f"Callback failed with HTTP {response.status_code}")
+                continue
+            logger.info(f"✅ Callback succeeded on attempt {attempt} with {timeout}s timeout (HTTP {response.status_code})")
             return response
         except requests.exceptions.Timeout:
             logger.warning(f"⚠️ Callback attempt {attempt}/{max_retries} timed out after {timeout}s")

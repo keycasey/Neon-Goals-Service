@@ -41,11 +41,17 @@ export class ScraperController {
 
   @Post('callback')
   async handleCallback(@Body() callbackData: CallbackData) {
-    this.logger.log(`Received callback for job ${callbackData.jobId}: ${callbackData.status}`);
+    // Ensure jobId is a number (worker may send as string)
+    const jobId = Number(callbackData.jobId);
+    if (isNaN(jobId)) {
+      this.logger.error(`Invalid jobId received: ${callbackData.jobId}`);
+      return { acknowledged: false, status: 'error', message: 'Invalid jobId' };
+    }
+    this.logger.log(`Received callback for job ${jobId}: ${callbackData.status}`);
 
     if (callbackData.status === 'error') {
-      this.logger.error(`Job ${callbackData.jobId} failed: ${callbackData.error}`);
-      await this.scraperService.handleJobError(callbackData.jobId, callbackData.error);
+      this.logger.error(`Job ${jobId} failed: ${callbackData.error}`);
+      await this.scraperService.handleJobError(jobId, callbackData.error);
       return { acknowledged: true, status: 'error' };
     }
 
@@ -56,24 +62,11 @@ export class ScraperController {
         const retailer = item.retailer || item.source || 'Unknown';
         retailerCounts[retailer] = (retailerCounts[retailer] || 0) + 1;
       });
-      this.logger.log(`Job ${callbackData.jobId} results by retailer: ${JSON.stringify(retailerCounts)}`);
-
-      // Log AutoTrader listings specifically
-      const autoTraderListings = callbackData.data.filter((item: any) =>
-        item.retailer === 'AutoTrader' || item.source === 'autotrader'
-      );
-      if (autoTraderListings.length > 0) {
-        this.logger.log(`AutoTrader listings received (${autoTraderListings.length}):`);
-        autoTraderListings.forEach((listing: any, idx: number) => {
-          this.logger.log(`  [${idx + 1}] ${listing.name} - $${listing.price} - ${listing.url}`);
-        });
-      } else {
-        this.logger.warn(`⚠️ NO AutoTrader listings found in callback data!`);
-      }
+      this.logger.log(`Job ${jobId} results by retailer: ${JSON.stringify(retailerCounts)}`);
     }
 
-    this.logger.log(`Job ${callbackData.jobId} succeeded with ${callbackData.data?.length || 0} results`);
-    await this.scraperService.handleJobSuccess(callbackData.jobId, callbackData.data);
+    this.logger.log(`Job ${jobId} succeeded with ${callbackData.data?.length || 0} results`);
+    await this.scraperService.handleJobSuccess(jobId, callbackData.data);
 
     return { acknowledged: true, status: 'success' };
   }

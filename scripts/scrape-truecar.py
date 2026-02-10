@@ -284,12 +284,13 @@ async def scrape_truecar_camoufox(search_filters: Dict[str, Any], max_results: i
     if mmt_value:
         params.append(f'mmt[]={mmt_value}')
 
-    # Add search radius (use maximum - 5000 = nationwide)
-    params.append('searchRadius=5000')
-
-    # Add location (default to CA for broader results)
+    # Location filters - use postalCode + searchRadius if available, fallback to state
+    postal_code = search_filters.get('postalCode') or search_filters.get('zip')
+    search_radius = search_filters.get('searchRadius') or search_filters.get('distance')
+    if postal_code:
+        params.append(f'postalCode={postal_code}')
+        params.append(f'searchRadius={search_radius or 500}')
     params.append('state=ca')
-    params.append('city=south-san-francisco')
 
     # Add year range - support startYear/endYear for "4 years or newer"
     # If no year specified, use a broad range to get results

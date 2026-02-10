@@ -433,10 +433,40 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
         except:
             logging.error(f"[AutoTrader] No listings found or timeout - may be no results or page structure changed")
 
+        # Get only main search result listings, not "Recommended" or "Similar" sections
+        # AutoTrader wraps recommendations in sections with headers like "Similar Vehicles"
         listing_cards = page.query_selector_all('[data-cmp="inventoryListing"]')
-        logging.error(f"[AutoTrader] Found {len(listing_cards)} listings")
+        logging.error(f"[AutoTrader] Found {len(listing_cards)} total listing cards")
 
-        for idx, card in enumerate(listing_cards):
+        # Filter out cards in recommendation/similar sections
+        main_cards = []
+        for card in listing_cards:
+            try:
+                is_recommendation = card.evaluate('''(el) => {
+                    let ancestor = el;
+                    for (let i = 0; i < 10; i++) {
+                        ancestor = ancestor.parentElement;
+                        if (!ancestor) break;
+                        const text = ancestor.getAttribute('data-cmp') || '';
+                        const heading = ancestor.querySelector('h2, h3');
+                        const headingText = heading ? heading.innerText.toLowerCase() : '';
+                        if (text.includes('recommend') || text.includes('similar') ||
+                            headingText.includes('similar') || headingText.includes('recommend') ||
+                            headingText.includes('you might')) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }''')
+                if not is_recommendation:
+                    main_cards.append(card)
+            except:
+                main_cards.append(card)  # Include on error
+
+        if len(main_cards) < len(listing_cards):
+            logging.error(f"[AutoTrader] Filtered {len(listing_cards) - len(main_cards)} recommendation cards, {len(main_cards)} main results")
+
+        for idx, card in enumerate(main_cards):
             if idx >= max_results:
                 break
             try:
