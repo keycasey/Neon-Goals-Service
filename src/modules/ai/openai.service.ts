@@ -629,10 +629,8 @@ ${message}`;
       if (commands.length > 0) {
         apiResponse.goalPreview = this.generateGoalPreview(commands);
         apiResponse.awaitingConfirmation = true;
-        // Extract proposalType from the first command's data
-        if (commands[0]?.data?.proposalType) {
-          apiResponse.proposalType = commands[0].data.proposalType;
-        }
+        // Determine proposalType based on first command type
+        apiResponse.proposalType = this.getProposalTypeForCommand(commands[0].type);
       }
 
       return apiResponse;
@@ -1084,10 +1082,8 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       if (commands.length > 0) {
         apiResponse.goalPreview = this.generateGoalPreview(commands);
         apiResponse.awaitingConfirmation = true;
-        // Extract proposalType from the first command's data
-        if (commands[0]?.data?.proposalType) {
-          apiResponse.proposalType = commands[0].data.proposalType;
-        }
+        // Determine proposalType based on first command type
+        apiResponse.proposalType = this.getProposalTypeForCommand(commands[0].type);
       }
 
       return apiResponse;
@@ -1496,6 +1492,17 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
       return cmd;
     });
+  }
+
+  /**
+   * Determine proposalType based on command type
+   * REFRESH_CANDIDATES uses accept_decline, all others use confirm_edit_cancel
+   */
+  private getProposalTypeForCommand(commandType: string): string {
+    if (commandType === 'REFRESH_CANDIDATES') {
+      return 'accept_decline';
+    }
+    return 'confirm_edit_cancel';
   }
 
   /**
