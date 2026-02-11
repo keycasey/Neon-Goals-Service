@@ -778,22 +778,16 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 When you want to take specific actions, use these formats:
 
 **Create a new main goal:**
-\`\`\`
-CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","deadline":"<optional-ISO-8601-date>"}
-\`\`\`
+\`CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","deadline":"<optional-ISO-8601-date>"}\`
 
 **Deadline format:** Use ISO 8601 format (YYYY-MM-DDTHH:mm:ss). Example: "2025-02-02T23:59:59"
 **IMPORTANT:** Calculate deadlines based on CURRENT DATE above. If user says "Sunday", find the next Sunday and format it properly.
 
 For action goals, you can also include tasks:
-\`\`\`
-CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","tasks":[{"title":"<task1>"},{"title":"<task2>"},{"title":"<task3>}]}
-\`\`\`
+\`CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","tasks":[{"title":"<task1>"},{"title":"<task2>"},{"title":"<task3>"}]}\`
 
 **For finance goals (savings, budgets, financial targets):**
-\`\`\`
-CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","targetBalance":<number>,"currentBalance":<number>}
-\`\`\`
+\`CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","targetBalance":<number>,"currentBalance":<number>}\`
 
 **Important for finance goals:**
 - \`targetBalance\` (REQUIRED): The target amount to save/reach (e.g., 36000 for $36,000)
@@ -801,9 +795,7 @@ CREATE_GOAL: {"type":"finance","title":"<title>","description":"<description>","
 - Both values should be numbers without currency symbols
 
 **For item goals (products to buy):**
-\`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>"}
-\`\`\`
+\`CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>"}\`
 
 **Item categories** - You MUST determine the appropriate category based on what the user is buying:
 - \`vehicle\` - Cars, trucks, motorcycles, ATVs, boats
@@ -824,9 +816,7 @@ When a user wants to buy an item, you MUST:
 3. For **non-vehicles**: Extract structured \`searchFilters\` object (UI displays this for user editing) and \`searchTerm\`
 
 **For vehicle item goals:**
-\`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"vehicle","searchTerm":"<natural-language-description>"}
-\`\`\`
+\`CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"vehicle","searchTerm":"<natural-language-description>"}\`
 
 **CRITICAL - For vehicle goals, NEVER include searchFilters:**
 - Vehicle goals should ONLY have: searchTerm (natural language description)
@@ -849,9 +839,7 @@ CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","bud
 - This is the most common mistake - double-check your title before outputting!
 
 **Example CREATE_GOAL:**
-\`\`\`
-CREATE_GOAL: {"type":"item","title":"GMC Sierra 3500HD Denali Ultimate","description":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually under 85000"}
-\`\`\`
+\`CREATE_GOAL: {"type":"item","title":"GMC Sierra 3500HD Denali Ultimate","description":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually","budget":85000,"category":"vehicle","searchTerm":"2025 GMC Sierra Denali Ultimate 3500HD black or white color 4WD crew cab dually under 85000"}\`
 
 **CRITICAL - Ask for essential vehicle filters BEFORE creating the goal:**
 When the user wants to create a vehicle goal and hasn't specified these details, you MUST ask:
@@ -881,9 +869,7 @@ Only after gathering missing details should you output the CREATE_GOAL command w
 The system will automatically parse this searchTerm and generate retailer-specific filters for AutoTrader, CarGurus, CarMax, Carvana, and TrueCar.
 
 **For non-vehicle item goals:**
-\`\`\`
-CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","searchTerm":"<search-term>","searchFilters":{<filters>}}
-\`\`\`
+\`CREATE_GOAL: {"type":"item","title":"<title>","description":"<description>","budget":<number>,"category":"<category>","searchTerm":"<search-term>","searchFilters":{<filters>}}\`
 
 **IMPORTANT**: NEVER include proposalType or awaitingConfirmation in your command JSON - the system adds these automatically.
 

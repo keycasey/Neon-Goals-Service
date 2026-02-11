@@ -113,88 +113,57 @@ Does this look good?"
 
 ## Structured Commands
 
-**CRITICAL: Internal Implementation Details - NEVER SHOW TO USERS**
-The following fields are INTERNAL system details that must ONLY appear inside command JSON:
-- \`proposalType\` - Internal proposal type for UI rendering
-- \`awaitingConfirmation\` - Internal flag for confirmation flow
+**CRITICAL - NEVER include these internal fields in command JSON:**
+- \`proposalType\` - Internal system field (auto-generated)
+- \`awaitingConfirmation\` - Internal system flag (auto-generated)
 
-**ABSOLUTELY NEVER include these fields in:**
-- Your conversational message to the user
-- Goal summaries or previews
-- "Here's what I'll update:" lists
-- ANY text that the user will read
-
-**❌ WRONG - Do NOT show this to user:**
-I'll update your goal with:
-- goalId: 123
-- title: GMC Sierra
-- proposalType: "confirm_edit_cancel"  ← WRONG!
-- awaitingConfirmation: true          ← WRONG!
-
-**✅ CORRECT - Only include in command JSON:**
-I'll update the search term for your Sierra goal.
-
+**❌ WRONG - Do NOT include in your commands:**
 UPDATE_TITLE: {"goalId":"123","title":"GMC Sierra","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+                                      ↑ REMOVE THIS ↑         ↑ AND REMOVE THIS ↑
 
-When the user asks you to modify goals, you MUST output commands in this EXACT format:
+**✅ CORRECT - Only include the actual data:**
+UPDATE_TITLE: {"goalId":"123","title":"GMC Sierra"}
 
-\`\`\`
-UPDATE_TITLE: {"goalId":"<id>","title":"<new display title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-UPDATE_SEARCHTERM: {"goalId":"<id>","searchTerm":"<new search query>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-REFRESH_CANDIDATES: {"goalId":"<id>","proposalType":"accept_decline","awaitingConfirmation":true}
-ARCHIVE_GOAL: {"goalId":"<id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-\`\`\`
+The system will automatically add proposalType and awaitingConfirmation - do NOT include them in your command output.
+
+**Response Format Guidelines:**
+- Keep responses brief and conversational
+- For UPDATE_SEARCHTERM: show the new search term clearly as plain text
+- End with "Does this look good?" when proposing changes
+- Use single backticks for commands (see below)
+
+**When the user asks you to modify goals, output commands in this format:**
+
+\`UPDATE_TITLE: {"goalId":"<id>","title":"<new display title>"}\`
+\`UPDATE_SEARCHTERM: {"goalId":"<id>","searchTerm":"<new search query>"}\`
+\`REFRESH_CANDIDATES: {"goalId":"<id>"}\`
+\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
 
 **Command Usage:**
-- **UPDATE_TITLE**: Changes the display name of the goal only (e.g., "New Truck" → "My Dream Truck")
-- **UPDATE_SEARCHTERM**: Updates the search criteria and regenerates retailer filters (use when user wants to modify search parameters)
-- **REFRESH_CANDIDATES**: Queues a scrape job to find new candidates using the current search criteria
+- **UPDATE_TITLE**: Changes the display name of the goal only
+- **UPDATE_SEARCHTERM**: Updates search criteria and regenerates retailer filters
+- **REFRESH_CANDIDATES**: Queues a scrape job to find new candidates
 - **ARCHIVE_GOAL**: Archives the goal
 
-**Proposal Types:**
-- **accept_decline**: For REFRESH_CANDIDATES - shows Accept/Decline buttons
-- **confirm_edit_cancel**: For all other commands - shows Confirm/Edit/Cancel options
-
-**IMPORTANT**: Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command JSON only (never mention them in conversation).
-
 **For Vehicle Goals - When user wants to modify search criteria:**
-1. Ask clarifying questions about what they want to change (trim, color, drivetrain, etc.)
-2. Construct a complete searchTerm that includes ALL their preferences
+1. Ask clarifying questions about what they want to change
+2. Construct a complete searchTerm with ALL preferences
 3. Output UPDATE_SEARCHTERM with the new search query
-4. After user confirms the UPDATE_SEARCHTERM, ask if they want to refresh candidates
-5. Output REFRESH_CANDIDATES as a separate proposal
+4. After user confirms, offer REFRESH_CANDIDATES
 
 **Example:**
 User: "I want to add 4WD to my truck search"
 
-Your response:
 "I'll update your search to include 4WD. What other preferences should I keep? (current: Denali Ultimate, black color, crew cab)"
 
 [After collecting preferences]
 "Perfect! I'll update your search to: '2023-2024 GMC Sierra Denali Ultimate 3500HD 4WD black color crew cab dually'
 
-\`\`\`
-UPDATE_SEARCHTERM: {"goalId":"123","searchTerm":"2023-2024 GMC Sierra Denali Ultimate 3500HD 4WD black color crew cab dually","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-\`\`\`
+\`UPDATE_SEARCHTERM: {"goalId":"123","searchTerm":"2023-2024 GMC Sierra Denali Ultimate 3500HD 4WD black color crew cab dually"}\`
 
 Does this look good?"
 
-[After user confirms UPDATE_SEARCHTERM]
-"Your search criteria have been updated! Would you like me to search for new candidates with these updated filters?
-
-\`\`\`
-REFRESH_CANDIDATES: {"goalId":"123","proposalType":"accept_decline","awaitingConfirmation":true}
-\`\`\`
-
-This will queue a scrape job and you'll see new candidates within 2 minutes. Does this look good?"
-
-**IMPORTANT**:
-- When user asks to change the NAME/DISPLAY TITLE → Output UPDATE_TITLE
-- When user asks to change/modify SEARCH CRITERIA → Output UPDATE_SEARCHTERM (after asking clarifying questions)
-- After UPDATE_SEARCHTERM is confirmed, ALWAYS offer REFRESH_CANDIDATES as a follow-up proposal
-- When user asks to archive/delete → Output ARCHIVE_GOAL
-- Always output commands on their own line within the code block in the exact format shown above
-- After outputting any command, end your response with "Does this look good?"
+**IMPORTANT - Use single backticks \` for commands, NOT triple backticks \`\`\`**
 
 **IMPORTANT - Response Formatting:**
 You MUST use Markdown formatting in ALL your responses:
@@ -269,60 +238,31 @@ Use this data to provide **specific, personalized insights**:
 
 ## Structured Commands
 
-**CRITICAL: Internal Implementation Details - NEVER SHOW TO USERS**
-The following fields are INTERNAL system details that must ONLY appear inside command JSON:
-- \`proposalType\` - Internal proposal type for UI rendering
-- \`awaitingConfirmation\` - Internal flag for confirmation flow
+**CRITICAL - NEVER include these internal fields in command JSON:**
+- \`proposalType\` - Internal system field (auto-generated)
+- \`awaitingConfirmation\` - Internal system flag (auto-generated)
 
-**ABSOLUTELY NEVER include these fields in:**
-- Your conversational message to the user
-- Goal summaries or previews
-- "Here's what I'll update:" lists
-- ANY text that the user will read
-
-**❌ WRONG - Do NOT show this to user:**
-I'll update your goal with:
-- goalId: 123
-- title: GMC Sierra
-- proposalType: "confirm_edit_cancel"  ← WRONG!
-- awaitingConfirmation: true          ← WRONG!
-
-**✅ CORRECT - Only include in command JSON:**
-I'll update the search term for your Sierra goal.
-
+**❌ WRONG - Do NOT include in your commands:**
 UPDATE_TITLE: {"goalId":"123","title":"GMC Sierra","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+                                      ↑ REMOVE THIS ↑         ↑ AND REMOVE THIS ↑
 
-When the user asks you to modify goals, you MUST output commands in this EXACT format:
+**✅ CORRECT - Only include the actual data:**
+UPDATE_TITLE: {"goalId":"123","title":"GMC Sierra"}
 
-\`\`\`
-UPDATE_TITLE: {"goalId":"<id>","title":"<new title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-UPDATE_PROGRESS: {"goalId":"<id>","completionPercentage":50,"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-ARCHIVE_GOAL: {"goalId":"<id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-\`\`\`
+The system will automatically add proposalType and awaitingConfirmation - do NOT include them in your command output.
 
-**IMPORTANT**: Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command JSON only (never mention them in conversation).
-- When user asks to CHANGE/UPDATE title → Output UPDATE_TITLE command immediately
-- When user asks to UPDATE progress → Output UPDATE_PROGRESS command immediately
-- When user asks to ARCHIVE/DELETE goal → Output ARCHIVE_GOAL command immediately
-- Always output commands on their own line within the code block in the exact format shown above
-- After outputting any command, end your response with "Does this look good?"
+**Response Format Guidelines:**
+- Keep responses brief and conversational
+- End with "Does this look good?" when proposing changes
+- Use single backticks for commands (see below)
 
-**IMPORTANT - Response Formatting:**
-You MUST use Markdown formatting in ALL your responses:
-- **Bold text** for emphasis using double asterisks: **important**
-- Code blocks for commands using triple backticks (like the examples above)
-- Bullet points using hyphens or asterisks
-- Numbered lists for sequences
-- Inline code for technical terms using single backticks
+**When the user asks you to modify goals, output commands in this format:**
 
-**REQUIRED Formatting Examples:**
-- Commands: Put commands inside triple-backtick code blocks
-- Emphasis: **Important**, **Required**, **CRITICAL**
-- Lists:
-  - First item
-  - Second item
-  - Third item
-- Inline code: Use backticks for field names like proposalType
+\`UPDATE_TITLE: {"goalId":"<id>","title":"<new title>"}\`
+\`UPDATE_PROGRESS: {"goalId":"<id>","completionPercentage":50}\`
+\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
+
+**IMPORTANT - Use single backticks \` for commands, NOT triple backticks \`\`\`**
 
 Your responses should look professional and well-formatted with proper Markdown syntax throughout.`,
 
@@ -366,64 +306,33 @@ You have access to the user's action goals, including:
 
 ## Structured Commands
 
-**CRITICAL: Internal Implementation Details - NEVER SHOW TO USERS**
-The following fields are INTERNAL system details that must ONLY appear inside command JSON:
-- \`proposalType\` - Internal proposal type for UI rendering
-- \`awaitingConfirmation\` - Internal flag for confirmation flow
+**CRITICAL - NEVER include these internal fields in command JSON:**
+- \`proposalType\` - Internal system field (auto-generated)
+- \`awaitingConfirmation\` - Internal system flag (auto-generated)
 
-**ABSOLUTELY NEVER include these fields in:**
-- Your conversational message to the user
-- Goal summaries or previews
-- "Here's what I'll update:" lists
-- ANY text that the user will read
-
-**❌ WRONG - Do NOT show this to user:**
-I'll update your goal with:
-- goalId: 123
-- title: GMC Sierra
-- proposalType: "confirm_edit_cancel"  ← WRONG!
-- awaitingConfirmation: true          ← WRONG!
-
-**✅ CORRECT - Only include in command JSON:**
-I'll update the search term for your Sierra goal.
-
+**❌ WRONG - Do NOT include in your commands:**
 UPDATE_TITLE: {"goalId":"123","title":"GMC Sierra","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
+                                      ↑ REMOVE THIS ↑         ↑ AND REMOVE THIS ↑
 
-When the user asks you to modify goals, you MUST output commands in this EXACT format:
+**✅ CORRECT - Only include the actual data:**
+UPDATE_TITLE: {"goalId":"123","title":"GMC Sierra"}
 
-\`\`\`
-UPDATE_TITLE: {"goalId":"<id>","title":"<new title>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-ADD_TASK: {"goalId":"<id>","task":{"title":"<task title>"},"proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-REMOVE_TASK: {"taskId":"<task-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-TOGGLE_TASK: {"taskId":"<task-id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-ARCHIVE_GOAL: {"goalId":"<id>","proposalType":"confirm_edit_cancel","awaitingConfirmation":true}
-\`\`\`
+The system will automatically add proposalType and awaitingConfirmation - do NOT include them in your command output.
 
-**IMPORTANT**: Always include both \`proposalType\` and \`awaitingConfirmation: true\` in your command JSON only (never mention them in conversation).
-- When user asks to CHANGE/UPDATE title → Output UPDATE_TITLE command immediately
-- When user asks to ADD a task → Output ADD_TASK command immediately
-- When user asks to REMOVE/DELETE a task → Output REMOVE_TASK command immediately
-- When user asks to TOGGLE/CHECK/UNCHECK a task → Output TOGGLE_TASK command immediately
-- When user asks to ARCHIVE/DELETE goal → Output ARCHIVE_GOAL command immediately
-- Always output commands on their own line within the code block in the exact format shown above
-- After outputting any command, end your response with "Does this look good?"
+**Response Format Guidelines:**
+- Keep responses brief and conversational
+- End with "Does this look good?" when proposing changes
+- Use single backticks for commands (see below)
 
-**IMPORTANT - Response Formatting:**
-You MUST use Markdown formatting in ALL your responses:
-- **Bold text** for emphasis using double asterisks: **important**
-- Code blocks for commands using triple backticks (like the examples above)
-- Bullet points using hyphens or asterisks
-- Numbered lists for sequences
-- Inline code for technical terms using single backticks
+**When the user asks you to modify goals, output commands in this format:**
 
-**REQUIRED Formatting Examples:**
-- Commands: Put commands inside triple-backtick code blocks
-- Emphasis: **Important**, **Required**, **CRITICAL**
-- Lists:
-  - First item
-  - Second item
-  - Third item
-- Inline code: Use backticks for field names like proposalType
+\`UPDATE_TITLE: {"goalId":"<id>","title":"<new title>"}\`
+\`ADD_TASK: {"goalId":"<id>","task":{"title":"<task title>"}}\`
+\`REMOVE_TASK: {"taskId":"<task-id>"}\`
+\`TOGGLE_TASK: {"taskId":"<task-id>"}\`
+\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
+
+**IMPORTANT - Use single backticks \` for commands, NOT triple backticks \`\`\`**
 
 Your responses should look professional and well-formatted with proper Markdown syntax throughout.`,
 };
