@@ -160,15 +160,22 @@ Each retailer's scraper expects a different input format. Generate the exact for
 
 Return ONLY JSON:
 {{
-  "query": "2023-2024 GMC Sierra 3500HD Denali Ultimate black within 500 miles of 94002 under 100000",
+  "query": "2023-2024 GMC Sierra 3500HD Denali Ultimate within 500 miles of 94002 under 100000",
   "retailers": {{
-    "autotrader": "https://www.autotrader.com/cars-for-sale/black/gmc/sierra-3500/denali-ultimate?searchRadius=500&zip=94002&startYear=2023&endYear=2024&maxPrice=100000",
-    "cargurus": {{"make": "GMC", "model": "Sierra 3500HD", "zip": "94002", "distance": 500, "trim": "Denali Ultimate", "yearMin": "2023", "yearMax": "2024", "maxPrice": 100000, "exteriorColor": "Black"}},
-    "carmax": {{"makes": ["GMC"], "models": ["Sierra 3500"], "trims": ["Denali Ultimate"], "yearMin": "2023", "yearMax": "2024", "maxPrice": 100000, "colors": ["Black"]}},
-    "carvana": {{"make": "GMC", "model": "Sierra 3500", "trims": ["Denali Ultimate"], "year": 2023, "exteriorColor": "Black"}},
+    "autotrader": "https://www.autotrader.com/cars-for-sale/gmc/sierra-3500/denali-ultimate?searchRadius=500&zip=94002&startYear=2023&endYear=2024&maxPrice=100000",
+    "cargurus": {{"make": "GMC", "model": "Sierra 3500HD", "zip": "94002", "distance": 500, "trim": "Denali Ultimate", "yearMin": "2023", "yearMax": "2024", "maxPrice": 100000}},
+    "carmax": {{"makes": ["GMC"], "models": ["Sierra 3500"], "trims": ["Denali Ultimate"], "yearMin": "2023", "yearMax": "2024", "maxPrice": 100000}},
+    "carvana": {{"make": "GMC", "model": "Sierra 3500", "trims": ["Denali Ultimate"], "year": 2023}},
     "truecar": {{"make": "GMC", "model": "Sierra 3500HD", "trims": ["Denali Ultimate"], "startYear": "2023", "endYear": "2024", "budget": 100000, "postalCode": "94002", "searchRadius": 500}}
   }}
 }}
+
+**CRITICAL: Only include filters that are EXPLICITLY mentioned in the user's query:**
+- If color is NOT mentioned → DO NOT include exteriorColor/colors filter
+- If drivetrain is NOT mentioned → DO NOT include drivetrain filter
+- If transmission is NOT mentioned → DO NOT include transmission filter
+- Omit ALL optional filters when not specified
+- NEVER make up or infer filter values from the example above
 
 **NOTES on model naming per retailer:**
 - CarMax: Drop "HD" suffix → "Sierra 3500" (NOT "Sierra 3500HD")
