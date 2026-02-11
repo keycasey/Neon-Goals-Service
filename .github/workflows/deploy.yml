@@ -7,42 +7,30 @@ on:
 
 jobs:
   deploy-service:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Deploy Service to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script_stop: true
-          script: |
-            cd /var/www/Neon-Goals-Service
-            git fetch origin
-            git reset --hard origin/main
-            bun install --frozen-lockfile
-            bun run prisma:generate
-            bun run prisma:migrate
-            bun run build
-            pm2 restart neon-goals-service
-            pm2 list | grep neon-goals-service
+      - name: Deploy Service
+        run: |
+          cd /var/www/Neon-Goals-Service
+          git fetch origin
+          git reset --hard origin/main
+          bun install --frozen-lockfile
+          bun run prisma:generate
+          bun run prisma:migrate
+          bun run build
+          pm2 restart neon-goals-service
+          pm2 list | grep neon-goals-service
 
   deploy-worker:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - name: Deploy Worker to Gilbert
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.GILBERT_HOST }}
-          username: ${{ secrets.GILBERT_USER }}
-          key: ${{ secrets.GILBERT_SSH_KEY }}
-          script_stop: true
-          script: |
-            cd /home/alpha/Development/Neon-Goals-Service
-            git fetch origin
-            git reset --hard origin/main
-            bun install --frozen-lockfile
-            bun run prisma:generate
-            sudo systemctl restart scraper-worker.service
-            sleep 2
-            sudo systemctl status scraper-worker.service --no-pager | head -15
+      - name: Deploy Worker
+        run: |
+          cd /home/alpha/Development/Neon-Goals-Service
+          git fetch origin
+          git reset --hard origin/main
+          bun install --frozen-lockfile
+          bun run prisma:generate
+          sudo systemctl restart scraper-worker.service
+          sleep 2
+          sudo systemctl status scraper-worker.service --no-pager | head -15
