@@ -1,6 +1,6 @@
 # Neon Goals Service
 
-NestJS backend service for tracking financial, action, and item goals scraping.
+NestJS backend service for tracking financial, action, and item goals scraping. Distributed architecture!
 
 ## Features
 
