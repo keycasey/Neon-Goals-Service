@@ -258,7 +258,9 @@ export class ScraperService {
     let failedCount = 0;
 
     for (const job of stuckJobs) {
-      if (job.attempts < 3) {
+      // Only reset if attempts < 2, so after increment we have at most 2 attempts
+      // This allows one more retry (attempts=2 -> run -> stuck would become attempts=3 and fail)
+      if (job.attempts < 2) {
         // Reset to pending for retry
         await this.prisma.scrapeJob.update({
           where: { id: job.id },
