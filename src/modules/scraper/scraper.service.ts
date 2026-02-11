@@ -1355,7 +1355,7 @@ export class ScraperService {
     const statusBadge = hasSelection
       ? 'in_stock'
       : candidates.length > 0
-      ? 'pending_search' // Candidates found but user hasn't selected one yet
+      ? 'candidates_found' // Candidates found but user hasn't selected one yet - different from pending_search so frontend knows scrape is complete
       : 'not_found';
 
     await this.prisma.itemGoalData.update({

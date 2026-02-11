@@ -394,8 +394,9 @@ enum ItemStatusBadge {
   in_stock
   price_drop
   pending_search
-  not_found       // Searched but no results found
-  not_supported   // Category doesn't have a scraper yet
+  candidates_found // Candidates found but user hasn't selected one yet
+  not_found        // Searched but no results found
+  not_supported    // Category doesn't have a scraper yet
 }
 
 // Item categories for specialized scraping/handling
