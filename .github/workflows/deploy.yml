@@ -13,8 +13,7 @@ jobs:
         run: |
           export PATH=/home/ec2-user/.bun/bin:$PATH
           cd /var/www/Neon-Goals-Service
-          git fetch origin
-          git reset --hard origin/main
+          git pull origin main
           bun install --frozen-lockfile
           bun run prisma:generate
           bun run prisma:migrate
