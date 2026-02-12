@@ -3,6 +3,7 @@
 NestJS backend service for tracking financial, action, and item goals scraping. Distributed architecture!
 Integrate your specialized goal agents into frameworks such as OpenClaw, Clawdbot, or Nanobot to build your persona.
 
+
 ## Features
 
 - 🎯 Goal tracking with GitHub OAuth
@@ -15,12 +16,8 @@ Integrate your specialized goal agents into frameworks such as OpenClaw, Clawdbo
 ### Working with Camoufox (Free)
 - ✅ **CarGurus** - uses camoufox
 - ✅ **CarMax** - uses camoufox
-- ✅ **KBB (Kelley Blue Book)** - uses camoufox
 - ✅ **TrueCar** - uses camoufox
 - ✅ **Carvana** - uses camoufox
-- ❌ CarFax - not a listing marketplace (vehicle history reports only)
-
-### Requires Browser-Use (AI, ~$1.60/scrape)
 - ⚠️ **AutoTrader** - detects camoufox
 - ⚠️ **Edmunds** - detects camoufox
 - ⚠️ **Cars.com** - detects camoufox
