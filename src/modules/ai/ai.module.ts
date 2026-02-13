@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
 import { AiGoalChatController, AiOverviewController } from './ai-goal-creation.controller';
@@ -7,6 +8,9 @@ import { GoalCommandService } from './goal-command.service';
 import { GoalModificationService } from './goal-modification.service';
 import { OpenAIService } from './openai.service';
 import { ConversationSummaryService } from './conversation-summary.service';
+import { AgentRoutingService } from './agent-routing.service';
+import { GreetingSummaryService } from './greeting-summary.service';
+import { AiToolsService } from './ai-tools.service';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../../config/prisma.module';
 import { ScraperModule } from '../scraper/scraper.module';
@@ -15,9 +19,9 @@ import { AuthModule } from '../auth/auth.module';
 import { PlaidModule } from '../plaid/plaid.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, ScraperModule, ChatsModule, AuthModule, PlaidModule],
+  imports: [ConfigModule, PrismaModule, ScraperModule, forwardRef(() => ChatsModule), AuthModule, PlaidModule, HttpModule],
   controllers: [AiController, AiGoalChatController, AiOverviewController, SpecialistController],
-  providers: [AiService, GoalCommandService, GoalModificationService, OpenAIService, ConversationSummaryService],
-  exports: [AiService, GoalCommandService, GoalModificationService, OpenAIService, ConversationSummaryService],
+  providers: [AiService, GoalCommandService, GoalModificationService, OpenAIService, ConversationSummaryService, AgentRoutingService, GreetingSummaryService, AiToolsService],
+  exports: [AiService, GoalCommandService, GoalModificationService, OpenAIService, ConversationSummaryService, AgentRoutingService, GreetingSummaryService, AiToolsService],
 })
 export class AiModule {}

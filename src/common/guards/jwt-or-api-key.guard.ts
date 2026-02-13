@@ -57,6 +57,18 @@ export class JwtOrApiKeyGuard implements CanActivate {
 
     try {
       const decoded = jwt.verify(token, jwtSecret) as any;
+
+      // Agent service tokens carry role='agent' and the real user's ID
+      if (decoded.role === 'agent') {
+        request.user = {
+          userId: decoded.sub,
+          id: decoded.sub,
+          isAgent: true,
+          agentSource: decoded.source,
+        };
+        return true;
+      }
+
       // Add userId from sub (JWT standard uses 'sub' for subject/user ID)
       request.user = {
         userId: decoded.sub,

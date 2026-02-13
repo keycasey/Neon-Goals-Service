@@ -32,9 +32,13 @@ export class SpecialistController {
   @Post('category/:categoryId/chat')
   async chat(
     @Param('categoryId') categoryId: string,
-    @CurrentUser('userId') userId: string,
+    @CurrentUser() user: any,
     @Body() body: { message: string },
   ) {
+    const userId = user.userId;
+    const isAgent = user.isAgent || false;
+    const agentSource = user.agentSource;
+
     // Validate categoryId
     const validCategories = ['items', 'finances', 'actions'];
     if (!validCategories.includes(categoryId)) {
@@ -69,13 +73,15 @@ export class SpecialistController {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Send to category specialist
+    // Send to category specialist with agent context
+    const agentContext = isAgent ? { isAgent, agentSource } : undefined;
     const result = await this.openaiService.categoryChat(
       userId,
       categoryId,
       body.message,
       goals,
       chat.id,
+      agentContext,
     );
 
     // Execute commands if any were returned

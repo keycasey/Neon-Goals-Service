@@ -16,6 +16,7 @@ export class ChatsService {
       },
       include: {
         messages: {
+          where: { visible: true },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -56,6 +57,7 @@ export class ChatsService {
       },
       include: {
         messages: {
+          where: { visible: true },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -160,6 +162,7 @@ export class ChatsService {
       },
       include: {
         messages: {
+          where: { visible: true },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -239,6 +242,7 @@ export class ChatsService {
       },
       include: {
         messages: {
+          where: { visible: true },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -365,6 +369,16 @@ export class ChatsService {
           gt: createdAt,
         },
       },
+    });
+  }
+
+  /**
+   * Mark a chat as visited by updating the lastUserVisit timestamp
+   */
+  async markChatVisited(chatId: string) {
+    return this.prisma.chatState.update({
+      where: { id: chatId },
+      data: { lastUserVisit: new Date() },
     });
   }
 }

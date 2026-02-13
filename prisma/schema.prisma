@@ -229,6 +229,8 @@ model Message {
   role      String   // "user" | "assistant" | "system"
   content   String   @db.Text
   threadId  String?  // OpenAI thread ID for conversation persistence
+  source    String   @default("user")   // "user" | "agent" | "system"
+  visible   Boolean  @default(true)     // false = hidden from chat UI (agent-to-agent messages)
   createdAt DateTime @default(now())
 
   // Relations
@@ -239,6 +241,7 @@ model Message {
 
   @@index([userId])
   @@index([chatId])
+  @@index([chatId, visible])
   @@index([threadId])
 }
 
@@ -266,6 +269,10 @@ model ChatState {
   // Summary tracking for context window management
   lastSummaryId String?  // Points to most recent summary
   summaryCursor  Int?     // How many messages are summarized (offset)
+
+  // Agent routing tracking
+  lastUserVisit         DateTime?  // When user last opened this chat
+  lastGreetingSummaryAt DateTime?  // When last greeting summary was generated
 
   // Relations
   goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)

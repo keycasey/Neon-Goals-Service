@@ -6,6 +6,8 @@ import { SPECIALIST_PROMPTS } from './specialist-prompts';
 import OpenAI from 'openai';
 import { ChatCompletionMessageParam } from 'openai/resources';
 import { PlaidService } from '../plaid/plaid.service';
+import { AgentRoutingService } from './agent-routing.service';
+import { AiToolsService } from './ai-tools.service';
 
 export interface CreateThreadResponse {
   threadId: string;
@@ -55,6 +57,8 @@ export class OpenAIService implements OnModuleInit {
     private prisma: PrismaService,
     private summaryService: ConversationSummaryService,
     @Optional() private plaidService?: PlaidService,
+    @Optional() private agentRoutingService?: AgentRoutingService,
+    @Optional() private aiToolsService?: AiToolsService,
   ) {
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
   }
@@ -117,6 +121,7 @@ export class OpenAIService implements OnModuleInit {
     userId: string,
     messages: Array<{ role: string; content: string }>,
     chatId?: string,
+    options?: { source?: string; visible?: boolean },
   ): Promise<void> {
     await this.prisma.message.createMany({
       data: messages.map(msg => {
@@ -128,6 +133,12 @@ export class OpenAIService implements OnModuleInit {
         };
         if (chatId) {
           data.chatId = chatId;
+        }
+        if (options?.source !== undefined) {
+          data.source = options.source;
+        }
+        if (options?.visible !== undefined) {
+          data.visible = options.visible;
         }
         return data;
       }),
@@ -691,6 +702,110 @@ ${message}`;
   }
 
   /**
+   * Detect if user is asking a finance-related question that should route to the wealth advisor.
+   */
+  private detectFinanceIntent(message: string, goals: any[]): boolean {
+    const lower = message.toLowerCase();
+
+    // Keyword matching
+    const financeKeywords = [
+      'budget', 'spending', 'savings', 'saving', 'invest', 'investment',
+      'debt', 'transaction', 'transactions', 'bank', 'account balance',
+      'income', 'expense', 'expenses', 'net worth', 'credit',
+      'retirement', 'mortgage', 'loan', 'interest rate',
+      'financial', 'money', 'afford',
+    ];
+    const hasKeyword = financeKeywords.some(kw => lower.includes(kw));
+
+    // Pattern matching for finance questions
+    const financePatterns = [
+      /how much have i (spent|saved|earned)/,
+      /can i afford/,
+      /break\s*down\s*(my\s+)?spending/,
+      /where('s| is| does) my money/,
+      /what('s| is| are) my (balance|finances|accounts)/,
+      /am i on track.*(saving|budget|financial)/,
+      /spending (habits|patterns|breakdown)/,
+    ];
+    const matchesPattern = financePatterns.some(p => p.test(lower));
+
+    // Finance goal title matching
+    const financeGoals = goals.filter(g => g.type === 'finance');
+    const referencesFinanceGoal = financeGoals.some(g =>
+      lower.includes(g.title.toLowerCase()),
+    );
+
+    return hasKeyword || matchesPattern || referencesFinanceGoal;
+  }
+
+  /**
+   * Route a message to a specialist and return the combined response.
+   * Saves messages to the overview chat history.
+   */
+  private async handleSpecialistRouting(
+    userId: string,
+    message: string,
+    goals: any[],
+    chatId: string,
+    specialist: string,
+  ): Promise<{ content: string; commands?: any[]; routed?: boolean; specialist?: string }> {
+    if (!this.agentRoutingService) {
+      this.logger.warn('AgentRoutingService not available, falling back to direct response');
+      return { content: 'I\'d love to help with that financial question, but my finance specialist is currently unavailable. Please try the Finance Specialist chat directly.' };
+    }
+
+    const threadId = `overview_${userId}`;
+
+    // Load recent overview history for context (last 3 exchanges = 6 messages)
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    const recentMessages = history.messages.slice(-6);
+    const contextSummary = recentMessages
+      .map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, 200) : ''}`)
+      .join('\n');
+
+    try {
+      // Route to specialist
+      const result = await this.agentRoutingService.routeToSpecialist(
+        userId,
+        specialist,
+        message,
+        contextSummary,
+      );
+
+      // Prepend routing indicator to response
+      const content = `*Consulting your Wealth Advisor...*\n\n${result.content}`;
+
+      // Add to overview history
+      history.messages.push({ role: 'user', content: message });
+      history.messages.push({ role: 'assistant', content });
+
+      // Save to overview chat
+      await this.saveMessages(threadId, userId, [
+        { role: 'user', content: message },
+        { role: 'assistant', content },
+      ], chatId);
+
+      return {
+        content: this.cleanCommandsFromContent(content),
+        commands: result.commands,
+        routed: true,
+        specialist,
+      };
+    } catch (error) {
+      this.logger.error(`Specialist routing failed: ${error.message}`);
+      return {
+        content: 'I tried consulting the Wealth Advisor but encountered an issue. You can ask your question directly in the Finance Specialist chat for the best response.',
+      };
+    }
+  }
+
+  /**
    * Get system prompt for overview agent with goal context
    */
   private getOverviewSystemPrompt(goals: any[]): string {
@@ -1009,7 +1124,12 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
     message: string,
     goals: any[],
     chatId: string,
-  ): Promise<{ content: string; commands?: any[] }> {
+  ): Promise<{ content: string; commands?: any[]; routed?: boolean; specialist?: string }> {
+    // Route finance questions to the wealth advisor
+    if (this.detectFinanceIntent(message, goals)) {
+      return this.handleSpecialistRouting(userId, message, goals, chatId, 'finances');
+    }
+
     // Use a special thread ID for overview chat
     const threadId = `overview_${userId}`;
 
@@ -1972,6 +2092,26 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
     goals: any[],
     chatId: string,
   ): AsyncGenerator<{ content: string; done: boolean }, void, unknown> {
+    // Route finance questions to the wealth advisor (non-streaming fallback)
+    if (this.detectFinanceIntent(message, goals)) {
+      yield { content: '*Consulting your Wealth Advisor...*\n\n', done: false };
+      try {
+        const result = await this.handleSpecialistRouting(userId, message, goals, chatId, 'finances');
+        // Strip the routing indicator since we already yielded it
+        const specialistContent = result.content.replace('*Consulting your Wealth Advisor...*\n\n', '');
+        yield { content: specialistContent, done: false };
+        const finalChunk: any = { content: '', done: true };
+        if (result.commands?.length) {
+          finalChunk.commands = result.commands;
+        }
+        yield finalChunk;
+      } catch (error) {
+        yield { content: 'I tried consulting the Wealth Advisor but encountered an issue. Please try the Finance Specialist chat directly.', done: false };
+        yield { content: '', done: true };
+      }
+      return;
+    }
+
     const threadId = `overview_${userId}`;
     const streamKey = `overview_${userId}_${Date.now()}`;
 
@@ -2103,6 +2243,7 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
     message: string,
     categoryGoals: any[],
     chatId: string,
+    agentContext?: { isAgent: boolean; agentSource?: string },
   ): Promise<{ content: string; commands?: any[] }> {
     const threadId = `category_${categoryId}_${userId}`;
 
@@ -2169,30 +2310,163 @@ ${acc.recentTransactions.map(t =>
         ...history.messages,
       ];
 
-      const response = await this.openai.chat.completions.create({
+      // Define tools for function calling (only for finances category)
+      const tools = categoryId === 'finances' && this.aiToolsService ? [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'get_live_balance',
+            description: 'Get current account balance from Plaid (live data)',
+            parameters: {
+              type: 'object',
+              properties: {
+                plaidAccountId: {
+                  type: 'string',
+                  description: 'Optional: specific account ID. If omitted, returns all accounts.',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function' as const,
+          function: {
+            name: 'get_live_transactions',
+            description: 'Get recent transactions from Plaid (live data)',
+            parameters: {
+              type: 'object',
+              properties: {
+                plaidAccountId: {
+                  type: 'string',
+                  description: 'Optional: specific account ID. If omitted, returns all accounts.',
+                },
+                startDate: {
+                  type: 'string',
+                  description: 'Optional: start date (YYYY-MM-DD). Defaults to 30 days ago.',
+                },
+                endDate: {
+                  type: 'string',
+                  description: 'Optional: end date (YYYY-MM-DD). Defaults to today.',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function' as const,
+          function: {
+            name: 'analyze_all_spending_and_savings',
+            description: 'Analyze spending and savings across all accounts. Provides personalized recommendations for improving savings rate.',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
+      ] : undefined;
+
+      let response = await this.openai.chat.completions.create({
         model: 'gpt-5-nano',
         messages,
+        tools,
+        tool_choice: tools ? 'auto' : undefined,
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
+      // Handle tool calls if present
+      let assistantMessage = response.choices[0]?.message;
+      let finalContent = assistantMessage?.content || '';
+
+      if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
+        // Add assistant message with tool calls to history
+        history.messages.push({
+          role: 'assistant',
+          content: finalContent,
+          tool_calls: assistantMessage.tool_calls,
+        });
+
+        // Execute each tool call
+        const toolMessages = await Promise.all(
+          assistantMessage.tool_calls.map(async (toolCall) => {
+            // Only handle function type tool calls
+            if (toolCall.type !== 'function') {
+              return {
+                role: 'tool' as const,
+                content: JSON.stringify({ error: 'Unknown tool type' }),
+                tool_call_id: toolCall.id,
+              };
+            }
+
+            const toolName = toolCall.function.name;
+            let toolResult;
+
+            try {
+              const args = JSON.parse(toolCall.function.arguments || '{}');
+
+              if (toolName === 'get_live_balance') {
+                const result = await this.aiToolsService!.getLiveBalance(userId, args.plaidAccountId);
+                toolResult = JSON.stringify(result);
+              } else if (toolName === 'get_live_transactions') {
+                const result = await this.aiToolsService!.getLiveTransactions(
+                  userId,
+                  args.plaidAccountId,
+                  args.startDate,
+                  args.endDate,
+                );
+                toolResult = JSON.stringify(result);
+              } else if (toolName === 'analyze_all_spending_and_savings') {
+                const result = await this.aiToolsService!.analyzeAllSpendingAndSavings(userId);
+                toolResult = JSON.stringify(result);
+              } else {
+                toolResult = JSON.stringify({ error: 'Unknown tool' });
+              }
+            } catch (error: any) {
+              toolResult = JSON.stringify({ error: error.message });
+            }
+
+            return {
+              role: 'tool' as const,
+              content: toolResult,
+              tool_call_id: toolCall.id,
+            };
+          }),
+        );
+
+        // Add tool response messages to history
+        for (const tm of toolMessages) {
+          history.messages.push(tm);
+        }
+
+        // Call OpenAI again with tool results
+        response = await this.openai.chat.completions.create({
+          model: 'gpt-5-nano',
+          messages,
+        });
+
+        finalContent = response.choices[0]?.message?.content || '';
+      }
+
+      if (!finalContent) {
         throw new Error('No response from OpenAI');
       }
 
       // Add assistant response to history
-      history.messages.push({ role: 'assistant', content });
+      history.messages.push({ role: 'assistant', content: finalContent });
 
       // Save messages to database with chatId
+      // Agent-routed messages are hidden from the chat UI
+      const messageOptions = agentContext?.isAgent
+        ? { source: 'agent', visible: false }
+        : undefined;
       await this.saveMessages(threadId, userId, [
         { role: 'user', content: message },
-        { role: 'assistant', content },
-      ], chatId);
+        { role: 'assistant', content: finalContent },
+      ], chatId, messageOptions);
 
       // Parse structured commands
-      const commands = this.sanitizeCommands(this.parseCommands(content));
+      const commands = this.sanitizeCommands(this.parseCommands(finalContent));
 
       const apiResponse: { content: string; commands?: any[]; goalPreview?: string; awaitingConfirmation?: boolean; proposalType?: string } = {
-        content: this.cleanCommandsFromContent(content),
+        content: this.cleanCommandsFromContent(finalContent),
         commands
       };
 

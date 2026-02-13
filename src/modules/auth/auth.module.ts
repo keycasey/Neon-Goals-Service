@@ -9,6 +9,7 @@ import { GithubStrategy } from './strategies/github.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { UsersModule } from '../users/users.module';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
+import { AgentAuthService } from './agent-auth.service';
 
 @Module({
   imports: [
@@ -25,7 +26,7 @@ import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GithubStrategy, LocalStrategy, JwtOrApiKeyGuard],
-  exports: [AuthService, JwtOrApiKeyGuard],
+  providers: [AuthService, JwtStrategy, GithubStrategy, LocalStrategy, JwtOrApiKeyGuard, AgentAuthService],
+  exports: [AuthService, JwtOrApiKeyGuard, AgentAuthService],
 })
 export class AuthModule {}

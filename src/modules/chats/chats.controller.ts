@@ -9,13 +9,17 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { ChatsService } from './chats.service';
+import { GreetingSummaryService } from '../ai/greeting-summary.service';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('chats')
 @UseGuards(JwtOrApiKeyGuard)  // Allow either JWT or API key auth
 export class ChatsController {
-  constructor(private chatsService: ChatsService) {}
+  constructor(
+    private chatsService: ChatsService,
+    private greetingSummaryService: GreetingSummaryService,
+  ) {}
 
   @Get('creation')
   async getCreationChat(@CurrentUser('userId') userId: string) {
@@ -32,7 +36,23 @@ export class ChatsController {
     @Param('categoryId') categoryId: string,
     @CurrentUser('userId') userId: string,
   ) {
-    return this.chatsService.getOrCreateCategoryChat(userId, categoryId);
+    const chat = await this.chatsService.getOrCreateCategoryChat(userId, categoryId);
+
+    // Generate greeting summary if there are new agent messages since last visit
+    const summary = await this.greetingSummaryService.generateGreetingSummaryIfNeeded(
+      chat.id,
+      userId,
+    );
+
+    // Mark chat as visited
+    await this.chatsService.markChatVisited(chat.id);
+
+    // If greeting was generated, re-fetch chat to include the new message
+    if (summary) {
+      return this.chatsService.getOrCreateCategoryChat(userId, categoryId);
+    }
+
+    return chat;
   }
 
   @Get('goal/:goalId')
