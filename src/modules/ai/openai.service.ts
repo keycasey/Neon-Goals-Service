@@ -1304,6 +1304,28 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
     }
 
+    // Parse UPDATE_TARGET_BALANCE commands
+    const targetBalanceMatches = content.matchAll(/UPDATE_TARGET_BALANCE:\s*({[^}]+})/g);
+    for (const match of targetBalanceMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        commands.push({ type: 'UPDATE_TARGET_BALANCE', data });
+      } catch (e) {
+        this.logger.warn('Failed to parse UPDATE_TARGET_BALANCE command:', e);
+      }
+    }
+
+    // Parse UPDATE_TARGET_DATE commands
+    const targetDateMatches = content.matchAll(/UPDATE_TARGET_DATE:\s*({[^}]+})/g);
+    for (const match of targetDateMatches) {
+      try {
+        const data = JSON.parse(match[1]);
+        commands.push({ type: 'UPDATE_TARGET_DATE', data });
+      } catch (e) {
+        this.logger.warn('Failed to parse UPDATE_TARGET_DATE command:', e);
+      }
+    }
+
     // Parse UPDATE_SEARCHTERM commands (with nested object support for longer JSON)
     const searchtermKeywordIndices = [];
     searchStart = 0;
@@ -1850,11 +1872,13 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
       }
     }
 
-    // Remove CREATE_SUBGOAL, UPDATE_PROGRESS, UPDATE_TITLE, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL commands (simple non-nested)
+    // Remove CREATE_SUBGOAL, UPDATE_PROGRESS, UPDATE_TITLE, UPDATE_TARGET_BALANCE, UPDATE_TARGET_DATE, REMOVE_TASK, TOGGLE_TASK, ARCHIVE_GOAL commands (simple non-nested)
     cleaned = cleaned
       .replace(/CREATE_SUBGOAL:\s*{[^}]+}/g, '')
       .replace(/UPDATE_PROGRESS:\s*{[^}]+}/g, '')
       .replace(/UPDATE_TITLE:\s*{[^}]+}/g, '')
+      .replace(/UPDATE_TARGET_BALANCE:\s*{[^}]+}/g, '')
+      .replace(/UPDATE_TARGET_DATE:\s*{[^}]+}/g, '')
       .replace(/REMOVE_TASK:\s*{[^}]+}/g, '')
       .replace(/TOGGLE_TASK:\s*{[^}]+}/g, '')
       .replace(/ARCHIVE_GOAL:\s*{[^}]+}/g, '')
@@ -1987,6 +2011,14 @@ Be conversational, encouraging, and specific. Reference their actual goals in yo
           case 'UPDATE_TITLE':
             preview += `**Change Goal Title**\n`;
             preview += `New title: "${cmdData.title}"\n\n`;
+            break;
+          case 'UPDATE_TARGET_BALANCE':
+            preview += `**Update Target Balance**\n`;
+            preview += `New target: $${cmdData.targetBalance?.toLocaleString()}\n\n`;
+            break;
+          case 'UPDATE_TARGET_DATE':
+            preview += `**Update Target Date**\n`;
+            preview += `New target date: ${cmdData.targetDate}\n\n`;
             break;
           case 'UPDATE_SEARCHTERM':
             preview += `**Update Search Criteria**\n`;

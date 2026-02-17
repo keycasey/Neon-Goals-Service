@@ -91,6 +91,26 @@ export class GoalCommandService {
             proposalType: getProposalType('UPDATE_TITLE'),
             awaitingConfirmation: true,
           });
+        } else if (command.type === 'UPDATE_TARGET_BALANCE') {
+          const goal = await this.updateTargetBalance(userId, command.data);
+          executedCommands.push({
+            type: 'UPDATE_TARGET_BALANCE',
+            success: true,
+            goalId: goal.id,
+            goal,
+            proposalType: getProposalType('UPDATE_TARGET_BALANCE'),
+            awaitingConfirmation: true,
+          });
+        } else if (command.type === 'UPDATE_TARGET_DATE') {
+          const goal = await this.updateTargetDate(userId, command.data);
+          executedCommands.push({
+            type: 'UPDATE_TARGET_DATE',
+            success: true,
+            goalId: goal.id,
+            goal,
+            proposalType: getProposalType('UPDATE_TARGET_DATE'),
+            awaitingConfirmation: true,
+          });
         } else if (command.type === 'UPDATE_SEARCHTERM') {
           const itemData = await this.updateSearchTerm(userId, command.data);
           executedCommands.push({
@@ -526,6 +546,54 @@ export class GoalCommandService {
     return this.prisma.goal.update({
       where: { id: goalId },
       data: { title },
+    });
+  }
+
+  /**
+   * Update target balance for finance goals
+   */
+  async updateTargetBalance(userId: string, data: { goalId: string; targetBalance: number }) {
+    const { goalId, targetBalance } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+      include: { financeData: true },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    if (goal.type !== 'finance') {
+      throw new Error('Target balance can only be updated for finance goals');
+    }
+
+    return this.prisma.financeGoalData.update({
+      where: { goalId },
+      data: { targetBalance },
+    });
+  }
+
+  /**
+   * Update target date for finance goals
+   */
+  async updateTargetDate(userId: string, data: { goalId: string; targetDate: string }) {
+    const { goalId, targetDate } = data;
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+    });
+
+    if (!goal) {
+      throw new Error(`Goal not found: ${goalId}`);
+    }
+
+    // Convert targetDate string to Date object
+    const deadlineDate = new Date(targetDate);
+
+    return this.prisma.goal.update({
+      where: { id: goalId },
+      data: { deadline: deadlineDate },
     });
   }
 

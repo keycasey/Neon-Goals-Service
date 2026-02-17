@@ -130,7 +130,7 @@ The system will automatically add these - do NOT include them in your command ou
 
 **Goal Updates:**
 \`UPDATE_TITLE: {"goalId":"<id>","title":"<new display title>"}\`
-\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
+\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}`\n\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\n\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
 
 **Finance Goal Progress:**
 \`UPDATE_PROGRESS: {"goalId":"<id>","currentBalance":<amount-saved>}\`
@@ -249,6 +249,11 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 **Finance Goal Progress:**
 \`UPDATE_PROGRESS: {"goalId":"<id>","currentBalance":<amount-saved>}\`
 
+
+**Finance Goal Target Updates:**
+`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}`
+`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}
+
 **Task Management (for action goals):**
 \`ADD_TASK: {"goalId":"<id>","task":{"title":"<task title>"}}\`
 \`REMOVE_TASK: {"taskId":"<task-id>"}\`
@@ -257,6 +262,8 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 **Rules:**
 - Finance goals: \`targetBalance\` is REQUIRED for CREATE_GOAL. \`currentBalance\` is optional (defaults to 0).
 - UPDATE_PROGRESS for finance goals: sets \`currentBalance\` (the amount saved so far toward the target)
+- UPDATE_TARGET_BALANCE: updates the savings target amount while preserving current progress
+- UPDATE_TARGET_DATE: updates the deadline for achieving the goal (ISO 8601 format: YYYY-MM-DD)
 - Only include fields shown above - do NOT invent custom fields (no totalCost, phases, landCost, etc.)
 - All planning details go in the \`description\` field as text, NOT as structured JSON fields
 - For CREATE_SUBGOAL after CREATE_GOAL, use the main goal's title as parentGoalId
@@ -334,7 +341,7 @@ The system will automatically add these - do NOT include them in your command ou
 
 **Goal Updates:**
 \`UPDATE_TITLE: {"goalId":"<id>","title":"<new title>"}\`
-\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
+\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}`\n\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\n\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
 
 **Finance Goal Progress:**
 \`UPDATE_PROGRESS: {"goalId":"<id>","currentBalance":<amount-saved>}\`
