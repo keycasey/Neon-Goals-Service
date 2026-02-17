@@ -273,6 +273,9 @@ export class PlaidService {
 
     const response = await this.plaidClient.accountsBalanceGet({
       access_token: account.accessToken,
+      options: {
+        min_last_updated_datetime: account.lastSync.toISOString(),
+      },
     });
 
     const plaidAccount = response.data.accounts.find(
@@ -443,6 +446,9 @@ export class PlaidService {
 
     const response = await this.plaidClient.accountsBalanceGet({
       access_token: account.accessToken,
+      options: {
+        min_last_updated_datetime: account.lastSync.toISOString(),
+      },
     });
 
     const plaidAccount = response.data.accounts.find(
