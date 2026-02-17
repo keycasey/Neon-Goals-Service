@@ -129,8 +129,13 @@ export class PlaidService {
 
       // Get accounts with balances
       this.logger.log('Fetching accounts with balances...');
+      // Use 5 minutes ago as min_last_updated_datetime for fresh links
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
       const accountsResponse = await this.plaidClient.accountsBalanceGet({
         access_token: access_token,
+        options: {
+          min_last_updated_datetime: fiveMinutesAgo.toISOString(),
+        },
       });
 
       this.logger.log(`Found ${accountsResponse.data.accounts.length} accounts`);
