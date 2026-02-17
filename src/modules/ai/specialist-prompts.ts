@@ -130,7 +130,9 @@ The system will automatically add these - do NOT include them in your command ou
 
 **Goal Updates:**
 \`UPDATE_TITLE: {"goalId":"<id>","title":"<new display title>"}\`
-\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}`\n\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\n\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
+\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}\`
+\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\`
+\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
 
 **Finance Goal Progress:**
 \`UPDATE_PROGRESS: {"goalId":"<id>","currentBalance":<amount-saved>}\`
@@ -251,8 +253,8 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 
 
 **Finance Goal Target Updates:**
-`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}`
-`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}
+\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}\`
+\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\`
 
 **Task Management (for action goals):**
 \`ADD_TASK: {"goalId":"<id>","task":{"title":"<task title>"}}\`
@@ -341,7 +343,9 @@ The system will automatically add these - do NOT include them in your command ou
 
 **Goal Updates:**
 \`UPDATE_TITLE: {"goalId":"<id>","title":"<new title>"}\`
-\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}`\n\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\n\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
+\`UPDATE_TARGET_BALANCE: {"goalId":"<id>","targetBalance":<new-target-amount>}\`
+\`UPDATE_TARGET_DATE: {"goalId":"<id>","targetDate":"<ISO-8601-date>"}\`
+\`ARCHIVE_GOAL: {"goalId":"<id>"}\`
 
 **Finance Goal Progress:**
 \`UPDATE_PROGRESS: {"goalId":"<id>","currentBalance":<amount-saved>}\`
