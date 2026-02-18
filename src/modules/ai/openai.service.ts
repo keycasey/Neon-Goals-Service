@@ -2597,22 +2597,177 @@ ${acc.recentTransactions.map(t =>
         ...history.messages,
       ];
 
+      // Define tools for function calling (only for finances category)
+      const tools = categoryId === 'finances' && this.aiToolsService ? [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'get_live_balance',
+            description: 'Get current account balance from Plaid (live data)',
+            parameters: {
+              type: 'object',
+              properties: {
+                plaidAccountId: {
+                  type: 'string',
+                  description: 'Optional: specific account ID. If omitted, returns all accounts.',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function' as const,
+          function: {
+            name: 'get_live_transactions',
+            description: 'Get recent transactions from Plaid (live data)',
+            parameters: {
+              type: 'object',
+              properties: {
+                plaidAccountId: {
+                  type: 'string',
+                  description: 'Optional: specific account ID. If omitted, returns all accounts.',
+                },
+                startDate: {
+                  type: 'string',
+                  description: 'Optional: start date (YYYY-MM-DD). Defaults to 30 days ago.',
+                },
+                endDate: {
+                  type: 'string',
+                  description: 'Optional: end date (YYYY-MM-DD). Defaults to today.',
+                },
+              },
+            },
+          },
+        },
+        {
+          type: 'function' as const,
+          function: {
+            name: 'analyze_all_spending_and_savings',
+            description: 'Analyze spending and savings across all accounts. Provides personalized recommendations for improving savings rate.',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
+      ] : undefined;
+
       const stream = await this.openai.chat.completions.create({
         model: 'gpt-5-nano',
         messages,
+        tools,
+        tool_choice: tools ? 'auto' : undefined,
         stream: true,
       }, {
         signal: controller.signal,
       });
 
       let fullContent = '';
+      let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
       for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content || '';
-        if (delta) {
-          fullContent += delta;
-          yield { content: delta, done: false };
+        const delta = chunk.choices[0]?.delta;
+
+        // Handle content
+        if (delta?.content) {
+          fullContent += delta.content;
+          yield { content: delta.content, done: false };
         }
+
+        // Handle tool calls (accumulate deltas)
+        if (delta?.tool_calls) {
+          for (const toolCallDelta of delta.tool_calls) {
+            const index = toolCallDelta.index;
+            if (!toolCalls[index]) {
+              toolCalls[index] = { id: '', name: '', arguments: '' };
+            }
+            if (toolCallDelta.id) {
+              toolCalls[index].id = toolCallDelta.id;
+            }
+            if (toolCallDelta.function?.name) {
+              toolCalls[index].name = toolCallDelta.function.name;
+            }
+            if (toolCallDelta.function?.arguments) {
+              toolCalls[index].arguments += toolCallDelta.function.arguments;
+            }
+          }
+        }
+      }
+
+      // Handle tool calls if present
+      if (toolCalls.length > 0 && this.aiToolsService) {
+        this.logger.log(`Processing ${toolCalls.length} tool calls in category chat`);
+
+        // Add assistant message with tool calls to history
+        history.messages.push({
+          role: 'assistant',
+          content: fullContent,
+          tool_calls: toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        });
+
+        // Execute each tool call and collect results
+        const toolResults: Array<{ tool_call_id: string; content: string }> = [];
+        for (const toolCall of toolCalls) {
+          try {
+            let result: any;
+            const args = JSON.parse(toolCall.arguments || '{}');
+
+            if (toolCall.name === 'get_live_balance') {
+              result = await this.aiToolsService.getLiveBalance(userId, args.plaidAccountId);
+            } else if (toolCall.name === 'get_live_transactions') {
+              result = await this.aiToolsService.getLiveTransactions(
+                userId,
+                args.plaidAccountId,
+                args.startDate,
+                args.endDate,
+              );
+            } else if (toolCall.name === 'analyze_all_spending_and_savings') {
+              result = await this.aiToolsService.analyzeAllSpendingAndSavings(userId);
+            } else {
+              result = { error: `Unknown tool: ${toolCall.name}` };
+            }
+
+            toolResults.push({
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(result),
+            });
+            this.logger.log(`Tool ${toolCall.name} executed successfully`);
+          } catch (err: any) {
+            this.logger.error(`Tool ${toolCall.name} failed:`, err);
+            toolResults.push({
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ error: err.message || 'Tool execution failed' }),
+            });
+          }
+        }
+
+        // Add tool results to messages
+        for (const result of toolResults) {
+          history.messages.push({
+            role: 'tool' as const,
+            tool_call_id: result.tool_call_id,
+            content: result.content,
+          });
+        }
+
+        // Make follow-up request with tool results (non-streaming for simplicity)
+        const followUpMessages: ChatCompletionMessageParam[] = [
+          { role: 'system', content: systemPrompt },
+          ...history.messages,
+        ];
+
+        const followUpResponse = await this.openai.chat.completions.create({
+          model: 'gpt-5-nano',
+          messages: followUpMessages,
+        });
+
+        const followUpContent = followUpResponse.choices[0]?.message?.content || '';
+        fullContent = followUpContent;
+        yield { content: followUpContent, done: false };
       }
 
       // Parse commands from the full response
