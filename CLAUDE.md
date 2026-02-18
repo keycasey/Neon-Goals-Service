@@ -638,17 +638,28 @@ Caddy handles:
 
 ### Database Management
 
+**IMPORTANT: Always create migrations when changing the schema.** The GitHub workflow runs `prisma migrate deploy` which only applies existing migration files - it does NOT sync schema changes automatically.
+
 ```bash
-# Sync schema (use carefully in production)
+# When modifying prisma/schema.prisma, ALWAYS create a migration:
+npx prisma migrate dev --name <descriptive-name>
+
+# This creates a migration file that will be deployed via GitHub workflow
+git add prisma/migrations && git commit && git push
+```
+
+**Production commands (use carefully):**
+```bash
+# Check migration status
 ssh ec2
 cd /var/www/Neon-Goals-Service
-npx prisma db push --accept-data-loss
-
-# Check migration status
 npx prisma migrate status
 
-# Run pending migrations
+# Run pending migrations (done automatically by GitHub workflow)
 npx prisma migrate deploy
+
+# Emergency: Force sync schema (can lose data - avoid if possible)
+npx prisma db push
 ```
 
 ---
