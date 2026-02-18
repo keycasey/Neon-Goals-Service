@@ -53,6 +53,19 @@ export class PlaidController {
   }
 
   /**
+   * Sync transactions for a linked account
+   * POST /plaid/sync/:accountId/transactions
+   */
+  @Post('sync/:accountId/transactions')
+  async syncTransactions(@CurrentUser() user: User, @Param('accountId') accountId: string) {
+    this.logger.log(`Sync transactions request from user: ${user.id} for account: ${accountId}`);
+    // Sync last 90 days
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    return this.plaidService.fetchAndStoreTransactions(accountId, startDate, endDate);
+  }
+
+  /**
    * Link a Plaid account to a finance goal
    * POST /plaid/link-to-goal
    */
