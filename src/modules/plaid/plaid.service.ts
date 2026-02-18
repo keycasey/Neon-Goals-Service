@@ -189,6 +189,15 @@ export class PlaidService {
 
       this.logger.log(`Successfully linked ${savedAccounts.length} accounts`);
 
+      // Fetch initial transactions for each account (async, don't block response)
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      for (const savedAccount of savedAccounts) {
+        this.fetchAndStoreTransactions(savedAccount.id, startDate, endDate)
+          .then(result => this.logger.log(`Fetched ${result.stored} transactions for ${savedAccount.accountName}`))
+          .catch(err => this.logger.error(`Failed to fetch transactions for ${savedAccount.accountName}:`, err));
+      }
+
       return {
         accounts: savedAccounts,
         itemId: item_id,
