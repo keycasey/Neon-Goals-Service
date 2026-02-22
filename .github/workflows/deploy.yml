@@ -13,6 +13,9 @@ jobs:
         run: |
           export PATH=/home/ec2-user/.bun/bin:$PATH
           cd /var/www/Neon-Goals-Service
+          # Reset any local changes to ensure clean state from CI only
+          git reset --hard HEAD
+          git clean -fd
           git pull origin main
           bun install --frozen-lockfile
           bun run prisma:generate
