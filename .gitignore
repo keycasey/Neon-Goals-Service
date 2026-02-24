@@ -36,7 +36,6 @@ worker/__pycache__/
 .claude/
 logs/
 .pm2/
-bun.lock
 
 # Claude memory and planning
 thoughts/
