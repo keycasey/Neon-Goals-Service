@@ -25,6 +25,8 @@ async function bootstrap() {
           'http://100.82.23.47:8080',
           'http://100.82.23.47:8081',
           'http://100.82.23.47:8082',
+          // Production frontend
+          'https://goals.keycasey.com',
         ],
     credentials: true,
   });
