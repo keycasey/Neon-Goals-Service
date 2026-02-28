@@ -20,6 +20,8 @@ jobs:
           bun install --frozen-lockfile
           bun run prisma:generate
           bun run prisma:migrate
+          # Clean build artifacts to ensure fresh compilation (prevents stale incremental cache)
+          rm -rf dist tsconfig.tsbuildinfo
           bun run build
           pm2 restart neon-goals-service
           pm2 list | grep neon-goals-service
