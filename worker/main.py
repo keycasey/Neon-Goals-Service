@@ -918,6 +918,7 @@ Or on error: {{"success": false, "error": "..."}}"""
             json.dump(mcp_config, f)
 
         # Build Claude CLI command with MCP config and allowed tools
+        # Note: Pass prompt via stdin when using --print
         claude_command = [
             "claude",
             "--print",  # Non-interactive mode
@@ -926,7 +927,6 @@ Or on error: {{"success": false, "error": "..."}}"""
             "--include-partial-messages",
             "--mcp-config", mcp_config_path,
             "--allowedTools", "mcp__chrome-devtools__*",
-            extraction_prompt
         ]
 
         logger.info(f"Running Claude CLI for job {job_id}")
@@ -937,14 +937,19 @@ Or on error: {{"success": false, "error": "..."}}"""
             "CLAUDE_CONFIG_DIR": "/home/alpha/.claude-zhipu",
         }
 
-        # Run Claude CLI and stream output
+        # Run Claude CLI and stream output, passing prompt via stdin
         process = subprocess.Popen(
             claude_command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE,
             text=True,
             env=env
         )
+
+        # Write prompt to stdin
+        process.stdin.write(extraction_prompt)
+        process.stdin.close()
 
         final_result = None
         last_progress_time = time.time()
