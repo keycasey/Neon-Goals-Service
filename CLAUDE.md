@@ -6,6 +6,22 @@ NestJS backend service for the Neon Goals application. Provides REST APIs for us
 
 ---
 
+## ⚠️ CRITICAL: Database Migrations
+
+**ALWAYS create migrations when modifying `prisma/schema.prisma`.** The GitHub workflow runs `prisma migrate deploy` which only applies existing migration files - it does NOT sync schema changes automatically.
+
+```bash
+# After modifying schema.prisma, ALWAYS run:
+npx prisma migrate dev --name <descriptive-name>
+
+# Then commit the migration file:
+git add prisma/migrations && git commit -m "feat: add migration for <description>"
+```
+
+**Failure to create migrations = production database won't have your changes.**
+
+---
+
 ## Session Memory System
 
 **At the start of each session:**
@@ -171,12 +187,41 @@ Each retailer has its own filter format stored in separate JSON files:
 
 #### Location: `worker/main.py`
 
-The worker runs on a separate server (typically `gilbert`) and:
+The worker is a FastAPI app running on port 5000 on a separate server (typically `gilbert` under user `alpha`).
 
-1. **Receives scrape jobs** via API callback
-2. **Runs scrapers sequentially** for each retailer
-3. **Handles bot detection** with VPN retry logic
-4. **Returns consolidated results** to the backend
+**Architecture Pattern: Poll + Callback**
+
+1. **Polling**: Worker polls backend every 30s for pending jobs (`POST /api/scrapers/poll`)
+2. **Execution**: Runs scrapers sequentially using `xvfb-run` for headless browser
+3. **Bot Detection**: VPN rotation on 403/blocked responses
+4. **Callback**: Sends results to `/api/scrapers/callback` with retry logic
+
+**Worker Endpoints:**
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Health check for systemd |
+| `POST /run/{scraper_name}` | Run single scraper |
+| `POST /run-all` | Run all vehicle scrapers, aggregate results |
+
+**Job Flow:**
+```
+Backend creates ScrapeJob (status: pending)
+    ↓
+Worker polls backend → receives job
+    ↓
+Worker runs scrapers with xvfb-run + Playwright
+    ↓
+Worker calls back with results
+    ↓
+Backend updates ScrapeJob status + stores candidates
+```
+
+**Adding New Scrapers:**
+
+1. Add script to `scripts/` (use Playwright, output JSON to stdout)
+2. Register in `SCRAPER_SCRIPTS` dict in `worker/main.py`
+3. Handle new category in `poll_for_jobs()` if not vehicle
 
 #### Scraper Execution Order:
 
@@ -546,17 +591,25 @@ The API will be available at `http://localhost:3001`
 
 ### Worker Setup
 
-The scraper worker runs on a separate machine (gilbert):
+The scraper worker runs on a separate machine (gilbert/alpha):
 
 ```bash
-# On gilbert
-cd /path/to/neon-goals-service/worker
+# On worker machine
+cd /home/alpha/Development/Neon-Goals-Service/worker
 python3 main.py
 ```
 
-Worker environment variables:
-- `NEON_GOALS_API_URL`: Backend API URL
+**Requirements:**
+- Python 3.12 with `uvicorn`, `aiohttp`, `requests`, `fastapi`
+- Playwright browsers installed
+- `xvfb` for headless browser execution
+- VPN configs (optional, for bot detection rotation)
+
+**Environment Variables:**
+- `NEON_GOALS_API_URL`: Backend API URL (default: `https://goals.keycasey.com`)
 - `VPN_ENABLED`: Enable/disable VPN rotation
+
+**Python Path:** `/home/alpha/.pyenv/versions/3.12.0/bin/python3.12`
 
 ### Testing
 
