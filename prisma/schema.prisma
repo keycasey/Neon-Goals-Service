@@ -232,6 +232,7 @@ model Message {
   threadId  String?  // OpenAI thread ID for conversation persistence
   source    String   @default("user")   // "user" | "agent" | "system"
   visible   Boolean  @default(true)     // false = hidden from chat UI (agent-to-agent messages)
+  metadata  Json?    // Proposal UI state: goalPreview, proposalType, awaitingConfirmation, commands, handled
   createdAt DateTime @default(now())
 
   // Relations

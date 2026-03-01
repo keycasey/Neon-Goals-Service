@@ -1,6 +1,6 @@
 import { Controller, Post, Body, UseGuards, Res, Param, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
-import { OpenAIService } from './openai.service';
+import { OpenAIService } from './openai/openai.service';
 import { PrismaService } from '../../config/prisma.service';
 import { GoalCommandService } from './goal-command.service';
 import { ChatsService } from '../chats/chats.service';
