@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../../config/prisma.service';
 import { ConversationSummaryService } from '../../conversation-summary.service';
 import { ChatCompletionMessageParam } from 'openai/resources';
@@ -24,7 +24,7 @@ export class ThreadService {
 
   constructor(
     private prisma: PrismaService,
-    private summaryService: ConversationSummaryService,
+    @Optional() private summaryService?: ConversationSummaryService,
   ) {}
 
   /**
@@ -47,8 +47,8 @@ export class ThreadService {
       return cached.messages;
     }
 
-    // If we have a chatId, use the summary service for efficient context building
-    if (chatId) {
+    // If we have a chatId and summary service, use summary-aware context building
+    if (chatId && this.summaryService) {
       try {
         const context = await this.summaryService.buildContext(chatId);
         // Cache in memory
@@ -175,22 +175,28 @@ export class ThreadService {
 
   /**
    * Check if a chat should be summarized based on message count.
-   * Delegates to ConversationSummaryService.
+   * Delegates to ConversationSummaryService if available.
    *
    * @param chatId - The chat ID to check
    * @returns True if summarization should be triggered
    */
   async shouldSummarize(chatId: string): Promise<boolean> {
+    if (!this.summaryService) {
+      return false;
+    }
     return this.summaryService.shouldSummarize(chatId);
   }
 
   /**
    * Summarize messages since the last summary and store the result.
-   * Delegates to ConversationSummaryService.
+   * Delegates to ConversationSummaryService if available.
    *
    * @param chatId - The chat ID to summarize
    */
   async summarizeChat(chatId: string): Promise<void> {
+    if (!this.summaryService) {
+      return;
+    }
     return this.summaryService.summarizeChat(chatId);
   }
 }
