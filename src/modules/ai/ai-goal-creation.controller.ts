@@ -6,6 +6,7 @@ import { GoalCommandService } from './goal-command.service';
 import { ChatsService } from '../chats/chats.service';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RateLimitService } from '../../common/services/rate-limit.service';
 
 @Controller('ai/goal-chat')
 @UseGuards(JwtOrApiKeyGuard)
@@ -14,6 +15,7 @@ export class AiGoalChatController {
     private openaiService: OpenAIService,
     private prisma: PrismaService,
     private goalCommandService: GoalCommandService,
+    private rateLimitService: RateLimitService,
   ) {}
 
   /**
@@ -26,6 +28,9 @@ export class AiGoalChatController {
     @CurrentUser('userId') userId: string,
     @Body() body: { message: string },
   ) {
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
+
     // Fetch the goal from database to get full context including goalId
     const goal = await this.prisma.goal.findUnique({
       where: { id: goalId },
@@ -115,6 +120,7 @@ export class AiOverviewController {
     private prisma: PrismaService,
     private goalCommandService: GoalCommandService,
     private chatsService: ChatsService,
+    private rateLimitService: RateLimitService,
   ) {}
 
   /**
@@ -126,6 +132,9 @@ export class AiOverviewController {
     @CurrentUser('userId') userId: string,
     @Body() body: { message: string },
   ) {
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
+
     // Get or create the overview chat
     const chat = await this.chatsService.getOrCreateOverviewChat(userId);
 
@@ -184,6 +193,9 @@ export class AiOverviewController {
     @Body() body: { message: string },
     @Res() res: Response,
   ) {
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
+
     // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

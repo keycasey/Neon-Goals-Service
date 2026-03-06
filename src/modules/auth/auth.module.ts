@@ -10,11 +10,14 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { UsersModule } from '../users/users.module';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { AgentAuthService } from './agent-auth.service';
+import { DemoResetService } from './demo-reset.service';
+import { PrismaModule } from '../../config/prisma.module';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    PrismaModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -26,7 +29,7 @@ import { AgentAuthService } from './agent-auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GithubStrategy, LocalStrategy, JwtOrApiKeyGuard, AgentAuthService],
-  exports: [AuthService, JwtOrApiKeyGuard, AgentAuthService],
+  providers: [AuthService, JwtStrategy, GithubStrategy, LocalStrategy, JwtOrApiKeyGuard, AgentAuthService, DemoResetService],
+  exports: [AuthService, JwtOrApiKeyGuard, AgentAuthService, DemoResetService],
 })
 export class AuthModule {}

@@ -5,6 +5,7 @@ import { Request, Response } from 'express';
 import { AiService, ChatRequest, StreamChunk } from './ai.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RateLimitService } from '../../common/services/rate-limit.service';
 
 interface ChatRequestBody {
   messages: Array<{ role: string; content: string }>;
@@ -16,13 +17,19 @@ interface ChatRequestBody {
 @Controller('ai')
 @UseGuards(JwtAuthGuard)
 export class AiController {
-  constructor(private aiService: AiService) {}
+  constructor(
+    private aiService: AiService,
+    private rateLimitService: RateLimitService,
+  ) {}
 
   /**
    * Chat endpoint for AI interactions
    */
   @Post('chat')
   async chat(@CurrentUser('userId') userId: string, @Body() body: ChatRequestBody) {
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
+
     const response = await this.aiService.chat({
       messages: body.messages as any,
       mode: body.mode,
@@ -44,6 +51,9 @@ export class AiController {
     @Body() body: ChatRequestBody,
     @Res() res: Response,
   ) {
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
+
     // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
@@ -8,6 +8,7 @@ import {
   BalanceResponse,
   TransactionsResponse,
 } from './plaid.interface';
+import { DemoPlaidService } from './demo-plaid.service';
 
 @Injectable()
 export class PlaidService {
@@ -17,6 +18,8 @@ export class PlaidService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    @Inject(forwardRef(() => DemoPlaidService))
+    private demoPlaidService: DemoPlaidService,
   ) {
     const clientId = this.configService.get<string>('PLAID_CLIENT_ID');
     const secret = this.configService.get<string>('PLAID_SECRET');
@@ -48,6 +51,17 @@ export class PlaidService {
 
     if (!userId) {
       throw new BadRequestException('User ID is required for link token creation');
+    }
+
+    // Check if this is a demo user - they cannot link real accounts
+    if (await this.demoPlaidService.isDemoUser(userId)) {
+      const demoResponse = this.demoPlaidService.getDemoLinkToken();
+      // Return in Plaid's expected format
+      return {
+        link_token: demoResponse.link_token,
+        expiration: demoResponse.expiration,
+        request_id: demoResponse.request_id,
+      };
     }
 
     const request = {
@@ -106,6 +120,9 @@ export class PlaidService {
     if (!publicToken) {
       throw new BadRequestException('Public token is required');
     }
+
+    // Block demo users from linking real accounts
+    await this.demoPlaidService.assertNotDemoUser(userId);
 
     try {
       // Exchange public token for access token

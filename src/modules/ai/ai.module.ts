@@ -18,6 +18,7 @@ import { ChatsModule } from '../chats/chats.module';
 import { AuthModule } from '../auth/auth.module';
 import { PlaidModule } from '../plaid/plaid.module';
 import { ExtractionModule } from '../extraction/extraction.module';
+import { RateLimitService } from '../../common/services/rate-limit.service';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ExtractionModule } from '../extraction/extraction.module';
     AgentRoutingService,
     GreetingSummaryService,
     AiToolsService,
+    RateLimitService,
   ],
   exports: [
     AiService,
@@ -49,6 +51,7 @@ import { ExtractionModule } from '../extraction/extraction.module';
     AgentRoutingService,
     GreetingSummaryService,
     AiToolsService,
+    RateLimitService,
     // OpenAIService is exported by OpenAIModule which we import
     // Consumers get it through the module import chain
   ],

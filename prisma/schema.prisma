@@ -28,6 +28,7 @@ model User {
   resetPasswordExpires DateTime?  // Reset token expiration
   failedLoginAttempts Int @default(0)  // Track failed login attempts
   lockUntil    DateTime?  // Account lockout after failed attempts
+  isDemo       Boolean   @default(false)  // Demo user flag
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -38,6 +39,18 @@ model User {
   chats         ChatState[]
   plaidAccounts PlaidAccount[]
   extractionJobs ExtractionJob[]
+  usage         UserUsage?
+}
+
+// User usage tracking for rate limiting
+model UserUsage {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  messageCount Int      @default(0)
+  resetAt      DateTime // Next UTC midnight when count resets
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // Settings model
@@ -322,6 +335,7 @@ model PlaidAccount {
   // Metadata
   lastSync        DateTime @default(now())
   isActive        Boolean  @default(true)  // Can be disabled without deleting
+  isDemo          Boolean  @default(false) // Demo account flag
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { seedDemoUser } from '../../../prisma/seeds/demo-seed';
 
 @Injectable()
 export class AuthService {
@@ -132,6 +133,7 @@ export class AuthService {
           email: demoEmail,
           name: 'Demo User',
           avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&crop=face',
+          isDemo: true,
         },
       });
 
@@ -144,6 +146,9 @@ export class AuthService {
           displayName: 'Demo User',
         },
       });
+
+      // Seed demo user with sample goals and data
+      await seedDemoUser(user.id);
     }
 
     return this.generateToken(user);

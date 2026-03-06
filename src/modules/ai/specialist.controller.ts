@@ -7,6 +7,7 @@ import { ChatsService } from '../chats/chats.service';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ProductExtractionService } from '../extraction/product-extraction.service';
+import { RateLimitService } from '../../common/services/rate-limit.service';
 
 /**
  * Category Specialist Chat Controller
@@ -26,6 +27,7 @@ export class SpecialistController {
     private chatsService: ChatsService,
     @Inject(forwardRef(() => ProductExtractionService))
     private extractionService: ProductExtractionService,
+    private rateLimitService: RateLimitService,
   ) {}
 
   /**
@@ -50,6 +52,9 @@ export class SpecialistController {
     const userId = user.userId;
     const isAgent = user.isAgent || false;
     const agentSource = user.agentSource;
+
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
 
     // Validate categoryId
     const validCategories = ['items', 'finances', 'actions'];
@@ -137,6 +142,9 @@ export class SpecialistController {
     @Body() body: { message: string },
     @Res() res: Response,
   ) {
+    // Check rate limit (throws 429 if exceeded)
+    await this.rateLimitService.checkAndIncrement(userId);
+
     // Validate categoryId
     const validCategories = ['items', 'finances', 'actions'];
     if (!validCategories.includes(categoryId)) {
