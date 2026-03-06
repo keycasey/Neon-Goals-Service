@@ -6,7 +6,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "dev": "bun run start:dev & bun run worker:dev",
+    "dev": "trap 'kill 0' SIGINT; bun run start:dev & bun run worker:dev && wait",
     "dev:server": "bun run start:dev",
     "dev:worker": "bun run worker:dev",
     "worker:dev": "cd worker && NEON_GOALS_API_URL=http://localhost:3001 .venv/bin/python -m uvicorn main:app --port 5001 --reload",
