@@ -91,13 +91,20 @@ export class ChatsService {
     return chat;
   }
 
-  async addMessage(chatId: string, userId: string, role: string, content: string) {
+  async addMessage(
+    chatId: string,
+    userId: string,
+    role: string,
+    content: string,
+    metadata?: Record<string, any>,
+  ) {
     const message = await this.prisma.message.create({
       data: {
         userId,
         chatId,
         role,
         content,
+        metadata,
       },
     });
 

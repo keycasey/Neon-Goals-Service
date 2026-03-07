@@ -64,15 +64,30 @@ export class SpecialistController {
       };
     }
 
+    // Get or create the category chat (needed for both extraction and regular chat)
+    const chat = await this.chatsService.getOrCreateCategoryChat(userId, categoryId);
+
     // Check for URLs in the message (only for items category)
     if (categoryId === 'items') {
       const urls = this.extractUrls(body.message);
       if (urls.length > 0) {
-        // Start extraction and return immediately
+        // Save user message before extraction
+        await this.chatsService.addMessage(chat.id, userId, 'user', body.message);
+
+        // Start extraction
         const groupId = await this.extractionService.extractFromUrls(urls, userId);
 
+        // Save assistant response with extraction metadata
+        const assistantContent = `I found ${urls.length} product link${urls.length > 1 ? 's' : ''}! I'm extracting the product info now... 📦`;
+        const extractionMetadata = {
+          groupId,
+          urls,
+          streamUrl: `/api/extraction/stream/${groupId}`,
+        };
+        await this.chatsService.addMessage(chat.id, userId, 'assistant', assistantContent, { extraction: extractionMetadata });
+
         return {
-          content: `I found ${urls.length} product link${urls.length > 1 ? 's' : ''}! I'm extracting the product info now... 📦`,
+          content: assistantContent,
           extraction: {
             groupId,
             urls,
@@ -81,9 +96,6 @@ export class SpecialistController {
         };
       }
     }
-
-    // Get or create the category chat
-    const chat = await this.chatsService.getOrCreateCategoryChat(userId, categoryId);
 
     // Map category to goal type
     const categoryTypeMap: Record<string, 'item' | 'finance' | 'action'> = {
@@ -161,16 +173,33 @@ export class SpecialistController {
     res.setHeader('X-Accel-Buffering', 'no');
 
     try {
+      // Get or create the category chat (needed for both extraction and regular chat)
+      const chat = await this.chatsService.getOrCreateCategoryChat(userId, categoryId);
+
       // Check for URLs in the message (only for items category)
       if (categoryId === 'items') {
         const urls = this.extractUrls(body.message);
         if (urls.length > 0) {
-          // Start extraction and return as a streaming response
+          // Save user message before extraction
+          await this.chatsService.addMessage(chat.id, userId, 'user', body.message);
+
+          // Start extraction
           const groupId = await this.extractionService.extractFromUrls(urls, userId);
+
+          // Save assistant response with extraction metadata
+          const assistantContent = `I found ${urls.length} product link${urls.length > 1 ? 's' : ''}! I'm extracting the product info now... 📦`;
+          const extractionMetadata = {
+            extraction: {
+              groupId,
+              urls,
+              streamUrl: `/api/extraction/stream/${groupId}`,
+            },
+          };
+          await this.chatsService.addMessage(chat.id, userId, 'assistant', assistantContent, extractionMetadata);
 
           // Send extraction info as a stream chunk
           res.write(`data: ${JSON.stringify({
-            content: `I found ${urls.length} product link${urls.length > 1 ? 's' : ''}! I'm extracting the product info now... 📦`,
+            content: assistantContent,
             done: true,
             extraction: {
               groupId,
@@ -182,9 +211,6 @@ export class SpecialistController {
           return;
         }
       }
-
-      // Get or create the category chat
-      const chat = await this.chatsService.getOrCreateCategoryChat(userId, categoryId);
 
       // Map category to goal type
       const categoryTypeMap: Record<string, 'item' | 'finance' | 'action'> = {
