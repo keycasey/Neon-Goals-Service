@@ -22,6 +22,11 @@ export interface ProgressData {
   url?: string;
 }
 
+type ExtractionResultWithMeta = ExtractionResult & {
+  url?: string;
+  jobId?: string;
+};
+
 @Injectable()
 export class ProductExtractionService {
   private readonly logger = new Logger(ProductExtractionService.name);
@@ -41,19 +46,11 @@ export class ProductExtractionService {
   /**
    * Extract product information from multiple URLs
    * Creates extraction jobs - worker polls to pick them up
-   * In demo mode, processes jobs immediately with mock data
    * Returns a groupId for tracking the batch
    */
   async extractFromUrls(urls: string[], userId: string): Promise<string> {
     const groupId = uuidv4();
     this.logger.log(`Creating extraction jobs for ${urls.length} URLs (groupId: ${groupId})`);
-
-    // Check if this is a demo user
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { isDemo: true },
-    });
-    const isDemoUser = user?.isDemo || userId === 'agent';
 
     for (const url of urls) {
       // Create extraction job - worker will poll and pick it up
@@ -67,72 +64,9 @@ export class ProductExtractionService {
       });
 
       this.logger.log(`Created extraction job ${job.id} for URL: ${url}`);
-
-      // For demo mode, process immediately with mock data
-      if (isDemoUser) {
-        // Don't await - let it process in background
-        this.processDemoExtraction(job.id, url, groupId, userId).catch((err) => {
-          this.logger.error(`Demo extraction failed for job ${job.id}:`, err);
-        });
-      }
     }
 
     return groupId;
-  }
-
-  /**
-   * Process extraction job with mock data (for demo mode)
-   * Simulates the worker callback after a short delay
-   */
-  private async processDemoExtraction(
-    jobId: string,
-    url: string,
-    groupId: string,
-    userId: string,
-  ): Promise<void> {
-    // Simulate processing delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Extract domain for mock retailer name
-    let retailer = 'Unknown';
-    try {
-      retailer = new URL(url).hostname.replace('www.', '');
-    } catch {
-      retailer = 'Unknown';
-    }
-
-    // Generate mock product data based on URL
-    const mockProducts: Record<string, { name: string; price: number }> = {
-      'amazon': { name: 'Amazon Product', price: 49.99 },
-      'ebay': { name: 'eBay Listing', price: 39.99 },
-      'walmart': { name: 'Walmart Item', price: 29.99 },
-      'target': { name: 'Target Product', price: 34.99 },
-      'bestbuy': { name: 'Best Buy Item', price: 199.99 },
-      'apple': { name: 'Apple Product', price: 999.99 },
-      'default': { name: 'Product Item', price: 59.99 },
-    };
-
-    const mockData = mockProducts[retailer] || mockProducts['default'];
-
-    // Send progress update
-    await this.handleProgress(jobId, {
-      status: 'in_progress',
-      message: 'Extracting product data...',
-    });
-
-    // Small delay before completion
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    // Complete with mock result
-    await this.handleCallback(jobId, {
-      success: true,
-      name: `${mockData.name} (${retailer})`,
-      price: mockData.price,
-      imageUrl: `https://picsum.photos/seed/${jobId}/400/400`,
-      currency: 'USD',
-    });
-
-    this.logger.log(`✅ Demo extraction completed for job ${jobId}`);
   }
 
   /**
@@ -228,6 +162,9 @@ export class ProductExtractionService {
         results,
         userId: job.userId,
       });
+
+      // Persist a follow-up assistant message in Items chat.
+      await this.sendGroupCompletionMessage(job.userId, job.groupId, results);
     }
   }
 
@@ -258,6 +195,92 @@ export class ProductExtractionService {
       url: job.url,
       jobId: job.id,
     })) as ExtractionResult[];
+  }
+
+  private formatPrice(price?: number, currency?: string): string {
+    if (typeof price !== 'number' || Number.isNaN(price)) {
+      return 'price unavailable';
+    }
+    const formatted = price.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `${currency || 'USD'} ${formatted}`;
+  }
+
+  private async sendGroupCompletionMessage(
+    userId: string,
+    groupId: string,
+    rawResults: ExtractionResult[],
+  ): Promise<void> {
+    if (!userId || userId === 'agent') {
+      return;
+    }
+
+    const results = rawResults as ExtractionResultWithMeta[];
+    const successful = results.filter((result) => result.success);
+    const failedCount = results.length - successful.length;
+    const preview = successful.slice(0, 3);
+
+    const previewLines = preview.map((result, idx) => {
+      const name = result.name || 'Unnamed item';
+      const price = this.formatPrice(result.price, result.currency);
+      return `${idx + 1}. ${name} (${price})`;
+    });
+
+    const summaryLine =
+      successful.length > 0
+        ? `Extraction complete. I found ${successful.length} item${successful.length > 1 ? 's' : ''}${failedCount > 0 ? `, and ${failedCount} link${failedCount > 1 ? 's' : ''} failed` : ''}.`
+        : `Extraction complete, but I could not read any items from those links.`;
+
+    const previewText = previewLines.length > 0
+      ? `\n\nHere is what I got:\n${previewLines.join('\n')}`
+      : '';
+
+    const content = `${summaryLine}${previewText}\n\nDo you want me to create a group item goal from these results?`;
+
+    const existingItemsChat = await this.prisma.chatState.findFirst({
+      where: {
+        userId,
+        type: 'category',
+        categoryId: 'items',
+      },
+      select: { id: true },
+    });
+
+    const chatId = existingItemsChat
+      ? existingItemsChat.id
+      : (
+          await this.prisma.chatState.create({
+            data: {
+              userId,
+              type: 'category',
+              categoryId: 'items',
+              isLoading: false,
+            },
+            select: { id: true },
+          })
+        ).id;
+
+    await this.prisma.message.create({
+      data: {
+        userId,
+        chatId,
+        role: 'assistant',
+        content,
+        metadata: {
+          extraction: {
+            groupId,
+            successfulCount: successful.length,
+            failedCount,
+          },
+          suggestion: {
+            action: 'create_group_item_goal',
+            groupId,
+          },
+        },
+      },
+    });
   }
 
   /**
