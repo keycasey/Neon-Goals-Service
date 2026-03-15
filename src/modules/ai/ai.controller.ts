@@ -3,6 +3,7 @@ import { Observable, concat } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Request, Response } from 'express';
 import { AiService, ChatRequest, StreamChunk } from './ai.service';
+import { AiModelsService } from './ai-models.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RateLimitService } from '../../common/services/rate-limit.service';
@@ -19,8 +20,14 @@ interface ChatRequestBody {
 export class AiController {
   constructor(
     private aiService: AiService,
+    private aiModelsService: AiModelsService,
     private rateLimitService: RateLimitService,
   ) {}
+
+  @Get('models')
+  getModels() {
+    return this.aiModelsService.toClientSchema();
+  }
 
   /**
    * Chat endpoint for AI interactions

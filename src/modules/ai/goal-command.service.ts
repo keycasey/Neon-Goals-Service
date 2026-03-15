@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { ScraperService } from '../scraper/scraper.service';
 import { VehicleFilterService } from '../scraper/vehicle-filter.service';
+import { ChatsService } from '../chats/chats.service';
 
 export interface ExecutedCommand {
   type: string;
@@ -14,11 +15,32 @@ export interface ExecutedCommand {
   error?: string;
   proposalType?: 'accept_decline' | 'confirm_edit_cancel';
   awaitingConfirmation?: boolean;
+  chatId?: string;
+  chatType?: 'overview' | 'category' | 'goal';
+  categoryId?: string;
+  redirectMessage?: string;
+  threadIds?: string[];
+}
+
+interface ExecuteCommandOptions {
+  sourceChatId?: string;
+}
+
+interface RedirectSourceContext {
+  sourceChatId: string;
+  sourceChatType: string;
+  sourceCategoryId?: string | null;
+  sourceGoalId?: string | null;
+  recentMessages: Array<{ role: string; content: string; threadId: string | null }>;
+  threadIds: string[];
 }
 
 // Mapping of command types to their proposal types
 const COMMAND_PROPOSAL_TYPES: Record<string, 'accept_decline' | 'confirm_edit_cancel'> = {
   REFRESH_CANDIDATES: 'accept_decline',
+  REDIRECT_TO_CATEGORY: 'accept_decline',
+  REDIRECT_TO_GOAL: 'accept_decline',
+  REDIRECT_TO_OVERVIEW: 'accept_decline',
   // All other commands default to confirm_edit_cancel
 };
 
@@ -41,13 +63,19 @@ export class GoalCommandService {
     private prisma: PrismaService,
     private scraperService: ScraperService,
     private vehicleFilterService: VehicleFilterService,
+    @Inject(forwardRef(() => ChatsService))
+    private chatsService: ChatsService,
   ) {}
 
   /**
    * Execute parsed commands to create/update goals
    * Returns executed commands with their results
    */
-  async executeCommands(userId: string, commands: any[]): Promise<ExecutedCommand[]> {
+  async executeCommands(
+    userId: string,
+    commands: any[],
+    options?: ExecuteCommandOptions,
+  ): Promise<ExecutedCommand[]> {
     const executedCommands: ExecutedCommand[] = [];
 
     for (const command of commands) {
@@ -175,6 +203,44 @@ export class GoalCommandService {
             goalId: goal.id,
             goal,
             proposalType: getProposalType('TOGGLE_TASK'),
+            awaitingConfirmation: true,
+          });
+        } else if (command.type === 'REDIRECT_TO_CATEGORY') {
+          const redirect = await this.redirectToCategory(userId, command.data, options);
+          executedCommands.push({
+            type: 'REDIRECT_TO_CATEGORY',
+            success: true,
+            chatId: redirect.chatId,
+            chatType: 'category',
+            categoryId: redirect.categoryId,
+            redirectMessage: redirect.redirectMessage,
+            threadIds: redirect.threadIds,
+            proposalType: getProposalType('REDIRECT_TO_CATEGORY'),
+            awaitingConfirmation: true,
+          });
+        } else if (command.type === 'REDIRECT_TO_GOAL') {
+          const redirect = await this.redirectToGoal(userId, command.data, options);
+          executedCommands.push({
+            type: 'REDIRECT_TO_GOAL',
+            success: true,
+            chatId: redirect.chatId,
+            chatType: redirect.chatType,
+            goalId: redirect.goalId,
+            redirectMessage: redirect.redirectMessage,
+            threadIds: redirect.threadIds,
+            proposalType: getProposalType('REDIRECT_TO_GOAL'),
+            awaitingConfirmation: true,
+          });
+        } else if (command.type === 'REDIRECT_TO_OVERVIEW') {
+          const redirect = await this.redirectToOverview(userId, command.data, options);
+          executedCommands.push({
+            type: 'REDIRECT_TO_OVERVIEW',
+            success: true,
+            chatId: redirect.chatId,
+            chatType: 'overview',
+            redirectMessage: redirect.redirectMessage,
+            threadIds: redirect.threadIds,
+            proposalType: getProposalType('REDIRECT_TO_OVERVIEW'),
             awaitingConfirmation: true,
           });
         }
@@ -836,5 +902,273 @@ export class GoalCommandService {
       where: { id: goalId },
       data: { status: 'archived' },
     });
+  }
+
+  private async redirectToCategory(
+    userId: string,
+    data: { categoryId: string; message?: string; reason?: string },
+    options?: ExecuteCommandOptions,
+  ) {
+    const chat = await this.chatsService.getOrCreateCategoryChat(userId, data.categoryId);
+    if (userId === 'agent') {
+      return {
+        chatId: chat.id,
+        categoryId: data.categoryId,
+        redirectMessage: data.message || data.reason || `Open the ${data.categoryId} specialist.`,
+        threadIds: [],
+      };
+    }
+    const sourceContext = await this.getRedirectSourceContext(userId, options?.sourceChatId);
+
+    await this.addRedirectContextMessage(userId, chat.id, {
+      threadId: this.getThreadIdForChatTarget(userId, 'category', { categoryId: data.categoryId }),
+      targetLabel: `${data.categoryId} specialist`,
+      redirectMessage: data.message,
+      reason: data.reason,
+      sourceContext,
+    });
+
+    this.logger.log(
+      `Redirected user ${userId} to category ${data.categoryId} from ${sourceContext?.sourceChatType || 'unknown'} chat`,
+    );
+
+    return {
+      chatId: chat.id,
+      categoryId: data.categoryId,
+      redirectMessage: data.message || data.reason || `Open the ${data.categoryId} specialist.`,
+      threadIds: sourceContext?.threadIds || [],
+    };
+  }
+
+  private async redirectToGoal(
+    userId: string,
+    data: { goalId: string; goalTitle?: string; message?: string; reason?: string },
+    options?: ExecuteCommandOptions,
+  ) {
+    if (userId === 'agent') {
+      return {
+        chatId: `agent-mock-goal-${data.goalId}`,
+        chatType: 'goal' as const,
+        goalId: data.goalId,
+        redirectMessage: data.message || data.reason || 'Open that goal.',
+        threadIds: [],
+      };
+    }
+
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: data.goalId, userId },
+      select: { id: true, title: true },
+    });
+
+    if (!goal) {
+      this.logger.warn(
+        `Redirect target goal ${data.goalId} not found for user ${userId}; falling back to overview`,
+      );
+      const fallback = await this.redirectToOverview(
+        userId,
+        {
+          message: data.message || 'I could not find that goal, so I am sending you back to Overview.',
+          reason: data.reason || 'Requested goal was not found',
+        },
+        options,
+      );
+      return {
+        ...fallback,
+        goalId: data.goalId,
+        chatType: 'overview' as const,
+      };
+    }
+
+    const chat = await this.chatsService.getGoalChat(userId, goal.id);
+    const sourceContext = await this.getRedirectSourceContext(userId, options?.sourceChatId);
+
+    await this.addRedirectContextMessage(userId, chat.id, {
+      threadId: this.getThreadIdForChatTarget(userId, 'goal', { goalId: goal.id }),
+      targetLabel: goal.title,
+      redirectMessage: data.message,
+      reason: data.reason,
+      sourceContext,
+    });
+
+    this.logger.log(
+      `Redirected user ${userId} to goal ${goal.id} from ${sourceContext?.sourceChatType || 'unknown'} chat`,
+    );
+
+    return {
+      chatId: chat.id,
+      chatType: 'goal' as const,
+      goalId: goal.id,
+      redirectMessage: data.message || data.reason || `Open ${goal.title}.`,
+      threadIds: sourceContext?.threadIds || [],
+    };
+  }
+
+  private async redirectToOverview(
+    userId: string,
+    data: { message?: string; reason?: string },
+    options?: ExecuteCommandOptions,
+  ) {
+    const chat = await this.chatsService.getOrCreateOverviewChat(userId);
+    if (userId === 'agent') {
+      return {
+        chatId: chat.id,
+        redirectMessage: data.message || data.reason || 'Return to Overview.',
+        threadIds: [],
+      };
+    }
+    const sourceContext = await this.getRedirectSourceContext(userId, options?.sourceChatId);
+
+    await this.addRedirectContextMessage(userId, chat.id, {
+      threadId: this.getThreadIdForChatTarget(userId, 'overview'),
+      targetLabel: 'Overview',
+      redirectMessage: data.message,
+      reason: data.reason,
+      sourceContext,
+    });
+
+    this.logger.log(
+      `Redirected user ${userId} to overview from ${sourceContext?.sourceChatType || 'unknown'} chat`,
+    );
+
+    return {
+      chatId: chat.id,
+      redirectMessage: data.message || data.reason || 'Return to Overview.',
+      threadIds: sourceContext?.threadIds || [],
+    };
+  }
+
+  private async getRedirectSourceContext(
+    userId: string,
+    sourceChatId?: string,
+  ): Promise<RedirectSourceContext | null> {
+    if (!sourceChatId || userId === 'agent') {
+      return null;
+    }
+
+    const sourceChat = await this.prisma.chatState.findFirst({
+      where: {
+        id: sourceChatId,
+        userId,
+      },
+      select: {
+        id: true,
+        type: true,
+        categoryId: true,
+        goalId: true,
+      },
+    });
+
+    if (!sourceChat) {
+      return null;
+    }
+
+    const recentMessagesDesc = await this.prisma.message.findMany({
+      where: {
+        chatId: sourceChatId,
+        userId,
+        visible: true,
+        role: { in: ['user', 'assistant'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 6,
+      select: {
+        role: true,
+        content: true,
+        threadId: true,
+      },
+    });
+
+    const recentMessages = [...recentMessagesDesc].reverse();
+    const threadIds = [...new Set(recentMessages.map((message) => message.threadId).filter(Boolean))] as string[];
+
+    return {
+      sourceChatId: sourceChat.id,
+      sourceChatType: sourceChat.type,
+      sourceCategoryId: sourceChat.categoryId,
+      sourceGoalId: sourceChat.goalId,
+      recentMessages,
+      threadIds,
+    };
+  }
+
+  private async addRedirectContextMessage(
+    userId: string,
+    chatId: string,
+    data: {
+      threadId: string;
+      targetLabel: string;
+      redirectMessage?: string;
+      reason?: string;
+      sourceContext: RedirectSourceContext | null;
+    },
+  ) {
+    const redirectContextText = this.buildRedirectContextText(data);
+    const metadata = {
+      redirect: {
+        targetLabel: data.targetLabel,
+        redirectMessage: data.redirectMessage,
+        reason: data.reason,
+        sourceChatId: data.sourceContext?.sourceChatId || null,
+        sourceChatType: data.sourceContext?.sourceChatType || null,
+        sourceCategoryId: data.sourceContext?.sourceCategoryId || null,
+        sourceGoalId: data.sourceContext?.sourceGoalId || null,
+        threadIds: data.sourceContext?.threadIds || [],
+        recentMessages: data.sourceContext?.recentMessages || [],
+        createdAt: new Date().toISOString(),
+      },
+    };
+
+    await this.chatsService.addMessageWithOptions(chatId, userId, 'system', redirectContextText, {
+      metadata,
+      source: 'system',
+      visible: false,
+      threadId: data.threadId,
+    });
+  }
+
+  private buildRedirectContextText(data: {
+    targetLabel: string;
+    redirectMessage?: string;
+    reason?: string;
+    sourceContext: RedirectSourceContext | null;
+  }): string {
+    const lines = [`Redirect handoff for ${data.targetLabel}.`];
+
+    if (data.redirectMessage) {
+      lines.push(`User-facing redirect message: ${data.redirectMessage}`);
+    }
+
+    if (data.reason) {
+      lines.push(`Reason: ${data.reason}`);
+    }
+
+    if (data.sourceContext) {
+      lines.push(`Source chat type: ${data.sourceContext.sourceChatType}`);
+
+      if (data.sourceContext.recentMessages.length > 0) {
+        lines.push('Recent conversation context:');
+        for (const message of data.sourceContext.recentMessages) {
+          lines.push(`${message.role}: ${message.content}`);
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
+  private getThreadIdForChatTarget(
+    userId: string,
+    chatType: 'overview' | 'category' | 'goal',
+    data?: { categoryId?: string; goalId?: string },
+  ): string {
+    if (chatType === 'overview') {
+      return `overview_${userId}`;
+    }
+
+    if (chatType === 'category') {
+      return `category_${data?.categoryId}_${userId}`;
+    }
+
+    return data?.goalId || '';
   }
 }

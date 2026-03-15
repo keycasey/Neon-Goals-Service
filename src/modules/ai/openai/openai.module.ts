@@ -10,6 +10,7 @@ import { BaseChatService } from './chat/base-chat.service';
 import { GoalCreationChat } from './chat/goal-creation.chat';
 import { OverviewChat } from './chat/overview.chat';
 import { CategoryChat } from './chat/category.chat';
+import { AiModelsService } from '../ai-models.service';
 
 // Root orchestrator
 import { OpenAIService } from './openai.service';
@@ -55,6 +56,7 @@ import { OpenAIService } from './openai.service';
     ThreadService,
     PromptsService,
     CommandParserService,
+    AiModelsService,
 
     // Base chat service
     BaseChatService,
@@ -74,6 +76,7 @@ import { OpenAIService } from './openai.service';
     ThreadService,
     PromptsService,
     CommandParserService,
+    AiModelsService,
     GoalCreationChat,
     OverviewChat,
     CategoryChat,

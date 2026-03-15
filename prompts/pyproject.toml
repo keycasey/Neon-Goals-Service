@@ -1,0 +1,21 @@
+[project]
+name = "neon-goals-prompts"
+version = "0.1.0"
+description = "DSPy-shaped prompt workspace for Neon Goals"
+requires-python = ">=3.11"
+dependencies = [
+  "dspy-ai>=2.6.0",
+]
+
+[project.scripts]
+neon-prompts = "neon_prompts.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["neon_prompts"]

@@ -20,4 +20,9 @@ export class UsersController {
   ) {
     return this.usersService.updateSettings(userId, settings);
   }
+
+  @Get('me/settings/options')
+  async getSettingsOptions() {
+    return this.usersService.getAvailableModels();
+  }
 }

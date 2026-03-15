@@ -6,6 +6,7 @@ import { BaseChatService, ChatResponse } from './base-chat.service';
 import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
 import { PromptsService } from '../prompts/prompts.service';
+import { AiModelsService } from '../../ai-models.service';
 import { ThreadHistory } from '../thread/thread.types';
 
 /**
@@ -48,6 +49,7 @@ export class GoalCreationChat extends BaseChatService {
     threadService: ThreadService,
     promptsService: PromptsService,
     commandParserService: CommandParserService,
+    private aiModelsService: AiModelsService,
   ) {
     super(threadService, promptsService, commandParserService);
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
@@ -84,18 +86,19 @@ export class GoalCreationChat extends BaseChatService {
     }
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
       // Add user message to history
       history.messages.push({ role: 'user', content: message });
 
       // Create messages array with system prompt
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: this.promptsService.getExpertSystemPrompt() },
+        { role: 'system', content: this.promptsService.getExpertSystemPrompt(model.id) },
         ...history.messages,
       ];
 
       // Call OpenAI Chat Completion
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages,
       });
 
@@ -175,6 +178,7 @@ export class GoalCreationChat extends BaseChatService {
     }
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
       // Add context about the goal
       const contextMessage = `[Goal Context: ${JSON.stringify(goalContext)}]
 
@@ -183,12 +187,12 @@ ${message}`;
       history.messages.push({ role: 'user', content: contextMessage });
 
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: this.promptsService.getGoalViewSystemPrompt(goalContext) },
+        { role: 'system', content: this.promptsService.getGoalViewSystemPrompt(goalContext, model.id) },
         ...history.messages,
       ];
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages,
       });
 
@@ -203,15 +207,20 @@ ${message}`;
       const commands = this.commandParserService.sanitizeCommands(
         this.commandParserService.parseCommands(content),
       );
+      const confirmableCommands =
+        this.commandParserService.getCommandsRequiringConfirmation(commands);
 
       // Build metadata for assistant message if proposal detected
       let assistantMetadata: any = undefined;
       if (commands.length > 0) {
+        assistantMetadata = { commands };
+      }
+      if (confirmableCommands.length > 0) {
         assistantMetadata = {
-          goalPreview: this.commandParserService.generateGoalPreview(commands),
+          ...assistantMetadata,
+          goalPreview: this.commandParserService.generateGoalPreview(confirmableCommands),
           awaitingConfirmation: true,
-          proposalType: this.commandParserService.getProposalTypeForCommand(commands[0].type),
-          commands,
+          proposalType: this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type),
         };
       }
 
@@ -227,7 +236,7 @@ ${message}`;
       };
 
       // Add confirmation data if commands exist
-      if (commands.length > 0) {
+      if (confirmableCommands.length > 0) {
         apiResponse.goalPreview = assistantMetadata.goalPreview;
         apiResponse.awaitingConfirmation = true;
         apiResponse.proposalType = assistantMetadata.proposalType;

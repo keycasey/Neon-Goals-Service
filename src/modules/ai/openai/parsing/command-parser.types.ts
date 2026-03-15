@@ -19,7 +19,10 @@ export type CommandType =
   | 'ADD_TASK'
   | 'REMOVE_TASK'
   | 'TOGGLE_TASK'
-  | 'ARCHIVE_GOAL';
+  | 'ARCHIVE_GOAL'
+  | 'REDIRECT_TO_CATEGORY'
+  | 'REDIRECT_TO_GOAL'
+  | 'REDIRECT_TO_OVERVIEW';
 
 /**
  * Proposal types for UI action buttons
@@ -27,6 +30,8 @@ export type CommandType =
  * - accept_decline: Simple two-button accept/decline flow
  */
 export type ProposalType = 'confirm_edit_cancel' | 'accept_decline';
+
+export type RedirectCategoryId = 'items' | 'finances' | 'actions';
 
 /**
  * Represents a parsed command from AI response content
@@ -180,4 +185,31 @@ export interface TaskOperationData {
   taskId?: string;
   /** Task data for add operations */
   task?: TaskData;
+}
+
+/**
+ * Redirect to a category specialist chat
+ */
+export interface RedirectToCategoryData {
+  categoryId: RedirectCategoryId;
+  message?: string;
+  reason?: string;
+}
+
+/**
+ * Redirect to a goal view chat
+ */
+export interface RedirectToGoalData {
+  goalId: string;
+  goalTitle?: string;
+  message?: string;
+  reason?: string;
+}
+
+/**
+ * Redirect to the overview chat
+ */
+export interface RedirectToOverviewData {
+  message?: string;
+  reason?: string;
 }

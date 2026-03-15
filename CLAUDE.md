@@ -12,7 +12,7 @@ NestJS backend service for the Neon Goals application. Provides REST APIs for us
 
 ```bash
 # After modifying schema.prisma, ALWAYS run:
-npx prisma migrate dev --name <descriptive-name>
+bunx prisma migrate dev --name <descriptive-name>
 
 # Then commit the migration file:
 git add prisma/migrations && git commit -m "feat: add migration for <description>"
@@ -534,7 +534,7 @@ model ScrapeJob {
 ### Seed Script
 
 ```bash
-npm run prisma:seed
+bun run prisma:seed
 ```
 
 Creates:
@@ -550,13 +550,13 @@ Creates:
 - Node.js 18+
 - PostgreSQL 14+
 - Python 3.12+ (for scrapers)
-- npm or yarn
+- bun
 
 ### Setup
 
 1. Install dependencies:
    ```bash
-   npm install
+   bun install
    ```
 
 2. Copy environment variables:
@@ -568,17 +568,17 @@ Creates:
 
 4. Run database migrations:
    ```bash
-   npm run prisma:migrate dev
+   bun run prisma:migrate:dev
    ```
 
 5. Seed the database:
    ```bash
-   npm run prisma:seed
+   bun run prisma:seed
    ```
 
 6. Start the development server:
    ```bash
-   npm run start:dev
+   bun run start:dev
    ```
 
 The API will be available at `http://localhost:3001`
@@ -615,29 +615,29 @@ python3 main.py
 
 ```bash
 # Run unit tests
-npm run test
+bun run test
 
 # Run e2e tests
-npm run test:e2e
+bun run test:e2e
 
 # Run with coverage
-npm run test:cov
+bun run test:cov
 ```
 
 ### Useful Commands
 
 ```bash
 # Generate Prisma client
-npm run prisma:generate
+bun run prisma:generate
 
 # Open Prisma Studio (DB GUI)
-npm run prisma:studio
+bun run prisma:studio
 
 # Format code
-npm run format
+bun run format
 
 # Lint code
-npm run lint
+bun run lint
 
 # Parse vehicle query (test LLM filter generation)
 cd scripts
@@ -670,7 +670,7 @@ The backend is managed by PM2 under the process name `neon-goals-service`:
 ssh ec2
 cd /var/www/Neon-Goals-Service
 git pull origin main
-npm run build
+bun run build
 pm2 restart neon-goals-service
 
 # View logs
@@ -696,7 +696,7 @@ The frontend is built as static files served by Caddy:
 # Deploy frontend
 ssh ec2
 cd /var/www/Neon-Goals-UI
-npm run build
+bun run build
 
 # Files are served from dist/ by Caddy
 ```
@@ -720,7 +720,7 @@ Caddy handles:
 
 ```bash
 # When modifying prisma/schema.prisma, ALWAYS create a migration:
-npx prisma migrate dev --name <descriptive-name>
+bunx prisma migrate dev --name <descriptive-name>
 
 # This creates a migration file that will be deployed via GitHub workflow
 git add prisma/migrations && git commit && git push
@@ -731,13 +731,13 @@ git add prisma/migrations && git commit && git push
 # Check migration status
 ssh ec2
 cd /var/www/Neon-Goals-Service
-npx prisma migrate status
+bunx prisma migrate status
 
 # Run pending migrations (done automatically by GitHub workflow)
-npx prisma migrate deploy
+bunx prisma migrate deploy
 
 # Emergency: Force sync schema (can lose data - avoid if possible)
-npx prisma db push
+bunx prisma db push
 ```
 
 ---

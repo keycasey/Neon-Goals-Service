@@ -156,12 +156,14 @@ export class BaseChatService {
     const commands = this.commandParserService.sanitizeCommands(
       this.commandParserService.parseCommands(content),
     );
+    const confirmableCommands =
+      this.commandParserService.getCommandsRequiringConfirmation(commands);
 
     const cleanedContent = this.commandParserService.cleanCommandsFromContent(content);
 
-    if (commands.length > 0) {
-      const goalPreview = this.commandParserService.generateGoalPreview(commands);
-      const proposalType = this.commandParserService.getProposalTypeForCommand(commands[0].type);
+    if (confirmableCommands.length > 0) {
+      const goalPreview = this.commandParserService.generateGoalPreview(confirmableCommands);
+      const proposalType = this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type);
 
       return {
         cleanedContent,

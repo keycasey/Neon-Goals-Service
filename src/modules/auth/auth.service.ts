@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { seedDemoUser } from '../../../prisma/seeds/demo-seed';
+import { DEFAULT_AI_MODEL_ID } from '../../config/ai-models';
 
 @Injectable()
 export class AuthService {
@@ -63,7 +64,7 @@ export class AuthService {
           data: {
             userId: user.id,
             theme: 'miami-vice',
-            chatModel: 'gpt-4',
+            chatModel: DEFAULT_AI_MODEL_ID,
             displayName: profile.displayName || profile.username,
           },
         });
@@ -142,7 +143,7 @@ export class AuthService {
         data: {
           userId: user.id,
           theme: 'miami-vice',
-          chatModel: 'gpt-4',
+          chatModel: DEFAULT_AI_MODEL_ID,
           displayName: 'Demo User',
         },
       });
@@ -260,7 +261,7 @@ export class AuthService {
       data: {
         userId: user.id,
         theme: 'miami-vice',
-        chatModel: 'gpt-4',
+        chatModel: DEFAULT_AI_MODEL_ID,
         displayName: name,
       },
     });

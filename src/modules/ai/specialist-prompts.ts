@@ -5,6 +5,9 @@
  * in that category. They provide focused, actionable advice.
  */
 
+import { existsSync, readFileSync } from 'fs';
+import { resolve } from 'path';
+
 export const SPECIALIST_PROMPTS = {
   items: `You are the Items Specialist - an expert on products, purchases, and material goods.
 
@@ -146,6 +149,10 @@ The system will automatically add these - do NOT include them in your command ou
 \`REMOVE_TASK: {"taskId":"<task-id>"}\`
 \`TOGGLE_TASK: {"taskId":"<task-id>"}\`
 
+**Redirects:**
+\`REDIRECT_TO_GOAL: {"goalId":"<goal-id>","goalTitle":"<goal title>","message":"<brief user-facing handoff message>"}\`
+\`REDIRECT_TO_OVERVIEW: {"message":"<brief user-facing handoff message>"}\`
+
 **Rules:**
 - Only include fields shown above - do NOT invent custom fields
 - For CREATE_SUBGOAL after CREATE_GOAL, use the main goal's title as parentGoalId
@@ -153,6 +160,7 @@ The system will automatically add these - do NOT include them in your command ou
 - Item goal titles: item name only, NEVER start with "Buy", "Purchase", "Get", "Find"
 - For action goals: use TOGGLE_TASK to mark tasks complete — progress updates automatically based on task completion
 - For finance goals: use UPDATE_PROGRESS with \`currentBalance\` to record how much has been saved
+- Use redirect commands when the user needs a specific goal view or a broader overview conversation
 - End with "Does this look good?" after outputting commands
 - Be concise - output commands quickly, put details in \`description\` field
 
@@ -261,6 +269,10 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 \`REMOVE_TASK: {"taskId":"<task-id>"}\`
 \`TOGGLE_TASK: {"taskId":"<task-id>"}\`
 
+**Redirects:**
+\`REDIRECT_TO_GOAL: {"goalId":"<goal-id>","goalTitle":"<goal title>","message":"<brief user-facing handoff message>"}\`
+\`REDIRECT_TO_OVERVIEW: {"message":"<brief user-facing handoff message>"}\`
+
 **Rules:**
 - Finance goals: \`targetBalance\` is REQUIRED for CREATE_GOAL. \`currentBalance\` is optional (defaults to 0).
 - UPDATE_PROGRESS for finance goals: sets \`currentBalance\` (the amount saved so far toward the target)
@@ -270,6 +282,7 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 - All planning details go in the \`description\` field as text, NOT as structured JSON fields
 - For CREATE_SUBGOAL after CREATE_GOAL, use the main goal's title as parentGoalId
 - For action goals: use TOGGLE_TASK to mark tasks complete — progress updates automatically
+- Use redirect commands when the user should continue in a specific goal chat or in Overview
 - Be concise - output commands quickly, put details in \`description\` field
 - End with "Does this look good?" after outputting commands
 
@@ -355,12 +368,17 @@ The system will automatically add these - do NOT include them in your command ou
 \`REMOVE_TASK: {"taskId":"<task-id>"}\`
 \`TOGGLE_TASK: {"taskId":"<task-id>"}\`
 
+**Redirects:**
+\`REDIRECT_TO_GOAL: {"goalId":"<goal-id>","goalTitle":"<goal title>","message":"<brief user-facing handoff message>"}\`
+\`REDIRECT_TO_OVERVIEW: {"message":"<brief user-facing handoff message>"}\`
+
 **Rules:**
 - Only include fields shown above - do NOT invent custom fields
 - For CREATE_SUBGOAL after CREATE_GOAL, use the main goal's title as parentGoalId
 - Deadline format: ISO 8601 (YYYY-MM-DDTHH:mm:ss)
 - For action goals: progress is based on task completion. Use TOGGLE_TASK to mark tasks done — progress updates automatically. Do NOT use UPDATE_PROGRESS for action goals.
 - UPDATE_PROGRESS is for finance goals only — sets \`currentBalance\` (amount saved so far)
+- Use redirect commands when the user should continue in a specific goal chat or in Overview
 - Be concise - output commands quickly, put details in \`description\` field
 - End with "Does this look good?" after outputting commands
 
@@ -368,3 +386,100 @@ The system will automatically add these - do NOT include them in your command ou
 };
 
 export type SpecialistCategory = keyof typeof SPECIALIST_PROMPTS;
+
+type PromptBundle = {
+  defaultModelId?: string;
+  models?: Record<string, {
+    prompts?: {
+      specialists?: Partial<Record<SpecialistCategory, string | { text?: string; prompt?: string }>>;
+      overview?: string | { text?: string; prompt?: string };
+      expert?: string | { text?: string; prompt?: string };
+      goalView?: {
+        item?: string | { text?: string; prompt?: string };
+        default?: string | { text?: string; prompt?: string };
+      };
+      [key: string]: unknown;
+    };
+  }>;
+  prompts?: {
+    specialists?: Partial<Record<SpecialistCategory, string | { text?: string; prompt?: string }>>;
+    overview?: string | { text?: string; prompt?: string };
+    expert?: string | { text?: string; prompt?: string };
+    goalView?: {
+      item?: string | { text?: string; prompt?: string };
+      default?: string | { text?: string; prompt?: string };
+    };
+    [key: string]: unknown;
+  };
+};
+
+let cachedBundlePath: string | undefined;
+let cachedBundle: PromptBundle | null | undefined;
+
+function resolveBundlePath(): string | null {
+  const configuredPath = process.env.DSPY_PROMPT_BUNDLE_PATH;
+  if (configuredPath) {
+    return configuredPath;
+  }
+
+  const defaultPath = resolve(process.cwd(), 'prompts/generated/nest-prompts.json');
+  if (existsSync(defaultPath)) {
+    return defaultPath;
+  }
+
+  return null;
+}
+
+function resolvePromptValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    const promptCandidate = value as { text?: unknown; prompt?: unknown };
+    if (typeof promptCandidate.text === 'string') {
+      return promptCandidate.text;
+    }
+    if (typeof promptCandidate.prompt === 'string') {
+      return promptCandidate.prompt;
+    }
+  }
+  return undefined;
+}
+
+export function getPromptBundleOverrides(modelId?: string): PromptBundle | null {
+  const bundlePath = resolveBundlePath();
+  if (!bundlePath) {
+    return null;
+  }
+
+  if (cachedBundlePath === bundlePath && cachedBundle !== undefined) {
+    return cachedBundle;
+  }
+
+  cachedBundlePath = bundlePath;
+
+  if (!existsSync(bundlePath)) {
+    cachedBundle = null;
+    return null;
+  }
+
+  try {
+    cachedBundle = JSON.parse(readFileSync(bundlePath, 'utf-8')) as PromptBundle;
+    if (modelId && cachedBundle.models?.[modelId]) {
+      return cachedBundle.models[modelId] as PromptBundle;
+    }
+    if (cachedBundle.defaultModelId && cachedBundle.models?.[cachedBundle.defaultModelId]) {
+      return cachedBundle.models[cachedBundle.defaultModelId] as PromptBundle;
+    }
+    return cachedBundle;
+  } catch {
+    cachedBundle = null;
+    return null;
+  }
+}
+
+export function getSpecialistPrompt(category: SpecialistCategory, modelId?: string): string {
+  const bundle = getPromptBundleOverrides(modelId);
+  const override = resolvePromptValue(bundle?.prompts?.specialists?.[category]);
+  return override || SPECIALIST_PROMPTS[category];
+}

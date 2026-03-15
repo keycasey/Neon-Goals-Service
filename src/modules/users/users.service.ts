@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
+import { AiModelsService } from '../ai/ai-models.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private aiModelsService: AiModelsService,
+  ) {}
 
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({
@@ -27,6 +31,17 @@ export class UsersService {
   }
 
   async updateSettings(userId: string, settings: any) {
+    if (!settings || typeof settings !== 'object') {
+      throw new BadRequestException('Settings payload must be an object');
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'chatModel') &&
+      !this.aiModelsService.isSupportedModelId(settings.chatModel)
+    ) {
+      throw new BadRequestException(`Unsupported chat model: ${settings.chatModel}`);
+    }
+
     return this.prisma.settings.upsert({
       where: { userId },
       update: settings,
@@ -55,5 +70,9 @@ export class UsersService {
         },
       },
     });
+  }
+
+  getAvailableModels() {
+    return this.aiModelsService.toClientSchema();
   }
 }

@@ -34,14 +34,14 @@ Integrate your specialized goal agents into frameworks such as OpenClaw, Clawdbo
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Install Python dependencies
 pip install -U camoufox[geoip]
 python3 -m camoufox fetch
 
 # Setup database
-npx prisma migrate dev
+bunx prisma migrate dev
 
 # Configure environment
 cp .env.example .env
@@ -71,11 +71,11 @@ AGENT_API_KEY=your_generated_api_key_here
 
 ```bash
 # Development mode (with VPN for IP-based scraping)
-npm run start:dev
+bun run start:dev
 
 # Production mode
-npm run build
-npm run start:prod
+bun run build
+bun run start
 ```
 
 ## Car Scraping Scripts
@@ -193,7 +193,7 @@ RUN apt-get update && apt-get install -y xvfb
 # Your app setup...
 
 # Run with virtual display
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1366x768x24 & export DISPLAY=:99 && npm run start:prod"]
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1366x768x24 & export DISPLAY=:99 && bun run start"]
 ```
 
 #### Option 3: Systemd Service
@@ -209,7 +209,7 @@ User=www-data
 WorkingDirectory=/var/www/neon-goals-service
 Environment="DISPLAY=:99"
 ExecStartPre=/usr/bin/Xvfb :99 -screen 0 1366x768x24 &
-ExecStart=/usr/bin/npm run start:prod
+ExecStart=/usr/bin/bun run start
 Restart=always
 
 [Install]
@@ -329,7 +329,7 @@ openssl rand -base64 32
 echo "AGENT_API_KEY=Ce4QAMETH3m1pBf9yt8TCZY6ZkF8KQy0R+JbQH3K3Pk=" >> .env
 
 # Step 3: Restart server to load new environment variable
-npm run start:dev
+bun run start:dev
 ```
 
 #### Using API Key for Authenticated Requests
@@ -521,4 +521,3 @@ The scraper service runs automated jobs:
 ## License
 
 MIT
-

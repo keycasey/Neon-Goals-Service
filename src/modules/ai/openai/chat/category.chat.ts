@@ -8,7 +8,8 @@ import { CommandParserService } from '../parsing/command-parser.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { PlaidService } from '../../../plaid/plaid.service';
 import { AiToolsService } from '../../ai-tools.service';
-import { SPECIALIST_PROMPTS } from '../../specialist-prompts';
+import { getSpecialistPrompt } from '../../specialist-prompts';
+import { AiModelsService } from '../../ai-models.service';
 import { ThreadHistory } from '../thread/thread.types';
 
 /**
@@ -41,6 +42,7 @@ export class CategoryChat extends BaseChatService {
     threadService: ThreadService,
     promptsService: PromptsService,
     commandParserService: CommandParserService,
+    private aiModelsService: AiModelsService,
     @Optional() private plaidService?: PlaidService,
     @Optional() private aiToolsService?: AiToolsService,
   ) {
@@ -92,11 +94,12 @@ export class CategoryChat extends BaseChatService {
     }
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
       // Add user message
       history.messages.push({ role: 'user', content: message });
 
       // Get specialist prompt and build system prompt
-      const systemPrompt = await this.buildSystemPrompt(userId, categoryId, categoryGoals);
+      const systemPrompt = await this.buildSystemPrompt(userId, categoryId, categoryGoals, model.id);
 
       // Create messages
       const messages: ChatCompletionMessageParam[] = [
@@ -108,7 +111,7 @@ export class CategoryChat extends BaseChatService {
       const tools = this.buildFunctionTools(categoryId);
 
       let response = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages,
         tools,
         tool_choice: tools ? 'auto' : undefined,
@@ -134,7 +137,7 @@ export class CategoryChat extends BaseChatService {
         ];
 
         const followUpResponse = await this.openai.chat.completions.create({
-          model: 'gpt-5-nano',
+          model: model.apiModel,
           messages: followUpMessages,
         });
 
@@ -152,15 +155,20 @@ export class CategoryChat extends BaseChatService {
       const commands = this.commandParserService.sanitizeCommands(
         this.commandParserService.parseCommands(finalContent),
       );
+      const confirmableCommands =
+        this.commandParserService.getCommandsRequiringConfirmation(commands);
 
       // Build metadata for assistant message if proposal detected
       let assistantMetadata: any = undefined;
       if (commands.length > 0) {
+        assistantMetadata = { commands };
+      }
+      if (confirmableCommands.length > 0) {
         assistantMetadata = {
-          goalPreview: this.commandParserService.generateGoalPreview(commands),
+          ...assistantMetadata,
+          goalPreview: this.commandParserService.generateGoalPreview(confirmableCommands),
           awaitingConfirmation: true,
-          proposalType: this.commandParserService.getProposalTypeForCommand(commands[0].type),
-          commands,
+          proposalType: this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type),
         };
       }
 
@@ -181,7 +189,7 @@ export class CategoryChat extends BaseChatService {
       };
 
       // Add confirmation data if commands exist
-      if (commands.length > 0) {
+      if (confirmableCommands.length > 0) {
         apiResponse.goalPreview = assistantMetadata.goalPreview;
         apiResponse.awaitingConfirmation = true;
         apiResponse.proposalType = assistantMetadata.proposalType;
@@ -237,11 +245,12 @@ export class CategoryChat extends BaseChatService {
     const controller = this.registerStream(streamKey);
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
       // Add user message
       history.messages.push({ role: 'user', content: message });
 
       // Get specialist prompt and build system prompt
-      const systemPrompt = await this.buildSystemPrompt(userId, categoryId, categoryGoals);
+      const systemPrompt = await this.buildSystemPrompt(userId, categoryId, categoryGoals, model.id);
 
       // Create messages
       const messages: ChatCompletionMessageParam[] = [
@@ -253,7 +262,7 @@ export class CategoryChat extends BaseChatService {
       const tools = this.buildFunctionTools(categoryId);
 
       const stream = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages,
         tools,
         tool_choice: tools ? 'auto' : undefined,
@@ -328,7 +337,7 @@ export class CategoryChat extends BaseChatService {
         ];
 
         const followUpResponse = await this.openai.chat.completions.create({
-          model: 'gpt-5-nano',
+          model: model.apiModel,
           messages: followUpMessages,
         });
 
@@ -341,6 +350,8 @@ export class CategoryChat extends BaseChatService {
       const commands = this.commandParserService.sanitizeCommands(
         this.commandParserService.parseCommands(fullContent),
       );
+      const confirmableCommands =
+        this.commandParserService.getCommandsRequiringConfirmation(commands);
 
       // Prepare final chunk
       const finalChunk: StreamChunk = {
@@ -351,15 +362,18 @@ export class CategoryChat extends BaseChatService {
       // Build metadata for assistant message if proposal detected
       let assistantMetadata: any = undefined;
       if (commands.length > 0) {
-        finalChunk.goalPreview = this.commandParserService.generateGoalPreview(commands);
-        finalChunk.awaitingConfirmation = true;
         finalChunk.commands = commands;
-        finalChunk.proposalType = this.commandParserService.getProposalTypeForCommand(commands[0].type);
+        assistantMetadata = { commands };
+      }
+      if (confirmableCommands.length > 0) {
+        finalChunk.goalPreview = this.commandParserService.generateGoalPreview(confirmableCommands);
+        finalChunk.awaitingConfirmation = true;
+        finalChunk.proposalType = this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type);
         assistantMetadata = {
+          ...assistantMetadata,
           goalPreview: finalChunk.goalPreview,
           awaitingConfirmation: true,
           proposalType: finalChunk.proposalType,
-          commands,
         };
       }
 
@@ -397,9 +411,11 @@ export class CategoryChat extends BaseChatService {
     userId: string,
     categoryId: string,
     categoryGoals: any[],
+    modelId?: string,
   ): Promise<string> {
-    const specialistPrompt = SPECIALIST_PROMPTS[categoryId as keyof typeof SPECIALIST_PROMPTS] ||
-      SPECIALIST_PROMPTS.items;
+    const specialistPrompt = ['items', 'finances', 'actions'].includes(categoryId)
+      ? getSpecialistPrompt(categoryId as 'items' | 'finances' | 'actions', modelId)
+      : getSpecialistPrompt('items', modelId);
 
     let systemPrompt = `${specialistPrompt}
 

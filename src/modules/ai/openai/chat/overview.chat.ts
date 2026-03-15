@@ -7,6 +7,7 @@ import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { AgentRoutingService } from '../../agent-routing.service';
+import { AiModelsService } from '../../ai-models.service';
 import { ThreadHistory } from '../thread/thread.types';
 
 /**
@@ -31,6 +32,7 @@ export class OverviewChat extends BaseChatService {
     threadService: ThreadService,
     promptsService: PromptsService,
     commandParserService: CommandParserService,
+    private aiModelsService: AiModelsService,
     @Optional() private agentRoutingService?: AgentRoutingService,
   ) {
     super(threadService, promptsService, commandParserService);
@@ -87,17 +89,18 @@ export class OverviewChat extends BaseChatService {
     }
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
       // Add user message
       history.messages.push({ role: 'user', content: message });
 
       // Create messages with goal context in system prompt
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: this.promptsService.getOverviewSystemPrompt(goals) },
+        { role: 'system', content: this.promptsService.getOverviewSystemPrompt(goals, model.id) },
         ...history.messages,
       ];
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages,
       });
 
@@ -113,15 +116,20 @@ export class OverviewChat extends BaseChatService {
       const commands = this.commandParserService.sanitizeCommands(
         this.commandParserService.parseCommands(content),
       );
+      const confirmableCommands =
+        this.commandParserService.getCommandsRequiringConfirmation(commands);
 
       // Build metadata for assistant message if proposal detected
       let assistantMetadata: any = undefined;
       if (commands.length > 0) {
+        assistantMetadata = { commands };
+      }
+      if (confirmableCommands.length > 0) {
         assistantMetadata = {
-          goalPreview: this.commandParserService.generateGoalPreview(commands),
+          ...assistantMetadata,
+          goalPreview: this.commandParserService.generateGoalPreview(confirmableCommands),
           awaitingConfirmation: true,
-          proposalType: this.commandParserService.getProposalTypeForCommand(commands[0].type),
-          commands,
+          proposalType: this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type),
         };
       }
 
@@ -137,7 +145,7 @@ export class OverviewChat extends BaseChatService {
       };
 
       // Add confirmation data if commands exist
-      if (commands.length > 0) {
+      if (confirmableCommands.length > 0) {
         apiResponse.goalPreview = assistantMetadata.goalPreview;
         apiResponse.awaitingConfirmation = true;
         apiResponse.proposalType = assistantMetadata.proposalType;
@@ -240,17 +248,18 @@ export class OverviewChat extends BaseChatService {
     const controller = this.registerStream(streamKey);
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
       // Add user message
       history.messages.push({ role: 'user', content: message });
 
       // Create messages with goal context
       const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: this.promptsService.getOverviewSystemPrompt(goals) },
+        { role: 'system', content: this.promptsService.getOverviewSystemPrompt(goals, model.id) },
         ...history.messages,
       ];
 
       const stream = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages,
         stream: true,
       }, {
@@ -271,6 +280,8 @@ export class OverviewChat extends BaseChatService {
       const commands = this.commandParserService.sanitizeCommands(
         this.commandParserService.parseCommands(fullContent),
       );
+      const confirmableCommands =
+        this.commandParserService.getCommandsRequiringConfirmation(commands);
 
       // Prepare final chunk
       const finalChunk: StreamChunk = {
@@ -282,17 +293,19 @@ export class OverviewChat extends BaseChatService {
       let assistantMetadata: any = undefined;
       // If commands were detected, add confirmation data
       if (commands.length > 0) {
-        finalChunk.goalPreview = this.commandParserService.generateGoalPreview(commands);
-        finalChunk.awaitingConfirmation = true;
         finalChunk.commands = commands;
-        // Use proposalType from command data if present, otherwise derive from command type
-        finalChunk.proposalType = commands[0]?.data?.proposalType ||
-          this.commandParserService.getProposalTypeForCommand(commands[0].type);
+        assistantMetadata = { commands };
+      }
+      if (confirmableCommands.length > 0) {
+        finalChunk.goalPreview = this.commandParserService.generateGoalPreview(confirmableCommands);
+        finalChunk.awaitingConfirmation = true;
+        finalChunk.proposalType = confirmableCommands[0]?.data?.proposalType ||
+          this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type);
         assistantMetadata = {
+          ...assistantMetadata,
           goalPreview: finalChunk.goalPreview,
           awaitingConfirmation: true,
           proposalType: finalChunk.proposalType,
-          commands,
         };
       }
 

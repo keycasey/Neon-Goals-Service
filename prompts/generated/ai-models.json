@@ -1,0 +1,49 @@
+{
+  "defaultModelId": "gpt-5-nano",
+  "models": [
+    {
+      "id": "gpt-5-nano",
+      "label": "GPT-5 Nano",
+      "provider": "openai",
+      "apiModel": "gpt-5-nano",
+      "enabled": true,
+      "supportsStreaming": true,
+      "dspyStudentModel": "openai/gpt-5-nano",
+      "dspyJudgeCompatible": true,
+      "description": "Fast default model for assistant responses."
+    },
+    {
+      "id": "gpt-4o-mini",
+      "label": "GPT-4o Mini",
+      "provider": "openai",
+      "apiModel": "gpt-4o-mini",
+      "enabled": true,
+      "supportsStreaming": true,
+      "dspyStudentModel": "openai/gpt-4o-mini",
+      "dspyJudgeCompatible": true,
+      "description": "Lower-cost general-purpose model."
+    },
+    {
+      "id": "gpt-4o",
+      "label": "GPT-4o",
+      "provider": "openai",
+      "apiModel": "gpt-4o",
+      "enabled": true,
+      "supportsStreaming": true,
+      "dspyStudentModel": "openai/gpt-4o",
+      "dspyJudgeCompatible": true,
+      "description": "Balanced quality and speed."
+    },
+    {
+      "id": "gpt-4.1",
+      "label": "GPT-4.1",
+      "provider": "openai",
+      "apiModel": "gpt-4.1",
+      "enabled": true,
+      "supportsStreaming": true,
+      "dspyStudentModel": "openai/gpt-4.1",
+      "dspyJudgeCompatible": true,
+      "description": "Higher-quality model for harder conversations."
+    }
+  ]
+}

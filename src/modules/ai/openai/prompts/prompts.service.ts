@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SPECIALIST_PROMPTS } from '../../specialist-prompts';
+import { getPromptBundleOverrides, getSpecialistPrompt } from '../../specialist-prompts';
 
 /**
  * Service for generating AI system prompts for various chat contexts.
@@ -10,6 +10,30 @@ import { SPECIALIST_PROMPTS } from '../../specialist-prompts';
  */
 @Injectable()
 export class PromptsService {
+  private resolvePromptValue(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value && typeof value === 'object') {
+      const promptCandidate = value as { text?: unknown; prompt?: unknown };
+      if (typeof promptCandidate.text === 'string') {
+        return promptCandidate.text;
+      }
+      if (typeof promptCandidate.prompt === 'string') {
+        return promptCandidate.prompt;
+      }
+    }
+    return undefined;
+  }
+
+  private renderTemplate(template: string, variables: Record<string, string>): string {
+    let rendered = template;
+    for (const [key, value] of Object.entries(variables)) {
+      rendered = rendered.replaceAll(`{{${key}}}`, value);
+    }
+    return rendered;
+  }
+
   /**
    * Get the expert system prompt for goal creation.
    *
@@ -23,7 +47,13 @@ export class PromptsService {
    *
    * @returns The complete expert system prompt for goal creation
    */
-  getExpertSystemPrompt(): string {
+  getExpertSystemPrompt(modelId?: string): string {
+    const bundle = getPromptBundleOverrides(modelId);
+    const expertOverride = this.resolvePromptValue(bundle?.prompts?.expert);
+    if (expertOverride) {
+      return expertOverride;
+    }
+
     return `You are an expert Goal Achievement Coach with deep experience in psychology, behavioral science, and project management. Your role is to help users create thoughtful, achievable goals.
 
 ## Your Expert Persona
@@ -238,10 +268,25 @@ Your response:
     id: string;
     title: string;
     description?: string;
-  }): string {
+  }, modelId?: string): string {
+    const bundle = getPromptBundleOverrides(modelId);
+    const goalViewPrompts = bundle?.prompts?.goalView as
+      | { item?: unknown; default?: unknown }
+      | undefined;
+
     // For item goals, use the specialist prompt that includes update commands
     if (goalContext.type === 'item') {
-      return `${SPECIALIST_PROMPTS.items}
+      const itemOverride = this.resolvePromptValue(goalViewPrompts?.item);
+      if (itemOverride) {
+        return this.renderTemplate(itemOverride, {
+          GOAL_ID: goalContext.id,
+          GOAL_TITLE: goalContext.title,
+          GOAL_DESCRIPTION: goalContext.description || 'No description',
+          GOAL_TYPE: goalContext.type,
+        });
+      }
+
+      return `${getSpecialistPrompt('items', modelId)}
 
 **Current Goal Context:**
 You are helping with the specific item goal: "${goalContext.title}" (ID: ${goalContext.id})
@@ -254,6 +299,7 @@ When the user wants to modify their goal, output commands in this EXACT format i
 \`UPDATE_SEARCHTERM: {"goalId":"${goalContext.id}","searchTerm":"<new search query>"}\`
 \`REFRESH_CANDIDATES: {"goalId":"${goalContext.id}"}\`
 \`ARCHIVE_GOAL: {"goalId":"${goalContext.id}"}\`
+\`REDIRECT_TO_OVERVIEW: {"message":"<brief user-facing handoff message>"}\`
 
 **CRITICAL - Formatting Rules:**
 1. **MANDATORY DESCRIPTION:** You must explicitly state the new search criteria or title in plain text before the command.
@@ -281,16 +327,28 @@ Does this look good?
 - **UPDATE_SEARCHTERM**: Updates the search criteria and regenerates retailer filters (use when user wants to modify search parameters)
 - **REFRESH_CANDIDATES**: Queues a scrape job to find new candidates using the current search criteria
 - **ARCHIVE_GOAL**: Archives the goal
+- **REDIRECT_TO_OVERVIEW**: Use when the user needs broader prioritization or cross-goal help
 
 **Important:**
 - When user asks to change the NAME/DISPLAY TITLE -> Output UPDATE_TITLE
 - When user asks to change/modify SEARCH CRITERIA -> Output UPDATE_SEARCHTERM (after asking clarifying questions)
 - After UPDATE_SEARCHTERM is confirmed, ALWAYS offer REFRESH_CANDIDATES as a follow-up proposal
 - When user asks to archive/delete -> Output ARCHIVE_GOAL
+- When the user wants help beyond this specific goal, redirect them to Overview
 `;
     }
 
     // Default prompt for action/finance goals
+    const defaultGoalViewOverride = this.resolvePromptValue(goalViewPrompts?.default);
+    if (defaultGoalViewOverride) {
+      return this.renderTemplate(defaultGoalViewOverride, {
+        GOAL_ID: goalContext.id,
+        GOAL_TITLE: goalContext.title,
+        GOAL_DESCRIPTION: goalContext.description || 'No description',
+        GOAL_TYPE: goalContext.type,
+      });
+    }
+
     return `You are a Goal Achievement Coach helping the user with their specific goal: "${goalContext.title}".
 
 **Goal Details:**
@@ -303,6 +361,7 @@ Your role is to:
 - Track progress and celebrate wins
 - Offer strategies and tips specific to this goal type
 - Answer questions about the goal
+- Redirect to Overview or a category specialist when the request is broader than this goal
 
 ## Creating Subgoals
 
@@ -323,11 +382,19 @@ CREATE_SUBGOAL: {"type":"finance","title":"Monthly milestone","description":"Sav
 CREATE_SUBGOAL: {"type":"item","title":"Research prices","description":"Compare retailers","budget":50}
 \`\`\`
 
+## Redirect Commands
+
+When the user should continue elsewhere, use one of these:
+
+\`REDIRECT_TO_OVERVIEW: {"message":"<brief user-facing handoff message>"}\`
+\`REDIRECT_TO_CATEGORY: {"categoryId":"${goalContext.type === 'finance' ? 'finances' : goalContext.type === 'action' ? 'actions' : 'items'}","message":"<brief user-facing handoff message>"}\`
+
 **Important:**
 - Ask for user confirmation before creating subgoals
 - Suggest 2-4 logical subgoals based on the main goal
 - Keep subgoals specific and actionable
 - The parentGoalId will be set automatically
+- Use redirect commands when the conversation is no longer best handled in this goal view
 
 Be conversational, supportive, and help them succeed!`;
   }
@@ -350,7 +417,7 @@ Be conversational, supportive, and help them succeed!`;
    *   - itemData: Item goal data with bestPrice (optional)
    * @returns The system prompt for the overview chat session
    */
-  getOverviewSystemPrompt(goals: any[]): string {
+  getOverviewSystemPrompt(goals: any[], modelId?: string): string {
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD format
     const currentTime = now.toTimeString().split(' ')[0].substring(0, 5); // HH:MM format
@@ -375,6 +442,17 @@ Be conversational, supportive, and help them succeed!`;
 
       return details;
     }).join('\n\n');
+
+    const bundle = getPromptBundleOverrides(modelId);
+    const overviewOverride = this.resolvePromptValue(bundle?.prompts?.overview);
+    if (overviewOverride) {
+      return this.renderTemplate(overviewOverride, {
+        CURRENT_DATE: currentDate,
+        CURRENT_TIME: currentTime,
+        CURRENT_DAY: currentDayName,
+        GOALS_LIST: goalsList || 'No active goals yet.',
+      });
+    }
 
     return `CURRENT DATE: ${currentDate} (${currentDayName})
 CURRENT TIME: ${currentTime}
@@ -433,6 +511,10 @@ The system will automatically add proposalType and awaitingConfirmation - do NOT
 **REMINDER: EVERY command below should have ONLY the relevant data fields, NEVER proposalType or awaitingConfirmation!**
 
 When you want to take specific actions, use these formats:
+
+**Redirects:**
+\`REDIRECT_TO_CATEGORY: {"categoryId":"items|finances|actions","message":"<brief user-facing handoff message>"}\`
+\`REDIRECT_TO_GOAL: {"goalId":"<goal-id>","goalTitle":"<goal title>","message":"<brief user-facing handoff message>"}\`
 
 **Create a new main goal:**
 \`CREATE_GOAL: {"type":"action","title":"<title>","description":"<description>","deadline":"<optional-ISO-8601-date>"}\`

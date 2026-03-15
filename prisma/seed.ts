@@ -1,4 +1,5 @@
 import { PrismaClient, GoalType, GoalStatus, ItemStatusBadge } from '@prisma/client';
+import { DEFAULT_AI_MODEL_ID } from '../src/config/ai-models';
 
 const prisma = new PrismaClient();
 
@@ -594,7 +595,7 @@ async function main() {
         settings: {
           create: {
             theme: 'miami-vice',
-            chatModel: 'gpt-4',
+            chatModel: DEFAULT_AI_MODEL_ID,
             displayName: 'Casey',
           },
         },
@@ -649,7 +650,7 @@ async function main() {
         settings: {
           create: {
             theme: 'miami-vice',
-            chatModel: 'gpt-4',
+            chatModel: DEFAULT_AI_MODEL_ID,
             displayName: testUserName,
           },
         },

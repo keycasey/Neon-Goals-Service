@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import OpenAI from 'openai';
+import { AiModelsService } from './ai-models.service';
 
 /**
  * GreetingSummaryService generates summaries of agent-to-agent conversations
@@ -18,6 +19,7 @@ export class GreetingSummaryService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private aiModelsService: AiModelsService,
   ) {
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
     this.openai = new OpenAI({ apiKey: this.apiKey });
@@ -70,9 +72,11 @@ export class GreetingSummaryService {
       .join('\n\n');
 
     try {
+      const model = await this.aiModelsService.getModelForUser(userId);
+
       // Generate greeting summary
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-5-nano',
+        model: model.apiModel,
         messages: [
           {
             role: 'system',

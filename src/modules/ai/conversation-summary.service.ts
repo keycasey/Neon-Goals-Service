@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import OpenAI from 'openai';
 import { ChatCompletionMessageParam } from 'openai/resources';
+import { AiModelsService } from './ai-models.service';
 
 /**
  * Service for managing conversation summaries to handle context window limits
@@ -25,6 +26,7 @@ export class ConversationSummaryService implements OnModuleInit {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private aiModelsService: AiModelsService,
   ) {
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
   }
@@ -96,7 +98,7 @@ export class ConversationSummaryService implements OnModuleInit {
       .join('\n\n');
 
     // Generate summary using OpenAI
-    const summary = await this.generateSummary(conversationText);
+    const summary = await this.generateSummary(chat.userId, conversationText);
 
     // Store summary in database
     const savedSummary = await this.prisma.conversationSummary.create({
@@ -124,9 +126,11 @@ export class ConversationSummaryService implements OnModuleInit {
   /**
    * Generate a summary of the conversation using OpenAI
    */
-  private async generateSummary(conversationText: string): Promise<string> {
+  private async generateSummary(userId: string, conversationText: string): Promise<string> {
+    const model = await this.aiModelsService.getModelForUser(userId);
+
     const response = await this.openai.chat.completions.create({
-      model: 'gpt-5-nano',
+      model: model.apiModel,
       messages: [
         {
           role: 'system',

@@ -15,6 +15,7 @@ export class AiGoalChatController {
     private openaiService: OpenAIService,
     private prisma: PrismaService,
     private goalCommandService: GoalCommandService,
+    private chatsService: ChatsService,
     private rateLimitService: RateLimitService,
   ) {}
 
@@ -58,7 +59,6 @@ export class AiGoalChatController {
       ...(goal.financeData && { financeData: goal.financeData }),
       ...(goal.actionData && { actionData: goal.actionData }),
     };
-
     const result = await this.openaiService.continueGoalConversation(
       goalId,
       userId,
@@ -104,7 +104,10 @@ export class AiGoalChatController {
       };
     }
 
-    const executedCommands = await this.goalCommandService.executeCommands(userId, body.commands);
+    const chat = await this.chatsService.getGoalChat(userId, goalId);
+    const executedCommands = await this.goalCommandService.executeCommands(userId, body.commands, {
+      sourceChatId: chat.id,
+    });
     return {
       executedCommands,
       message: 'Commands executed successfully',
@@ -166,7 +169,9 @@ export class AiOverviewController {
 
     // Execute commands if any were returned
     const executedCommands = result.commands && result.commands.length > 0
-      ? await this.goalCommandService.executeCommands(userId, result.commands)
+      ? await this.goalCommandService.executeCommands(userId, result.commands, {
+          sourceChatId: chat.id,
+        })
       : [];
 
     const response: any = {
@@ -252,7 +257,10 @@ export class AiOverviewController {
     @CurrentUser('userId') userId: string,
     @Body() body: { commands: any[] },
   ) {
-    const executedCommands = await this.goalCommandService.executeCommands(userId, body.commands);
+    const chat = await this.chatsService.getOrCreateOverviewChat(userId);
+    const executedCommands = await this.goalCommandService.executeCommands(userId, body.commands, {
+      sourceChatId: chat.id,
+    });
     return {
       executedCommands,
       message: 'Commands executed successfully',

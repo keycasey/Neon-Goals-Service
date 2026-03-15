@@ -169,6 +169,11 @@ export class CommandParserService {
       }
     }
 
+    // Parse redirect commands (these remain in the visible content for the UI redirect card)
+    this.parseCommandWithNestedObject(content, 'REDIRECT_TO_CATEGORY:', commands);
+    this.parseCommandWithNestedObject(content, 'REDIRECT_TO_GOAL:', commands);
+    this.parseCommandWithNestedObject(content, 'REDIRECT_TO_OVERVIEW:', commands);
+
     return commands;
   }
 
@@ -206,10 +211,26 @@ export class CommandParserService {
    * @returns The appropriate proposal type for UI rendering
    */
   getProposalTypeForCommand(commandType: CommandType | string): ProposalType {
-    if (commandType === 'REFRESH_CANDIDATES') {
+    if (commandType === 'REFRESH_CANDIDATES' || this.isRedirectCommandType(commandType)) {
       return 'accept_decline';
     }
     return 'confirm_edit_cancel';
+  }
+
+  isRedirectCommandType(commandType: CommandType | string): boolean {
+    return (
+      commandType === 'REDIRECT_TO_CATEGORY' ||
+      commandType === 'REDIRECT_TO_GOAL' ||
+      commandType === 'REDIRECT_TO_OVERVIEW'
+    );
+  }
+
+  getCommandsRequiringConfirmation(commands: ParsedCommand[]): ParsedCommand[] {
+    return commands.filter((command) => !this.isRedirectCommandType(command.type));
+  }
+
+  hasCommandsRequiringConfirmation(commands: ParsedCommand[]): boolean {
+    return this.getCommandsRequiringConfirmation(commands).length > 0;
   }
 
   /**
@@ -286,11 +307,16 @@ export class CommandParserService {
         c.type === 'REMOVE_TASK' ||
         c.type === 'TOGGLE_TASK',
     );
+    const redirectCommands = commands.filter((c) => this.isRedirectCommandType(c.type));
 
     // Handle update/modification commands first
     if (updateCommands.length > 0) {
       preview += `## Changes to Apply\n\n`;
       preview += this.generateUpdateCommandsPreview(updateCommands);
+    }
+
+    if (redirectCommands.length > 0) {
+      preview += this.generateUpdateCommandsPreview(redirectCommands);
     }
 
     // Add main goals
@@ -697,6 +723,32 @@ export class CommandParserService {
         case 'TOGGLE_TASK':
           preview += `**Toggle Task**\n`;
           preview += `Toggle task: ${cmdData.taskId}\n\n`;
+          break;
+
+        case 'REDIRECT_TO_CATEGORY':
+          preview += `**Open Specialist Chat**\n`;
+          preview += `Target: ${cmdData.categoryId}\n`;
+          if (cmdData.message) {
+            preview += `${cmdData.message}\n`;
+          }
+          preview += `\n`;
+          break;
+
+        case 'REDIRECT_TO_GOAL':
+          preview += `**Open Goal View**\n`;
+          preview += `Target: ${cmdData.goalTitle || cmdData.goalId}\n`;
+          if (cmdData.message) {
+            preview += `${cmdData.message}\n`;
+          }
+          preview += `\n`;
+          break;
+
+        case 'REDIRECT_TO_OVERVIEW':
+          preview += `**Return To Overview**\n`;
+          if (cmdData.message) {
+            preview += `${cmdData.message}\n`;
+          }
+          preview += `\n`;
           break;
       }
     }

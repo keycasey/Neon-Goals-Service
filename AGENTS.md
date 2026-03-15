@@ -1,5 +1,21 @@
 # AGENTS.md - Agent Communication Guide
 
+## Repo Instructions
+
+This repository also has a [CLAUDE.md](./CLAUDE.md) file with core development guidance.
+
+Agents working in this repo should:
+
+1. Read `CLAUDE.md` before making code changes.
+2. Treat `CLAUDE.md` as the primary repo development guide.
+3. Use this `AGENTS.md` for agent-specific communication and API behavior.
+
+## Tooling
+
+- Use `bun` as the default JavaScript/TypeScript package manager and task runner for this project.
+- Prefer `bun run <script>` over `npm run <script>` unless a task explicitly requires another tool.
+- Keep new repo instructions aligned with `CLAUDE.md` so agent docs do not drift.
+
 This document explains how agents communicate with the Neon Goals Service — both internally (OpenClaw sessions) and externally (via API).
 
 ---
@@ -295,6 +311,41 @@ response = requests.post(
 )
 edited_fields = response.json()
 ```
+
+---
+
+## Agent Redirect System
+
+Agents can hand the user off to a better chat context by embedding redirect commands in their response text.
+
+### Redirect Commands
+
+Redirect commands use the same `COMMAND_NAME: {json}` format:
+
+```
+REDIRECT_TO_CATEGORY: {"categoryId":"items","message":"The Items specialist can help compare these listings."}
+REDIRECT_TO_GOAL: {"goalId":"goal-123","goalTitle":"GMC Sierra 3500HD","message":"Let’s switch to the goal view for this truck."}
+REDIRECT_TO_OVERVIEW: {"message":"This is broader than one goal, so Overview is the best place to continue."}
+```
+
+### Redirect Payload Rules
+
+- `REDIRECT_TO_CATEGORY` requires `categoryId` (`items`, `finances`, or `actions`)
+- `REDIRECT_TO_GOAL` requires `goalId`; `goalTitle` is optional but recommended for UI labels
+- `REDIRECT_TO_OVERVIEW` needs only a user-facing `message`
+- `message` should be short and written for the user because the frontend shows it in the redirect card
+
+### Context Preservation
+
+When the backend executes a redirect command, it prepares the target chat by:
+
+- Getting or creating the destination chat
+- Copying the last several visible user/assistant messages from the source chat
+- Writing a hidden system handoff message into the destination chat
+- Including the redirect reason/message in that handoff
+- Recording recent thread IDs in message metadata for traceability
+
+This lets the destination agent pick up with the recent context already attached, while the frontend handles the actual navigation when the user clicks Go.
 
 ---
 

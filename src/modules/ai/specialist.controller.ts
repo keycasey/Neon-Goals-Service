@@ -133,7 +133,9 @@ export class SpecialistController {
 
     // Execute commands if any were returned
     const executedCommands = result.commands && result.commands.length > 0
-      ? await this.goalCommandService.executeCommands(userId, result.commands)
+      ? await this.goalCommandService.executeCommands(userId, result.commands, {
+          sourceChatId: chat.id,
+        })
       : [];
 
     return {
@@ -286,7 +288,10 @@ export class SpecialistController {
     @CurrentUser('userId') userId: string,
     @Body() body: { commands: any[] },
   ) {
-    const executedCommands = await this.goalCommandService.executeCommands(userId, body.commands);
+    const chat = await this.chatsService.getOrCreateCategoryChat(userId, categoryId);
+    const executedCommands = await this.goalCommandService.executeCommands(userId, body.commands, {
+      sourceChatId: chat.id,
+    });
     return {
       executedCommands,
       message: 'Commands executed successfully',

@@ -98,13 +98,33 @@ export class ChatsService {
     content: string,
     metadata?: Record<string, any>,
   ) {
+    return this.addMessageWithOptions(chatId, userId, role, content, {
+      metadata,
+    });
+  }
+
+  async addMessageWithOptions(
+    chatId: string,
+    userId: string,
+    role: string,
+    content: string,
+    options?: {
+      metadata?: Record<string, any>;
+      source?: string;
+      visible?: boolean;
+      threadId?: string;
+    },
+  ) {
     const message = await this.prisma.message.create({
       data: {
         userId,
         chatId,
         role,
         content,
-        metadata,
+        metadata: options?.metadata,
+        source: options?.source,
+        visible: options?.visible,
+        threadId: options?.threadId,
       },
     });
 
