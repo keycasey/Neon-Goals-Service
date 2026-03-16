@@ -17,6 +17,7 @@
     "worker:dspy:optimize": "cd worker && python -m dspy_pipeline.cli optimize --dry-run",
     "worker:dspy:bundle": "cd worker && python -m dspy_pipeline.cli bundle-stub",
     "build": "bun run prompts:generate && tsc",
+    "build:deploy": "tsc",
     "start": "node dist/src/main.js",
     "start:dev": "nest start --watch",
     "start:debug": "nodemon --inspect --exec ts-node src/main.ts",
