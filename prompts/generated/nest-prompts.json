@@ -47,7 +47,7 @@
   ],
   "bundleName": "dspy-prompt-surface-v1",
   "defaultModelId": "gpt-5-nano",
-  "generatedAt": "2026-03-12T01:15:21Z",
+  "generatedAt": "2026-03-16T00:39:21Z",
   "generator": {
     "formatVersion": 1,
     "source": "prompts/neon_prompts"
