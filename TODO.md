@@ -110,14 +110,73 @@
 
 ---
 
+## Amazon Cart & Vehicle Upgrades
+
+### High Priority
+
+- [ ] Add "Amazon Cart" item goal source/metadata
+  - [ ] Add `source: "amazon"` field to ItemGoalData
+  - [ ] Track Amazon session ID for authenticated scraping
+  - [ ] Support "Save for Later" items (not "Buy Later" goals)
+  - [ ] Distinguish between cart items vs. wish list items
+
+- [ ] Add "Vehicle Tinting" item goal subcategory
+  - [ ] Use existing `ItemCategory.vehicle` for vehicle purchase goals
+  - [ ] Use `ItemCategory.vehicle_parts` for tinting/accessories goals
+  - [ ] Add `tintingType` metadata to ItemGoalData ("full_car", "rear_windows", "single_windows", "custom")
+  - [ ] Add tinting budget field to ItemGoalData
+
+- [ ] Implement Amazon scraper service (`src/modules/scraper/amazon.service.ts`)
+  - [ ] Login flow (read session cookies from browser extension or manual paste)
+  - [ ] "Save for Later" page scraper (extract items with titles, prices, ASINs)
+  - [ ] Cart page scraper (extract all cart items with quantities)
+  - [ ] **Organize into existing categories** — assign appropriate `ItemCategory` to each item:
+    - `vehicle` for car parts, accessories
+    - `technology` for electronics
+    - `furniture` for home goods
+    - `general` for mixed items
+    - `clothing`, `pets`, etc. for other categories
+
+- [ ] Evaluate: Expand `ItemCategory` enum if needed
+  - [ ] Review current categories: vehicle, vehicle_parts, technology, sporting_goods, clothing, pets, furniture, general
+  - [ ] Add categories if Amazon items don't fit existing ones (e.g., `shopping`, `home_goods`)
+  - [ ] Consider using subcategories/tags instead of expanding enum
+  - [ ] Document decision on whether to expand enum or use `category` string + validation
+
+### Medium Priority
+
+- [ ] Create ItemGroup model (Prisma)
+  - [ ] Fields: id, name, description, userId
+  - [ ] Support grouping scraped Amazon items into logical categories
+  - [ ] Add CRUD operations for groups (GET/POST/PATCH/DELETE)
+
+- [ ] Add bulk goal creation endpoint
+  - [ ] `POST /goals/amazon/import` — Import scraped Amazon cart as goals
+  - [ ] Group items during import (assign to ItemGroup)
+  - [ ] Preserve ASINs for product lookup/price tracking
+
+- [ ] Car tinting budget tracking
+  - [ ] Add budget field to ItemGoalData for vehicle upgrades
+  - [ ] Track tinting quote: $70 (full car), $400 (rear), $150 (single window)
+  - [ ] Support custom amounts per tint type (user enters their own quotes)
+
+- [ ] Amazon scraper agent (if using AI agents)
+  - [ ] Create "Amazon Specialist" category agent
+  - [ ] Train to help organize cart items into goal groups
+  - [ ] Suggest pricing alerts for Amazon items
+
+### Low Priority
+
+- [ ] Chrome extension development (if needed for Amazon cookies)
+  - [ ] Manifest, background script, popup UI
+  - [ ] Cookie extraction from amazon.com domain
+  - [ ] Message passing to Neon Goals UI
+
+- [ ] Amazon price history tracking
+  - [ ] Store historical prices for ASINs
+  - [ ] Alert when price drops for saved items
+  - [ ] Price trend visualization
+
+---
+
 ## General Improvements
-
-- [ ] Implement agent proposal system with DSPy
-  - [ ] Represent command format (CREATE_GOAL, UPDATE_FILTERS, etc.)
-  - [ ] Ensure JSON validation in commands
-  - [ ] Add proposal confirmation workflow
-
-- [ ] Add streaming responses to all agents
-  - [ ] SSE endpoint for overview agent
-  - [ ] SSE endpoint for category specialists
-  - [ ] SSE endpoint for goal view agent
