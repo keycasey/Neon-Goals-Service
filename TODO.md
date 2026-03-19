@@ -123,8 +123,8 @@
 - [ ] Add "Vehicle Tinting" item goal subcategory
   - [ ] Use existing `ItemCategory.vehicle` for vehicle purchase goals
   - [ ] Use `ItemCategory.vehicle_parts` for tinting/accessories goals
-  - [ ] Add `tintingType` metadata to ItemGoalData ("full_car", "rear_windows", "single_windows", "custom")
-  - [ ] Add tinting budget field to ItemGoalData
+  - [ ] Use generic `searchFilters` JSON metadata for tinting preferences instead of dedicated fields
+  - [ ] **Car tinting example:** `{ "category": "vehicle_parts", "searchFilters": { "windowType": "full_car", "budget": 70 } }`
 
 - [ ] Implement Amazon scraper service (`src/modules/scraper/amazon.service.ts`)
   - [ ] Login flow (read session cookies from browser extension or manual paste)
@@ -137,7 +137,6 @@
     - `general` for mixed items
     - `clothing`, `pets`, etc. for other categories
 
-- [ ] Evaluate: Expand `ItemCategory` enum if needed
   - [ ] Review current categories: vehicle, vehicle_parts, technology, sporting_goods, clothing, pets, furniture, general
   - [ ] Add categories if Amazon items don't fit existing ones (e.g., `shopping`, `home_goods`)
   - [ ] Consider using subcategories/tags instead of expanding enum
