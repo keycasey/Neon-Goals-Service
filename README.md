@@ -65,6 +65,14 @@ OPENAI_API_KEY=your_openai_api_key
 # Agent API Key (for agent-to-agent communication)
 # Generate with: openssl rand -base64 32
 AGENT_API_KEY=your_generated_api_key_here
+
+# Finicity probe (temporary account-link experiment)
+FINICITY_PARTNER_ID=your_finicity_partner_id
+FINICITY_APP_KEY=your_finicity_app_key
+FINICITY_PARTNER_SECRET=your_finicity_partner_secret
+# Optional overrides
+# FINICITY_BASE_URL=https://api.finicity.com
+# FINICITY_REDIRECT_URI=https://www.finicity.com/connect/
 ```
 
 ## Running Locally

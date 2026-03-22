@@ -25,6 +25,11 @@ describe('isAllowedOrigin', () => {
         'https://id-preview--595ad3d6-9a38-49fb-8663-93ceef31952f.lovable.app',
       ),
     ).toBe(true);
+    expect(
+      isAllowedOrigin(
+        'https://595ad3d6-9a38-49fb-8663-93ceef31952f.lovableproject.com',
+      ),
+    ).toBe(true);
   });
 
   it('rejects unrelated third-party origins', () => {

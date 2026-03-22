@@ -7,7 +7,10 @@ const isPrivateDevHostname = (hostname: string): boolean =>
   /^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\.\d+\.\d+$/.test(hostname);
 
 const isLovablePreviewHostname = (hostname: string): boolean =>
-  hostname === 'lovable.app' || hostname.endsWith('.lovable.app');
+  hostname === 'lovable.app' ||
+  hostname.endsWith('.lovable.app') ||
+  hostname === 'lovableproject.com' ||
+  hostname.endsWith('.lovableproject.com');
 
 const isProductionHostname = (hostname: string): boolean =>
   hostname === 'goals.keycasey.com' || hostname === 'www.goals.keycasey.com';

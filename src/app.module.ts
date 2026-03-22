@@ -11,6 +11,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { BrowserUseModule } from './modules/browser-use/browser-use.module';
 import { ScraperModule } from './modules/scraper/scraper.module';
 import { PlaidModule } from './modules/plaid/plaid.module';
+import { FinicityModule } from './modules/finicity/finicity.module';
 import { ExtractionModule } from './modules/extraction/extraction.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
@@ -33,6 +34,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     BrowserUseModule,
     ScraperModule,
     PlaidModule,
+    FinicityModule,
     ExtractionModule,
   ],
 })
