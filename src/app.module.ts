@@ -13,6 +13,7 @@ import { ScraperModule } from './modules/scraper/scraper.module';
 import { PlaidModule } from './modules/plaid/plaid.module';
 import { FinicityModule } from './modules/finicity/finicity.module';
 import { ExtractionModule } from './modules/extraction/extraction.module';
+import { ProjectionsModule } from './modules/projections/projections.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
@@ -36,6 +37,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     PlaidModule,
     FinicityModule,
     ExtractionModule,
+    ProjectionsModule,
   ],
 })
 export class AppModule implements NestModule {
