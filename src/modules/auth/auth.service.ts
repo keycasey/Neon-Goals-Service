@@ -125,6 +125,13 @@ export class AuthService {
     // Check if demo user already exists
     let user = await this.prisma.user.findUnique({
       where: { email: demoEmail },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatar: true,
+        githubLogin: true,
+      },
     });
 
     if (!user) {
@@ -231,6 +238,7 @@ export class AuthService {
     // Check if user already exists
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
+      select: { id: true },
     });
 
     if (existingUser) {
