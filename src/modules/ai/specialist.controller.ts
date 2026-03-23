@@ -142,6 +142,17 @@ export class SpecialistController {
       content: result.content,
       commands: result.commands,
       executedCommands,
+      redirectProposal: result.redirectProposal,
+      goalIntent: result.goalIntent,
+      matchedGoalId: result.matchedGoalId,
+      matchedGoalTitle: result.matchedGoalTitle,
+      targetCategory: result.targetCategory,
+      toolScope: result.toolScope,
+      goalPreview: result.goalPreview,
+      awaitingConfirmation: result.awaitingConfirmation,
+      proposalType: result.proposalType,
+      routed: result.routed,
+      specialist: result.specialist,
     };
   }
 

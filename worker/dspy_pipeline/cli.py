@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import DSPyConfig
 from .dataset import build_examples_from_rows, deterministic_split, read_jsonl, write_jsonl
-from .db import fetch_visible_chat_rows
+from .db import fetch_chat_rows
 from .optimization import (
     build_dspy_examples,
     configure_dspy_models,
@@ -25,7 +25,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
     config = DSPyConfig.from_env()
     config.ensure_dirs()
 
-    rows = fetch_visible_chat_rows(config.database_url)
+    rows = fetch_chat_rows(config.database_url)
     examples = build_examples_from_rows(rows)
     train, dev = deterministic_split(examples, config.train_ratio)
 
@@ -110,13 +110,63 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     }
 
     prompts: dict[str, Any] = {
-        "overview": {"signature": "OverviewSignature", "redirectFields": ["redirect_to_category", "redirect_to_goal"]},
-        "specialists": {
-            "items": {"signature": "ItemsSignature", "redirectFields": ["redirect_to_overview", "redirect_to_goal"]},
-            "finances": {"signature": "FinancesSignature", "redirectFields": ["redirect_to_overview", "redirect_to_goal"]},
-            "actions": {"signature": "ActionsSignature", "redirectFields": ["redirect_to_overview", "redirect_to_goal"]},
+        "overview": {
+            "signature": "OverviewSignature",
+            "responseMetadataFields": [
+                "redirect_proposal",
+                "goal_intent",
+                "matched_goal_id",
+                "matched_goal_title",
+                "target_category",
+                "tool_scope",
+            ],
         },
-        "goalView": {"signature": "GoalViewSignature", "redirectFields": ["redirect_to_overview", "redirect_to_category"]},
+        "specialists": {
+            "items": {
+                "signature": "ItemsSignature",
+                "responseMetadataFields": [
+                    "redirect_proposal",
+                    "goal_intent",
+                    "matched_goal_id",
+                    "matched_goal_title",
+                    "target_category",
+                    "tool_scope",
+                ],
+            },
+            "finances": {
+                "signature": "FinancesSignature",
+                "responseMetadataFields": [
+                    "redirect_proposal",
+                    "goal_intent",
+                    "matched_goal_id",
+                    "matched_goal_title",
+                    "target_category",
+                    "tool_scope",
+                ],
+            },
+            "actions": {
+                "signature": "ActionsSignature",
+                "responseMetadataFields": [
+                    "redirect_proposal",
+                    "goal_intent",
+                    "matched_goal_id",
+                    "matched_goal_title",
+                    "target_category",
+                    "tool_scope",
+                ],
+            },
+        },
+        "goalView": {
+            "signature": "GoalViewSignature",
+            "responseMetadataFields": [
+                "redirect_proposal",
+                "goal_intent",
+                "matched_goal_id",
+                "matched_goal_title",
+                "target_category",
+                "tool_scope",
+            ],
+        },
         "proposal": {"signature": "ProposalSignature"},
         "redirectJudge": {"signature": "RedirectJudgeSignature"},
     }

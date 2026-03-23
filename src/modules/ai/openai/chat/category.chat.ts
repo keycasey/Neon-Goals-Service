@@ -5,12 +5,16 @@ import { ConfigService } from '@nestjs/config';
 import { BaseChatService, ChatResponse, StreamChunk } from './base-chat.service';
 import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
+import { ProposalType } from '../parsing/command-parser.types';
 import { PromptsService } from '../prompts/prompts.service';
 import { PlaidService } from '../../../plaid/plaid.service';
 import { AiToolsService } from '../../ai-tools.service';
 import { getSpecialistPrompt } from '../../specialist-prompts';
 import { AiModelsService } from '../../ai-models.service';
 import { ThreadHistory } from '../thread/thread.types';
+import { DspyWorkerService } from '../dspy-worker.service';
+import { buildDspyChatResponse, DspyWorkerChatResponse } from './dspy-chat-contract';
+import { buildAssistantResponseMetadata } from './chat-response-metadata';
 
 /**
  * Context for agent-routed messages
@@ -43,6 +47,7 @@ export class CategoryChat extends BaseChatService {
     promptsService: PromptsService,
     commandParserService: CommandParserService,
     private aiModelsService: AiModelsService,
+    @Optional() private dspyWorkerService?: DspyWorkerService,
     @Optional() private plaidService?: PlaidService,
     @Optional() private aiToolsService?: AiToolsService,
   ) {
@@ -75,6 +80,17 @@ export class CategoryChat extends BaseChatService {
     chatId: string,
     agentContext?: AgentContext,
   ): Promise<ChatResponse> {
+    const dspyResponse = await this.tryDspyCategoryChat(
+      userId,
+      categoryId,
+      message,
+      categoryGoals,
+      chatId,
+    );
+    if (dspyResponse) {
+      return dspyResponse;
+    }
+
     const threadId = `category_${categoryId}_${userId}`;
 
     // Check if we need to summarize before processing this message
@@ -222,6 +238,34 @@ export class CategoryChat extends BaseChatService {
     categoryGoals: any[],
     chatId: string,
   ): AsyncGenerator<StreamChunk, void, unknown> {
+    if (this.dspyWorkerService?.isAvailable()) {
+      const dspyStreamKey = `category_${categoryId}_${userId}_${Date.now()}`;
+      const dspyController = this.registerStream(dspyStreamKey);
+      try {
+        const dspyStream = await this.tryDspyCategoryChatStream(
+          userId,
+          categoryId,
+          message,
+          categoryGoals,
+          chatId,
+          dspyController.signal,
+        );
+        if (dspyStream) {
+          yield* dspyStream;
+          return;
+        }
+      } catch (error) {
+        if (this.isAbortError(error)) {
+          this.logger.log(`DSPy category stream aborted by user (${categoryId})`);
+          yield { content: '', done: true };
+          return;
+        }
+        this.logger.warn(`DSPy category stream failed, falling back (${categoryId}): ${error instanceof Error ? error.message : error}`);
+      } finally {
+        this.unregisterStream(dspyStreamKey);
+      }
+    }
+
     const threadId = `category_${categoryId}_${userId}`;
     const streamKey = `category_${categoryId}_${userId}_${Date.now()}`;
 
@@ -398,6 +442,219 @@ export class CategoryChat extends BaseChatService {
     } finally {
       this.unregisterStream(streamKey);
     }
+  }
+
+  private async tryDspyCategoryChat(
+    userId: string,
+    categoryId: string,
+    message: string,
+    categoryGoals: any[],
+    chatId: string,
+  ): Promise<ChatResponse | null> {
+    if (!this.dspyWorkerService?.isAvailable()) {
+      return null;
+    }
+
+    const workerResponse = await this.getDspyCategoryWorkerResponse(
+      userId,
+      categoryId,
+      message,
+      categoryGoals,
+      chatId,
+    );
+    if (!workerResponse) {
+      return null;
+    }
+
+    const chatResponse = buildDspyChatResponse(workerResponse);
+    return this.persistDspyCategoryResponse(userId, message, chatId, chatResponse, categoryId);
+  }
+
+  private async tryDspyCategoryChatStream(
+    userId: string,
+    categoryId: string,
+    message: string,
+    categoryGoals: any[],
+    chatId: string,
+    signal?: AbortSignal,
+  ): Promise<AsyncGenerator<StreamChunk, void, unknown> | null> {
+    if (!this.dspyWorkerService?.isAvailable()) {
+      return null;
+    }
+    const persistedMessages = await this.buildDspyCategoryRecentMessages(
+      userId,
+      categoryId,
+      message,
+      chatId,
+    );
+    const request = {
+      chatType: categoryId as 'items' | 'finances' | 'actions',
+      userMessage: message,
+      goals: categoryGoals,
+      recentMessages: persistedMessages,
+      userId,
+      chatId,
+      currentChatType: 'category',
+    };
+
+    const self = this;
+    return (async function* () {
+      let fullContent = '';
+      let finalChunk: StreamChunk | null = null;
+
+      for await (const chunk of self.dspyWorkerService.buildStreamChunks(request, signal)) {
+        if (chunk.content) {
+          fullContent += chunk.content;
+        }
+
+        if (chunk.done) {
+          finalChunk = chunk;
+          const persistedResponse = await self.persistDspyCategoryResponse(
+            userId,
+            message,
+            chatId,
+            {
+              content: fullContent,
+              commands: chunk.commands,
+              redirectProposal: chunk.redirectProposal,
+              goalIntent: chunk.goalIntent,
+              matchedGoalId: chunk.matchedGoalId,
+              matchedGoalTitle: chunk.matchedGoalTitle,
+              targetCategory: chunk.targetCategory,
+              toolScope: chunk.toolScope,
+              goalPreview: chunk.goalPreview,
+              awaitingConfirmation: chunk.awaitingConfirmation,
+              proposalType: chunk.proposalType,
+            },
+            categoryId,
+          );
+
+          if (persistedResponse) {
+            yield {
+              ...chunk,
+              content: '',
+            };
+          }
+          continue;
+        }
+
+        yield chunk;
+      }
+
+      if (!finalChunk) {
+        throw new Error(`DSPy worker stream completed without a terminal chunk (${categoryId})`);
+      }
+    })();
+  }
+
+  private async buildDspyCategoryRecentMessages(
+    userId: string,
+    categoryId: string,
+    message: string,
+    chatId: string,
+  ): Promise<any[]> {
+    const threadId = `category_${categoryId}_${userId}`;
+
+    const shouldSummarize = await this.threadService.shouldSummarize(chatId);
+    if (shouldSummarize) {
+      this.logger.log(`Triggering summarization for chat ${chatId}`);
+      await this.threadService.summarizeChat(chatId);
+      this.threadHistories.delete(threadId);
+    }
+
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.threadService.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    const persistedMessages = await this.threadService.loadChatHistoryWithMetadata(chatId, userId, 20);
+    return [...persistedMessages, { role: 'user', content: message }];
+  }
+
+  private async getDspyCategoryWorkerResponse(
+    userId: string,
+    categoryId: string,
+    message: string,
+    categoryGoals: any[],
+    chatId: string,
+  ): Promise<DspyWorkerChatResponse | null> {
+    const recentMessages = await this.buildDspyCategoryRecentMessages(
+      userId,
+      categoryId,
+      message,
+      chatId,
+    );
+
+    return this.dspyWorkerService.tryGenerateChat({
+      chatType: categoryId as 'items' | 'finances' | 'actions',
+      userMessage: message,
+      goals: categoryGoals,
+      recentMessages,
+      userId,
+      chatId,
+      currentChatType: 'category',
+    });
+  }
+
+  private async persistDspyCategoryResponse(
+    userId: string,
+    message: string,
+    chatId: string,
+    chatResponse: ChatResponse,
+    categoryId: string,
+  ): Promise<ChatResponse | null> {
+    const threadId = `category_${categoryId}_${userId}`;
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.threadService.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    const commands = this.commandParserService.sanitizeCommands(chatResponse.commands || []);
+    const confirmableCommands = this.commandParserService.getCommandsRequiringConfirmation(commands);
+    const goalPreview =
+      confirmableCommands.length > 0
+        ? this.commandParserService.generateGoalPreview(confirmableCommands)
+        : chatResponse.goalPreview;
+    const proposalType: ProposalType | undefined =
+      chatResponse.proposalType ||
+      (confirmableCommands.length > 0
+        ? this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type)
+        : undefined);
+    const cleanedContent = this.commandParserService.cleanCommandsFromContent(chatResponse.content);
+    const assistantMetadata = buildAssistantResponseMetadata({
+      commands,
+      dspyMetadata: chatResponse,
+      goalPreview,
+      awaitingConfirmation:
+        chatResponse.awaitingConfirmation || confirmableCommands.length > 0 || undefined,
+      proposalType,
+    });
+
+    history.messages.push({ role: 'user', content: message });
+    history.messages.push({ role: 'assistant', content: chatResponse.content });
+
+    await this.threadService.saveMessages(threadId, userId, [
+      { role: 'user', content: message },
+      { role: 'assistant', content: chatResponse.content, metadata: assistantMetadata },
+    ], chatId);
+
+    const response: ChatResponse = {
+      content: cleanedContent,
+      commands,
+      ...assistantMetadata,
+      proposalType,
+    };
+
+    if (chatResponse.redirectProposal?.target === 'category' && chatResponse.targetCategory) {
+      response.routed = true;
+      response.specialist = chatResponse.targetCategory;
+    }
+
+    return response;
   }
 
   // =========================================================================

@@ -11,11 +11,17 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         user_message = dspy.InputField(desc="The latest user message.")
         assistant_reply = dspy.OutputField(desc="Helpful reply for the user.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
-        redirect_to_category = dspy.OutputField(
-            desc='Optional JSON object like {"categoryId":"items","message":"..."} or empty string.'
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"category","categoryId":"items","message":"..."} or empty string.'
         )
-        redirect_to_goal = dspy.OutputField(
-            desc='Optional JSON object like {"goalId":"...","goalTitle":"...","message":"..."} or empty string.'
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_category", or "answer_question".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
         )
 
     class ItemsSignature(dspy.Signature):
@@ -25,11 +31,17 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         user_message = dspy.InputField(desc="The latest user message.")
         assistant_reply = dspy.OutputField(desc="Helpful items-specialist reply.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
-        redirect_to_overview = dspy.OutputField(
-            desc='Optional JSON object like {"message":"..."} or empty string.'
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"overview","message":"..."} or empty string.'
         )
-        redirect_to_goal = dspy.OutputField(
-            desc='Optional JSON object like {"goalId":"...","goalTitle":"...","message":"..."} or empty string.'
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_overview", or "answer_question".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
         )
 
     class FinancesSignature(dspy.Signature):
@@ -39,11 +51,17 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         user_message = dspy.InputField(desc="The latest user message.")
         assistant_reply = dspy.OutputField(desc="Helpful finance-specialist reply.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
-        redirect_to_overview = dspy.OutputField(
-            desc='Optional JSON object like {"message":"..."} or empty string.'
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"overview","message":"..."} or empty string.'
         )
-        redirect_to_goal = dspy.OutputField(
-            desc='Optional JSON object like {"goalId":"...","goalTitle":"...","message":"..."} or empty string.'
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_overview", or "answer_question".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
         )
 
     class ActionsSignature(dspy.Signature):
@@ -53,11 +71,17 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         user_message = dspy.InputField(desc="The latest user message.")
         assistant_reply = dspy.OutputField(desc="Helpful actions-specialist reply.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
-        redirect_to_overview = dspy.OutputField(
-            desc='Optional JSON object like {"message":"..."} or empty string.'
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"overview","message":"..."} or empty string.'
         )
-        redirect_to_goal = dspy.OutputField(
-            desc='Optional JSON object like {"goalId":"...","goalTitle":"...","message":"..."} or empty string.'
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_overview", or "answer_question".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
         )
 
     class GoalViewSignature(dspy.Signature):
@@ -67,11 +91,17 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         user_message = dspy.InputField(desc="The latest user message.")
         assistant_reply = dspy.OutputField(desc="Helpful goal-view reply.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
-        redirect_to_overview = dspy.OutputField(
-            desc='Optional JSON object like {"message":"..."} or empty string.'
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"overview","message":"..."} or empty string.'
         )
-        redirect_to_category = dspy.OutputField(
-            desc='Optional JSON object like {"categoryId":"items","message":"..."} or empty string.'
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_category", "route_to_overview", or "answer_question".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
         )
 
     class ProposalSignature(dspy.Signature):
@@ -81,6 +111,18 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         user_message = dspy.InputField(desc="The latest user message.")
         command_json = dspy.OutputField(desc="Single JSON command payload or [] if no command.")
         explanation = dspy.OutputField(desc="Short user-facing explanation for the proposal.")
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"goal","goalId":"..."} or empty string.'
+        )
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_category", or "answer_question".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
+        )
 
     class RedirectJudgeSignature(dspy.Signature):
         """Judge whether a redirect is appropriate and where it should go."""
@@ -92,6 +134,18 @@ def build_signatures(dspy: Any) -> dict[str, type]:
             desc="overview, category:items, category:finances, category:actions, goal:<id>, or stay."
         )
         rationale = dspy.OutputField(desc="Short reasoning for the routing decision.")
+        redirect_proposal = dspy.OutputField(
+            desc='Optional JSON object like {"target":"goal","goalId":"..."} or empty string.'
+        )
+        goal_intent = dspy.OutputField(
+            desc='Short label like "route_to_goal", "route_to_category", "route_to_overview", or "stay".'
+        )
+        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
+        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
+        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
+        tool_scope = dspy.OutputField(
+            desc='JSON array of tool scopes to keep in mind, or empty string.'
+        )
 
     return {
         "overview": OverviewSignature,
@@ -166,4 +220,3 @@ def build_programs(dspy: Any, signatures: dict[str, type]) -> dict[str, Any]:
         "proposal": ProposalProgram(),
         "redirect_judge": RedirectJudgeProgram(),
     }
-

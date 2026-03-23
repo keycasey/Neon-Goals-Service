@@ -19,11 +19,67 @@ class ChatTurnExample:
     user_message: str
     assistant_message: str
     assistant_text: str
+    assistant_metadata: dict[str, Any] | None = None
+    feedback: Any = None
+    goal_intent: str | None = None
+    redirect_proposal: dict[str, Any] | None = None
+    matched_goal_id: str | None = None
+    matched_goal_title: str | None = None
+    target_category: str | None = None
+    tool_scope: list[str] | None = None
     commands: list[dict[str, Any]] = field(default_factory=list)
     redirect_target: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _normalize_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    return {}
+
+
+def _extract_commands_from_metadata(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    commands = metadata.get("commands")
+    if not isinstance(commands, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for command in commands:
+        if isinstance(command, dict) and "type" in command and "data" in command:
+            normalized.append(command)
+    return normalized
+
+
+def _extract_feedback(messages: list[dict[str, Any]], start_index: int) -> Any:
+    for row in messages[start_index:]:
+        metadata = _normalize_metadata(row)
+        if not metadata:
+            continue
+        if "feedback" in metadata:
+            return metadata["feedback"]
+        if "responseFeedback" in metadata:
+            return metadata["responseFeedback"]
+    return None
+
+
+def _extract_redirect_target_from_metadata(metadata: dict[str, Any]) -> str | None:
+    redirect_proposal = metadata.get("redirectProposal")
+    if not isinstance(redirect_proposal, dict):
+        return None
+
+    target = redirect_proposal.get("target")
+    if target == "category":
+        category_id = redirect_proposal.get("categoryId", "")
+        return f"category:{category_id}" if category_id else "category:"
+    if target == "goal":
+        goal_id = redirect_proposal.get("goalId", "")
+        return f"goal:{goal_id}" if goal_id else "goal:"
+    if target == "overview":
+        return "overview"
+    return None
 
 
 def build_examples_from_rows(rows: Iterable[dict[str, Any]]) -> list[ChatTurnExample]:
@@ -45,10 +101,19 @@ def build_examples_from_rows(rows: Iterable[dict[str, Any]]) -> list[ChatTurnExa
             if not user_message or not assistant_message:
                 continue
 
+            assistant_metadata = _normalize_metadata(next_message)
             commands = extract_commands(assistant_message)
-            redirect_target = extract_redirect_target(commands)
+            commands.extend(_extract_commands_from_metadata(assistant_metadata))
+            redirect_target = extract_redirect_target(commands) or _extract_redirect_target_from_metadata(assistant_metadata)
+            feedback = _extract_feedback(ordered, index + 2)
+            redirect_proposal = assistant_metadata.get("redirectProposal")
+            goal_intent = assistant_metadata.get("goalIntent")
+            matched_goal_id = assistant_metadata.get("matchedGoalId")
+            matched_goal_title = assistant_metadata.get("matchedGoalTitle")
+            target_category = assistant_metadata.get("targetCategory")
+            tool_scope = assistant_metadata.get("toolScope")
             example_hash = hashlib.sha256(
-                f"{chat_id}:{index}:{user_message}:{assistant_message}".encode("utf-8")
+                f"{chat_id}:{index}:{user_message}:{assistant_message}:{json.dumps(assistant_metadata, sort_keys=True, default=str)}".encode("utf-8")
             ).hexdigest()[:16]
 
             examples.append(
@@ -61,6 +126,14 @@ def build_examples_from_rows(rows: Iterable[dict[str, Any]]) -> list[ChatTurnExa
                     user_message=user_message,
                     assistant_message=assistant_message,
                     assistant_text=strip_command_lines(assistant_message),
+                    assistant_metadata=assistant_metadata or None,
+                    feedback=feedback,
+                    goal_intent=goal_intent,
+                    redirect_proposal=redirect_proposal if isinstance(redirect_proposal, dict) else None,
+                    matched_goal_id=matched_goal_id,
+                    matched_goal_title=matched_goal_title,
+                    target_category=target_category,
+                    tool_scope=tool_scope if isinstance(tool_scope, list) else None,
                     commands=commands,
                     redirect_target=redirect_target,
                 )
@@ -106,4 +179,3 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 records.append(json.loads(line))
     return records
-

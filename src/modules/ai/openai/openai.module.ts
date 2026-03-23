@@ -11,6 +11,7 @@ import { GoalCreationChat } from './chat/goal-creation.chat';
 import { OverviewChat } from './chat/overview.chat';
 import { CategoryChat } from './chat/category.chat';
 import { AiModelsService } from '../ai-models.service';
+import { DspyWorkerService } from './dspy-worker.service';
 
 // Root orchestrator
 import { OpenAIService } from './openai.service';
@@ -60,6 +61,7 @@ import { OpenAIService } from './openai.service';
 
     // Base chat service
     BaseChatService,
+    DspyWorkerService,
 
     // Chat handlers
     GoalCreationChat,
@@ -77,6 +79,7 @@ import { OpenAIService } from './openai.service';
     PromptsService,
     CommandParserService,
     AiModelsService,
+    DspyWorkerService,
     GoalCreationChat,
     OverviewChat,
     CategoryChat,

@@ -1,13 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import OpenAI from 'openai';
 import { ChatCompletionMessageParam } from 'openai/resources';
 import { ConfigService } from '@nestjs/config';
 import { BaseChatService, ChatResponse } from './base-chat.service';
 import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
+import { ProposalType } from '../parsing/command-parser.types';
 import { PromptsService } from '../prompts/prompts.service';
 import { AiModelsService } from '../../ai-models.service';
 import { ThreadHistory } from '../thread/thread.types';
+import { DspyWorkerService } from '../dspy-worker.service';
+import {
+  buildDspyChatResponse,
+  DspyWorkerChatResponse,
+} from './dspy-chat-contract';
+import { buildAssistantResponseMetadata } from './chat-response-metadata';
 
 /**
  * Response from sendMessage includes content and optional goal data
@@ -50,6 +57,7 @@ export class GoalCreationChat extends BaseChatService {
     promptsService: PromptsService,
     commandParserService: CommandParserService,
     private aiModelsService: AiModelsService,
+    @Optional() private dspyWorkerService?: DspyWorkerService,
   ) {
     super(threadService, promptsService, commandParserService);
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
@@ -169,6 +177,16 @@ export class GoalCreationChat extends BaseChatService {
     message: string,
     goalContext: any,
   ): Promise<ChatResponse> {
+    const dspyResponse = await this.tryDspyGoalViewConversation(
+      threadId,
+      userId,
+      message,
+      goalContext,
+    );
+    if (dspyResponse) {
+      return dspyResponse;
+    }
+
     // Load history from database if not in cache
     let history = this.threadHistories.get(threadId);
     if (!history) {
@@ -247,6 +265,81 @@ ${message}`;
       this.logger.error('OpenAI API error:', error);
       throw error;
     }
+  }
+
+  private async tryDspyGoalViewConversation(
+    threadId: string,
+    userId: string,
+    message: string,
+    goalContext: any,
+  ): Promise<ChatResponse | null> {
+    if (!this.dspyWorkerService?.isAvailable()) {
+      return null;
+    }
+
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.threadService.loadThreadHistory(threadId, userId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    const contextMessage = `[Goal Context: ${JSON.stringify(goalContext)}]
+
+${message}`;
+    const recentMessages = [
+      ...(await this.threadService.loadThreadHistoryWithMetadata(threadId, userId, 20)),
+      { role: 'user', content: contextMessage },
+    ];
+
+    const workerResponse = await this.dspyWorkerService.tryGenerateChat({
+      chatType: 'goal_view',
+      userMessage: message,
+      currentGoal: goalContext,
+      recentMessages,
+      userId,
+      chatId: threadId,
+    });
+
+    if (!workerResponse) {
+      return null;
+    }
+
+    const chatResponse = buildDspyChatResponse(workerResponse);
+    const commands = this.commandParserService.sanitizeCommands(chatResponse.commands || []);
+    const confirmableCommands = this.commandParserService.getCommandsRequiringConfirmation(commands);
+    const goalPreview =
+      confirmableCommands.length > 0
+        ? this.commandParserService.generateGoalPreview(confirmableCommands)
+        : chatResponse.goalPreview;
+    const proposalType: ProposalType | undefined =
+      chatResponse.proposalType ||
+      (confirmableCommands.length > 0
+        ? this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type)
+        : undefined);
+    const assistantMetadata = buildAssistantResponseMetadata({
+      commands,
+      dspyMetadata: chatResponse,
+      goalPreview,
+      awaitingConfirmation:
+        chatResponse.awaitingConfirmation || confirmableCommands.length > 0 || undefined,
+      proposalType,
+    });
+
+    history.messages.push({ role: 'user', content: contextMessage });
+    history.messages.push({ role: 'assistant', content: chatResponse.content });
+
+    await this.threadService.saveMessages(threadId, userId, [
+      { role: 'user', content: contextMessage },
+      { role: 'assistant', content: chatResponse.content, metadata: assistantMetadata },
+    ]);
+
+    return {
+      content: this.commandParserService.cleanCommandsFromContent(chatResponse.content),
+      commands,
+      ...assistantMetadata,
+      proposalType,
+    };
   }
 
   /**

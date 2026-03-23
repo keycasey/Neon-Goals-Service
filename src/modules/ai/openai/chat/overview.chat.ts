@@ -5,10 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import { BaseChatService, ChatResponse, StreamChunk } from './base-chat.service';
 import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
+import { ProposalType } from '../parsing/command-parser.types';
 import { PromptsService } from '../prompts/prompts.service';
 import { AgentRoutingService } from '../../agent-routing.service';
 import { AiModelsService } from '../../ai-models.service';
 import { ThreadHistory } from '../thread/thread.types';
+import { DspyWorkerService } from '../dspy-worker.service';
+import { buildDspyChatResponse, DspyWorkerChatResponse } from './dspy-chat-contract';
+import { buildAssistantResponseMetadata } from './chat-response-metadata';
 
 /**
  * Service for handling overview chat conversations.
@@ -33,6 +37,7 @@ export class OverviewChat extends BaseChatService {
     promptsService: PromptsService,
     commandParserService: CommandParserService,
     private aiModelsService: AiModelsService,
+    @Optional() private dspyWorkerService?: DspyWorkerService,
     @Optional() private agentRoutingService?: AgentRoutingService,
   ) {
     super(threadService, promptsService, commandParserService);
@@ -58,6 +63,11 @@ export class OverviewChat extends BaseChatService {
     goals: any[],
     chatId: string,
   ): Promise<ChatResponse> {
+    const dspyResponse = await this.tryDspyOverviewChat(userId, message, goals, chatId);
+    if (dspyResponse) {
+      return dspyResponse;
+    }
+
     // Route finance questions to the wealth advisor
     if (this.detectFinanceIntent(message, goals)) {
       return this.handleSpecialistRouting(userId, message, goals, chatId, 'finances');
@@ -176,6 +186,33 @@ export class OverviewChat extends BaseChatService {
     goals: any[],
     chatId: string,
   ): AsyncGenerator<StreamChunk, void, unknown> {
+    if (this.dspyWorkerService?.isAvailable()) {
+      const dspyStreamKey = `overview_${userId}_${Date.now()}`;
+      const dspyController = this.registerStream(dspyStreamKey);
+      try {
+        const dspyStream = await this.tryDspyOverviewChatStream(
+          userId,
+          message,
+          goals,
+          chatId,
+          dspyController.signal,
+        );
+        if (dspyStream) {
+          yield* dspyStream;
+          return;
+        }
+      } catch (error) {
+        if (this.isAbortError(error)) {
+          this.logger.log('DSPy overview stream aborted by user');
+          yield { content: '', done: true };
+          return;
+        }
+        this.logger.warn(`DSPy overview stream failed, falling back: ${error instanceof Error ? error.message : error}`);
+      } finally {
+        this.unregisterStream(dspyStreamKey);
+      }
+    }
+
     // Route finance questions to the wealth advisor (non-streaming fallback)
     if (this.detectFinanceIntent(message, goals)) {
       yield { content: '*Consulting your Wealth Advisor...*\n\n', done: false };
@@ -422,6 +459,195 @@ export class OverviewChat extends BaseChatService {
         content: `I tried consulting the ${config.name} but encountered an issue. You can ask your question directly in the ${config.fallbackChat} chat for the best response.`,
       };
     }
+  }
+
+  private async tryDspyOverviewChat(
+    userId: string,
+    message: string,
+    goals: any[],
+    chatId: string,
+  ): Promise<ChatResponse | null> {
+    if (!this.dspyWorkerService?.isAvailable()) {
+      return null;
+    }
+
+    const workerResponse = await this.getDspyOverviewWorkerResponse(userId, message, goals, chatId);
+    if (!workerResponse) {
+      return null;
+    }
+
+    const chatResponse = buildDspyChatResponse(workerResponse);
+    return this.persistDspyOverviewResponse(userId, message, chatId, chatResponse);
+  }
+
+  private async tryDspyOverviewChatStream(
+    userId: string,
+    message: string,
+    goals: any[],
+    chatId: string,
+    signal?: AbortSignal,
+  ): Promise<AsyncGenerator<StreamChunk, void, unknown> | null> {
+    if (!this.dspyWorkerService?.isAvailable()) {
+      return null;
+    }
+    const persistedMessages = await this.buildDspyOverviewRecentMessages(userId, message, chatId);
+    const request = {
+      chatType: 'overview' as const,
+      userMessage: message,
+      goals,
+      recentMessages: persistedMessages,
+      userId,
+      chatId,
+    };
+
+    const self = this;
+    return (async function* () {
+      let fullContent = '';
+      let finalChunk: StreamChunk | null = null;
+
+      for await (const chunk of self.dspyWorkerService.buildStreamChunks(request, signal)) {
+        if (chunk.content) {
+          fullContent += chunk.content;
+        }
+
+        if (chunk.done) {
+          finalChunk = chunk;
+          const persistedResponse = await self.persistDspyOverviewResponse(
+            userId,
+            message,
+            chatId,
+            {
+              content: fullContent,
+              commands: chunk.commands,
+              redirectProposal: chunk.redirectProposal,
+              goalIntent: chunk.goalIntent,
+              matchedGoalId: chunk.matchedGoalId,
+              matchedGoalTitle: chunk.matchedGoalTitle,
+              targetCategory: chunk.targetCategory,
+              toolScope: chunk.toolScope,
+              goalPreview: chunk.goalPreview,
+              awaitingConfirmation: chunk.awaitingConfirmation,
+              proposalType: chunk.proposalType,
+            },
+          );
+
+          if (persistedResponse) {
+            yield {
+              ...chunk,
+              content: '',
+            };
+          }
+          continue;
+        }
+
+        yield chunk;
+      }
+
+      if (!finalChunk) {
+        throw new Error('DSPy worker stream completed without a terminal chunk');
+      }
+    })();
+  }
+
+  private async buildDspyOverviewRecentMessages(
+    userId: string,
+    message: string,
+    chatId: string,
+  ): Promise<any[]> {
+    const threadId = `overview_${userId}`;
+
+    const shouldSummarize = await this.threadService.shouldSummarize(chatId);
+    if (shouldSummarize) {
+      this.logger.log(`Triggering summarization for chat ${chatId}`);
+      await this.threadService.summarizeChat(chatId);
+      this.threadHistories.delete(threadId);
+    }
+
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.threadService.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    const persistedMessages = await this.threadService.loadChatHistoryWithMetadata(chatId, userId, 20);
+    return [...persistedMessages, { role: 'user', content: message }];
+  }
+
+  private async getDspyOverviewWorkerResponse(
+    userId: string,
+    message: string,
+    goals: any[],
+    chatId: string,
+  ): Promise<DspyWorkerChatResponse | null> {
+    const recentMessages = await this.buildDspyOverviewRecentMessages(userId, message, chatId);
+
+    return this.dspyWorkerService.tryGenerateChat({
+      chatType: 'overview',
+      userMessage: message,
+      goals,
+      recentMessages,
+      userId,
+      chatId,
+    });
+  }
+
+  private async persistDspyOverviewResponse(
+    userId: string,
+    message: string,
+    chatId: string,
+    chatResponse: ChatResponse,
+  ): Promise<ChatResponse | null> {
+    const threadId = `overview_${userId}`;
+    let history = this.threadHistories.get(threadId);
+    if (!history) {
+      const messages = await this.threadService.loadThreadHistory(threadId, userId, chatId);
+      history = { messages };
+      this.threadHistories.set(threadId, history);
+    }
+
+    const commands = this.commandParserService.sanitizeCommands(chatResponse.commands || []);
+    const confirmableCommands = this.commandParserService.getCommandsRequiringConfirmation(commands);
+    const goalPreview =
+      confirmableCommands.length > 0
+        ? this.commandParserService.generateGoalPreview(confirmableCommands)
+        : chatResponse.goalPreview;
+    const proposalType: ProposalType | undefined =
+      chatResponse.proposalType ||
+      (confirmableCommands.length > 0
+        ? this.commandParserService.getProposalTypeForCommand(confirmableCommands[0].type)
+        : undefined);
+    const cleanedContent = this.commandParserService.cleanCommandsFromContent(chatResponse.content);
+    const assistantMetadata = buildAssistantResponseMetadata({
+      commands,
+      dspyMetadata: chatResponse,
+      goalPreview,
+      awaitingConfirmation:
+        chatResponse.awaitingConfirmation || confirmableCommands.length > 0 || undefined,
+      proposalType,
+    });
+
+    history.messages.push({ role: 'user', content: message });
+    history.messages.push({ role: 'assistant', content: chatResponse.content });
+
+    await this.threadService.saveMessages(threadId, userId, [
+      { role: 'user', content: message },
+      { role: 'assistant', content: chatResponse.content, metadata: assistantMetadata },
+    ], chatId);
+
+    const response: ChatResponse = {
+      content: cleanedContent,
+      commands,
+      ...assistantMetadata,
+      proposalType,
+    };
+
+    if (chatResponse.redirectProposal?.target === 'category' && chatResponse.targetCategory) {
+      response.routed = true;
+      response.specialist = chatResponse.targetCategory;
+    }
+
+    return response;
   }
 
   /**

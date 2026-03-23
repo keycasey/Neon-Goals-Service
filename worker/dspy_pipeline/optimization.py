@@ -6,13 +6,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import mlflow
-
 from .commands import extract_commands
 
 
 def _require_dspy() -> Any:
     try:
+        import aiohttp  # type: ignore
+
+        if not hasattr(aiohttp, "ConnectionTimeoutError"):
+            class ConnectionTimeoutError(aiohttp.ServerTimeoutError):
+                pass
+
+            aiohttp.ConnectionTimeoutError = ConnectionTimeoutError  # type: ignore[attr-defined]
+
+        if not hasattr(aiohttp, "SocketTimeoutError"):
+            class SocketTimeoutError(aiohttp.ServerTimeoutError):
+                pass
+
+            aiohttp.SocketTimeoutError = SocketTimeoutError  # type: ignore[attr-defined]
+
         import dspy  # type: ignore
     except ImportError as exc:
         raise RuntimeError(
@@ -34,12 +46,26 @@ def build_dspy_examples(records: list[dict[str, Any]]) -> list[Any]:
             "commands": json.dumps(record.get("commands", [])),
             "redirect_target": record.get("redirect_target", ""),
             "target": record.get("redirect_target", ""),
+            "redirect_proposal": json.dumps(record.get("redirect_proposal") or {}),
+            "goal_intent": record.get("goal_intent", ""),
+            "matched_goal_id": record.get("matched_goal_id", ""),
+            "matched_goal_title": record.get("matched_goal_title", ""),
+            "target_category": record.get("target_category", ""),
+            "tool_scope": json.dumps(record.get("tool_scope") or []),
+            "feedback": json.dumps(record.get("feedback") or {}),
+            "assistant_metadata": json.dumps(record.get("assistant_metadata") or {}),
         }
 
         if hasattr(dspy, "Example"):
             example = dspy.Example(**payload)
             if hasattr(example, "with_inputs"):
-                example = example.with_inputs("conversation_context", "goal_context", "current_chat_type", "user_message")
+                example = example.with_inputs(
+                    "conversation_context",
+                    "goal_context",
+                    "current_chat_type",
+                    "user_message",
+                    "assistant_metadata",
+                )
             examples.append(example)
     return examples
 
@@ -152,6 +178,8 @@ def save_prompt_bundle(
 
 
 def start_mlflow_run(tracking_uri: str, run_name: str) -> None:
+    import mlflow
+
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment("neon-goals-dspy")
     mlflow.start_run(run_name=run_name)

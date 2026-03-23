@@ -74,6 +74,14 @@ export class AiGoalChatController {
       goalPreview: result.goalPreview,
       awaitingConfirmation: result.awaitingConfirmation,
       proposalType: result.proposalType,
+      redirectProposal: result.redirectProposal,
+      goalIntent: result.goalIntent,
+      matchedGoalId: result.matchedGoalId,
+      matchedGoalTitle: result.matchedGoalTitle,
+      targetCategory: result.targetCategory,
+      toolScope: result.toolScope,
+      routed: result.routed,
+      specialist: result.specialist,
     };
   }
 
@@ -178,6 +186,17 @@ export class AiOverviewController {
       content: result.content,
       commands: result.commands,
       executedCommands,
+      redirectProposal: result.redirectProposal,
+      goalIntent: result.goalIntent,
+      matchedGoalId: result.matchedGoalId,
+      matchedGoalTitle: result.matchedGoalTitle,
+      targetCategory: result.targetCategory,
+      toolScope: result.toolScope,
+      goalPreview: result.goalPreview,
+      awaitingConfirmation: result.awaitingConfirmation,
+      proposalType: result.proposalType,
+      routed: result.routed,
+      specialist: result.specialist,
     };
 
     // Pass through extraction info if routed to items specialist

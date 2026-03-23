@@ -4,6 +4,8 @@ import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
 import { PromptsService } from '../prompts/prompts.service';
 import OpenAI from 'openai';
+import { ProposalType } from '../parsing/command-parser.types';
+import { RedirectProposalMetadata } from './chat-response-metadata';
 
 /**
  * Types for streaming responses
@@ -18,9 +20,21 @@ export interface StreamChunk {
   /** Whether awaiting user confirmation */
   awaitingConfirmation?: boolean;
   /** Type of proposal for UI rendering */
-  proposalType?: string;
+  proposalType?: ProposalType;
   /** Parsed commands from the response */
   commands?: any[];
+  /** DSPy redirect proposal metadata */
+  redirectProposal?: RedirectProposalMetadata;
+  /** DSPy goal intent classification */
+  goalIntent?: string;
+  /** Matched goal ID from routing metadata */
+  matchedGoalId?: string;
+  /** Matched goal title from routing metadata */
+  matchedGoalTitle?: string;
+  /** Target category for redirects/routing */
+  targetCategory?: string;
+  /** Tool scope that should remain visible to the model */
+  toolScope?: string[];
   /** Whether this was routed to a specialist */
   routed?: boolean;
   /** Which specialist handled this */
@@ -37,12 +51,24 @@ export interface ChatResponse {
   content: string;
   /** Parsed commands from the response */
   commands?: any[];
+  /** DSPy redirect proposal metadata */
+  redirectProposal?: RedirectProposalMetadata;
+  /** DSPy goal intent classification */
+  goalIntent?: string;
+  /** Matched goal ID from routing metadata */
+  matchedGoalId?: string;
+  /** Matched goal title from routing metadata */
+  matchedGoalTitle?: string;
+  /** Target category for redirects/routing */
+  targetCategory?: string;
+  /** Tool scope that should remain visible to the model */
+  toolScope?: string[];
   /** Goal preview for confirmation UI */
   goalPreview?: string;
   /** Whether awaiting user confirmation */
   awaitingConfirmation?: boolean;
   /** Type of proposal for UI rendering */
-  proposalType?: string;
+  proposalType?: ProposalType;
   /** Whether this was routed to a specialist */
   routed?: boolean;
   /** Which specialist handled this */

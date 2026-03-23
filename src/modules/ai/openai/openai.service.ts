@@ -154,6 +154,14 @@ export class OpenAIService implements OnModuleInit {
     goalPreview?: string;
     awaitingConfirmation?: boolean;
     proposalType?: string;
+    redirectProposal?: any;
+    goalIntent?: string;
+    matchedGoalId?: string;
+    matchedGoalTitle?: string;
+    targetCategory?: string;
+    toolScope?: string[];
+    routed?: boolean;
+    specialist?: string;
   }> {
     return this.goalCreationChat.continueGoalConversation(
       threadId,

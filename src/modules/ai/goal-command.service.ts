@@ -20,6 +20,19 @@ export interface ExecutedCommand {
   categoryId?: string;
   redirectMessage?: string;
   threadIds?: string[];
+  redirectProposal?: {
+    target?: 'overview' | 'category' | 'goal';
+    categoryId?: string;
+    goalId?: string;
+    goalTitle?: string;
+    message?: string;
+    reason?: string;
+  };
+  goalIntent?: string;
+  matchedGoalId?: string;
+  matchedGoalTitle?: string;
+  targetCategory?: string;
+  toolScope?: string[];
 }
 
 interface ExecuteCommandOptions {
@@ -34,6 +47,29 @@ interface RedirectSourceContext {
   recentMessages: Array<{ role: string; content: string; threadId: string | null }>;
   threadIds: string[];
 }
+
+interface RedirectExecutionMetadata {
+  chatId: string;
+  redirectMessage: string;
+  threadIds: string[];
+  redirectProposal: NonNullable<ExecutedCommand['redirectProposal']>;
+  goalIntent: string;
+  matchedGoalId?: string;
+  matchedGoalTitle?: string;
+  targetCategory?: string;
+  toolScope?: string[];
+}
+
+interface RedirectToCategoryResult extends RedirectExecutionMetadata {
+  categoryId: string;
+}
+
+interface RedirectToGoalResult extends RedirectExecutionMetadata {
+  chatType: 'goal' | 'overview';
+  goalId: string;
+}
+
+interface RedirectToOverviewResult extends RedirectExecutionMetadata {}
 
 // Mapping of command types to their proposal types
 const COMMAND_PROPOSAL_TYPES: Record<string, 'accept_decline' | 'confirm_edit_cancel'> = {
@@ -215,6 +251,12 @@ export class GoalCommandService {
             categoryId: redirect.categoryId,
             redirectMessage: redirect.redirectMessage,
             threadIds: redirect.threadIds,
+            redirectProposal: redirect.redirectProposal,
+            goalIntent: redirect.goalIntent,
+            matchedGoalId: redirect.matchedGoalId,
+            matchedGoalTitle: redirect.matchedGoalTitle,
+            targetCategory: redirect.targetCategory,
+            toolScope: redirect.toolScope,
             proposalType: getProposalType('REDIRECT_TO_CATEGORY'),
             awaitingConfirmation: true,
           });
@@ -228,6 +270,12 @@ export class GoalCommandService {
             goalId: redirect.goalId,
             redirectMessage: redirect.redirectMessage,
             threadIds: redirect.threadIds,
+            redirectProposal: redirect.redirectProposal,
+            goalIntent: redirect.goalIntent,
+            matchedGoalId: redirect.matchedGoalId,
+            matchedGoalTitle: redirect.matchedGoalTitle,
+            targetCategory: redirect.targetCategory,
+            toolScope: redirect.toolScope,
             proposalType: getProposalType('REDIRECT_TO_GOAL'),
             awaitingConfirmation: true,
           });
@@ -240,6 +288,12 @@ export class GoalCommandService {
             chatType: 'overview',
             redirectMessage: redirect.redirectMessage,
             threadIds: redirect.threadIds,
+            redirectProposal: redirect.redirectProposal,
+            goalIntent: redirect.goalIntent,
+            matchedGoalId: redirect.matchedGoalId,
+            matchedGoalTitle: redirect.matchedGoalTitle,
+            targetCategory: redirect.targetCategory,
+            toolScope: redirect.toolScope,
             proposalType: getProposalType('REDIRECT_TO_OVERVIEW'),
             awaitingConfirmation: true,
           });
@@ -908,7 +962,7 @@ export class GoalCommandService {
     userId: string,
     data: { categoryId: string; message?: string; reason?: string },
     options?: ExecuteCommandOptions,
-  ) {
+  ): Promise<RedirectToCategoryResult> {
     const chat = await this.chatsService.getOrCreateCategoryChat(userId, data.categoryId);
     if (userId === 'agent') {
       return {
@@ -916,6 +970,17 @@ export class GoalCommandService {
         categoryId: data.categoryId,
         redirectMessage: data.message || data.reason || `Open the ${data.categoryId} specialist.`,
         threadIds: [],
+        redirectProposal: {
+          target: 'category' as const,
+          categoryId: data.categoryId,
+          message: data.message,
+          reason: data.reason,
+        },
+        goalIntent: 'route_to_category',
+        matchedGoalId: undefined,
+        matchedGoalTitle: undefined,
+        targetCategory: data.categoryId,
+        toolScope: ['overview', data.categoryId],
       };
     }
     const sourceContext = await this.getRedirectSourceContext(userId, options?.sourceChatId);
@@ -923,6 +988,8 @@ export class GoalCommandService {
     await this.addRedirectContextMessage(userId, chat.id, {
       threadId: this.getThreadIdForChatTarget(userId, 'category', { categoryId: data.categoryId }),
       targetLabel: `${data.categoryId} specialist`,
+      targetType: 'category',
+      categoryId: data.categoryId,
       redirectMessage: data.message,
       reason: data.reason,
       sourceContext,
@@ -937,6 +1004,17 @@ export class GoalCommandService {
       categoryId: data.categoryId,
       redirectMessage: data.message || data.reason || `Open the ${data.categoryId} specialist.`,
       threadIds: sourceContext?.threadIds || [],
+      redirectProposal: {
+        target: 'category' as const,
+        categoryId: data.categoryId,
+        message: data.message,
+        reason: data.reason,
+      },
+      goalIntent: 'route_to_category',
+      matchedGoalId: undefined,
+      matchedGoalTitle: undefined,
+      targetCategory: data.categoryId,
+      toolScope: ['overview', data.categoryId],
     };
   }
 
@@ -944,7 +1022,7 @@ export class GoalCommandService {
     userId: string,
     data: { goalId: string; goalTitle?: string; message?: string; reason?: string },
     options?: ExecuteCommandOptions,
-  ) {
+  ): Promise<RedirectToGoalResult> {
     if (userId === 'agent') {
       return {
         chatId: `agent-mock-goal-${data.goalId}`,
@@ -952,6 +1030,18 @@ export class GoalCommandService {
         goalId: data.goalId,
         redirectMessage: data.message || data.reason || 'Open that goal.',
         threadIds: [],
+        redirectProposal: {
+          target: 'goal' as const,
+          goalId: data.goalId,
+          goalTitle: data.goalTitle,
+          message: data.message,
+          reason: data.reason,
+        },
+        goalIntent: 'route_to_goal',
+        matchedGoalId: data.goalId,
+        matchedGoalTitle: data.goalTitle,
+        targetCategory: undefined,
+        toolScope: ['goal'],
       };
     }
 
@@ -985,6 +1075,9 @@ export class GoalCommandService {
     await this.addRedirectContextMessage(userId, chat.id, {
       threadId: this.getThreadIdForChatTarget(userId, 'goal', { goalId: goal.id }),
       targetLabel: goal.title,
+      targetType: 'goal',
+      goalId: goal.id,
+      goalTitle: goal.title,
       redirectMessage: data.message,
       reason: data.reason,
       sourceContext,
@@ -1000,6 +1093,18 @@ export class GoalCommandService {
       goalId: goal.id,
       redirectMessage: data.message || data.reason || `Open ${goal.title}.`,
       threadIds: sourceContext?.threadIds || [],
+      redirectProposal: {
+        target: 'goal' as const,
+        goalId: goal.id,
+        goalTitle: goal.title,
+        message: data.message,
+        reason: data.reason,
+      },
+      goalIntent: 'route_to_goal',
+      matchedGoalId: goal.id,
+      matchedGoalTitle: goal.title,
+      targetCategory: undefined,
+      toolScope: ['goal'],
     };
   }
 
@@ -1007,13 +1112,23 @@ export class GoalCommandService {
     userId: string,
     data: { message?: string; reason?: string },
     options?: ExecuteCommandOptions,
-  ) {
+  ): Promise<RedirectToOverviewResult> {
     const chat = await this.chatsService.getOrCreateOverviewChat(userId);
     if (userId === 'agent') {
       return {
         chatId: chat.id,
         redirectMessage: data.message || data.reason || 'Return to Overview.',
         threadIds: [],
+        redirectProposal: {
+          target: 'overview' as const,
+          message: data.message,
+          reason: data.reason,
+        },
+        goalIntent: 'route_to_overview',
+        matchedGoalId: undefined,
+        matchedGoalTitle: undefined,
+        targetCategory: 'overview',
+        toolScope: ['overview'],
       };
     }
     const sourceContext = await this.getRedirectSourceContext(userId, options?.sourceChatId);
@@ -1021,6 +1136,7 @@ export class GoalCommandService {
     await this.addRedirectContextMessage(userId, chat.id, {
       threadId: this.getThreadIdForChatTarget(userId, 'overview'),
       targetLabel: 'Overview',
+      targetType: 'overview',
       redirectMessage: data.message,
       reason: data.reason,
       sourceContext,
@@ -1034,6 +1150,16 @@ export class GoalCommandService {
       chatId: chat.id,
       redirectMessage: data.message || data.reason || 'Return to Overview.',
       threadIds: sourceContext?.threadIds || [],
+      redirectProposal: {
+        target: 'overview' as const,
+        message: data.message,
+        reason: data.reason,
+      },
+      goalIntent: 'route_to_overview',
+      matchedGoalId: undefined,
+      matchedGoalTitle: undefined,
+      targetCategory: 'overview',
+      toolScope: ['overview'],
     };
   }
 
@@ -1097,14 +1223,22 @@ export class GoalCommandService {
     data: {
       threadId: string;
       targetLabel: string;
+      targetType: 'overview' | 'category' | 'goal';
       redirectMessage?: string;
       reason?: string;
+      categoryId?: string;
+      goalId?: string;
+      goalTitle?: string;
       sourceContext: RedirectSourceContext | null;
     },
   ) {
     const redirectContextText = this.buildRedirectContextText(data);
     const metadata = {
       redirect: {
+        targetType: data.targetType,
+        categoryId: data.categoryId || null,
+        goalId: data.goalId || null,
+        goalTitle: data.goalTitle || null,
         targetLabel: data.targetLabel,
         redirectMessage: data.redirectMessage,
         reason: data.reason,
@@ -1116,6 +1250,29 @@ export class GoalCommandService {
         recentMessages: data.sourceContext?.recentMessages || [],
         createdAt: new Date().toISOString(),
       },
+      redirectProposal: {
+        target: data.targetType,
+        categoryId: data.categoryId || null,
+        goalId: data.goalId || null,
+        goalTitle: data.goalTitle || null,
+        message: data.redirectMessage || null,
+        reason: data.reason || null,
+      },
+      goalIntent:
+        data.targetType === 'goal'
+          ? 'route_to_goal'
+          : data.targetType === 'category'
+            ? 'route_to_category'
+            : 'route_to_overview',
+      matchedGoalId: data.goalId || null,
+      matchedGoalTitle: data.goalTitle || null,
+      targetCategory: data.targetType === 'category' ? data.categoryId || null : data.targetType === 'overview' ? 'overview' : null,
+      toolScope:
+        data.targetType === 'goal'
+          ? ['goal']
+          : data.targetType === 'category'
+            ? ['overview', data.categoryId || 'category']
+            : ['overview'],
     };
 
     await this.chatsService.addMessageWithOptions(chatId, userId, 'system', redirectContextText, {

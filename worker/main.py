@@ -10,7 +10,7 @@ import json
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 # Configure logging
@@ -186,6 +186,23 @@ SCRAPER_SCRIPTS: Dict[str, str] = {
     "carvana": "scrape-carvana-interactive.py",
     # KBB deprecated - uses same Cox Automotive API as AutoTrader
 }
+
+try:
+    from dspy_pipeline.config import DSPyConfig
+    from dspy_pipeline.live_chat import (
+        build_stream_completion_event,
+        build_stream_events,
+        build_stream_messages,
+        run_live_chat,
+    )
+    DSPY_LIVE_AVAILABLE = True
+except Exception:
+    DSPyConfig = None
+    build_stream_completion_event = None
+    build_stream_events = None
+    build_stream_messages = None
+    run_live_chat = None
+    DSPY_LIVE_AVAILABLE = False
 
 # Note: All scrapers now rely on worker for VPN retry on bot detection
 # Individual scrapers return None on bot detection, worker retries with VPN
@@ -422,6 +439,84 @@ def run_scraper_and_callback(
 async def health_check():
     """Health check endpoint for systemd monitoring."""
     return {"status": "healthy", "service": "scraper-worker"}
+
+
+@app.post("/dspy/chat")
+async def dspy_chat(request: Request):
+    """Run a DSPy-backed chat turn and return the full response payload."""
+    if not DSPY_LIVE_AVAILABLE or run_live_chat is None:
+        raise HTTPException(status_code=503, detail="DSPy live chat is unavailable")
+
+    body = await request.json()
+
+    try:
+        result = await asyncio.to_thread(run_live_chat, body)
+        response = result.to_dict()
+        response["metadata"] = response.get("metadata") or {}
+        response["content"] = result.content
+        return response
+    except Exception as exc:
+        logger.error(f"DSPy live chat failed: {exc}")
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@app.post("/dspy/chat/stream")
+async def dspy_chat_stream(request: Request):
+    """Stream a DSPy-backed chat turn using SSE-compatible JSON chunks."""
+    if (
+        not DSPY_LIVE_AVAILABLE
+        or run_live_chat is None
+        or build_stream_completion_event is None
+        or build_stream_messages is None
+        or DSPyConfig is None
+    ):
+        raise HTTPException(status_code=503, detail="DSPy live chat is unavailable")
+
+    body = await request.json()
+
+    async def event_stream():
+        from openai import AsyncOpenAI
+
+        config = DSPyConfig.from_env()
+        if not config.openai_api_key:
+            raise HTTPException(status_code=503, detail="OPENAI_API_KEY is required for DSPy streaming")
+
+        model_name = config.student_model.split("/", 1)[1] if "/" in config.student_model else config.student_model
+        messages = build_stream_messages(body)
+        client = AsyncOpenAI(api_key=config.openai_api_key)
+        streamed_parts: list[str] = []
+
+        try:
+            stream = await client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if await request.is_disconnected():
+                    return
+
+                delta = chunk.choices[0].delta.content if chunk.choices else ""
+                if not delta:
+                    continue
+
+                streamed_parts.append(delta)
+                yield f"data: {json.dumps({'content': delta, 'done': False})}\n\n"
+
+            if await request.is_disconnected():
+                return
+
+            metadata_result = await asyncio.to_thread(run_live_chat, body)
+            final_event = build_stream_completion_event("".join(streamed_parts), metadata_result)
+            yield f"data: {json.dumps(final_event)}\n\n"
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.error(f"DSPy live chat stream failed: {exc}")
+            yield f"data: {json.dumps({'content': '', 'done': True, 'error': str(exc)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.post("/run/{scraper_name}")

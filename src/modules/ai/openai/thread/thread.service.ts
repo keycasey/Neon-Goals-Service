@@ -81,6 +81,93 @@ export class ThreadService {
   }
 
   /**
+   * Load persisted chat messages with metadata for DSPy/live-routing contexts.
+   *
+   * Unlike loadThreadHistory, this preserves metadata, visibility, and source.
+   * Use this when building worker requests or datasets that need the full record.
+   */
+  async loadChatHistoryWithMetadata(
+    chatId: string,
+    userId: string,
+    limit = 20,
+  ): Promise<Array<{
+    role: string;
+    content: string;
+    metadata: any;
+    source: string;
+    visible: boolean;
+    threadId: string | null;
+    createdAt: Date;
+  }>> {
+    const messages = await this.prisma.message.findMany({
+      where: { chatId, userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        role: true,
+        content: true,
+        metadata: true,
+        source: true,
+        visible: true,
+        threadId: true,
+        createdAt: true,
+      },
+    });
+
+    return [...messages].reverse().map((message) => ({
+      role: message.role,
+      content: message.content,
+      metadata: message.metadata,
+      source: message.source,
+      visible: message.visible,
+      threadId: message.threadId,
+      createdAt: message.createdAt,
+    }));
+  }
+
+  /**
+   * Load persisted thread messages with metadata for goal-view and thread-based contexts.
+   */
+  async loadThreadHistoryWithMetadata(
+    threadId: string,
+    userId: string,
+    limit = 20,
+  ): Promise<Array<{
+    role: string;
+    content: string;
+    metadata: any;
+    source: string;
+    visible: boolean;
+    threadId: string | null;
+    createdAt: Date;
+  }>> {
+    const messages = await this.prisma.message.findMany({
+      where: { threadId, userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        role: true,
+        content: true,
+        metadata: true,
+        source: true,
+        visible: true,
+        threadId: true,
+        createdAt: true,
+      },
+    });
+
+    return [...messages].reverse().map((message) => ({
+      role: message.role,
+      content: message.content,
+      metadata: message.metadata,
+      source: message.source,
+      visible: message.visible,
+      threadId: message.threadId,
+      createdAt: message.createdAt,
+    }));
+  }
+
+  /**
    * Save conversation messages to database.
    * Note: This is a legacy method for messages saved via threadId only.
    * New code should save messages through ChatsService.
