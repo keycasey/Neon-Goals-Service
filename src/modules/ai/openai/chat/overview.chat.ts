@@ -437,7 +437,14 @@ export class OverviewChat extends BaseChatService {
       // Save to overview chat
       await this.threadService.saveMessages(threadId, userId, [
         { role: 'user', content: message },
-        { role: 'assistant', content },
+        {
+          role: 'assistant',
+          content,
+          metadata: buildAssistantResponseMetadata({
+            commands: result.commands,
+            extraction: result.extraction,
+          }),
+        },
       ], chatId);
 
       const response: ChatResponse = {

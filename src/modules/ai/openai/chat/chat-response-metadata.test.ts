@@ -15,6 +15,11 @@ describe('buildAssistantResponseMetadata', () => {
           },
         },
       ],
+      extraction: {
+        groupId: 'extract_123',
+        urls: ['https://example.com/item'],
+        streamUrl: '/api/extraction/stream/extract_123',
+      },
       dspyMetadata: {
         redirectProposal: {
           target: 'goal',
@@ -46,6 +51,11 @@ describe('buildAssistantResponseMetadata', () => {
         goalId: 'goal_7',
         goalTitle: 'Emergency Fund',
         message: 'I will take you there.',
+      },
+      extraction: {
+        groupId: 'extract_123',
+        urls: ['https://example.com/item'],
+        streamUrl: '/api/extraction/stream/extract_123',
       },
       goalIntent: 'route_to_goal',
       matchedGoalId: 'goal_7',

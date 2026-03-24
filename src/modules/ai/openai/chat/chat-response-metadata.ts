@@ -23,6 +23,11 @@ export interface AssistantResponseMetadata extends DspyResponseMetadata {
   goalPreview?: string;
   awaitingConfirmation?: boolean;
   proposalType?: ProposalType;
+  extraction?: {
+    groupId: string;
+    urls: string[];
+    streamUrl: string;
+  };
 }
 
 export interface BuildAssistantResponseMetadataInput {
@@ -31,6 +36,7 @@ export interface BuildAssistantResponseMetadataInput {
   goalPreview?: string;
   awaitingConfirmation?: boolean;
   proposalType?: ProposalType;
+  extraction?: AssistantResponseMetadata['extraction'];
 }
 
 function isRedirectCommandType(type: string): boolean {
@@ -178,5 +184,6 @@ export function buildAssistantResponseMetadata(
     goalPreview: input.goalPreview,
     awaitingConfirmation: hasConfirmationState(commands, dspyMetadata, input.awaitingConfirmation),
     proposalType: resolveProposalType(commands, dspyMetadata, input.proposalType),
+    extraction: input.extraction,
   });
 }

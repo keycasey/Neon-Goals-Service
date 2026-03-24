@@ -8,8 +8,8 @@ export class ProjectionsController {
   constructor(private readonly projectionsService: ProjectionsService) {}
 
   @Get('overview')
-  getOverview(@Query('horizon') horizon?: string) {
-    return this.projectionsService.getOverview(Number(horizon) || 12);
+  getOverview(@Req() req: any, @Query('horizon') horizon?: string) {
+    return this.projectionsService.getOverview(req.user.userId, Number(horizon) || 12);
   }
 
   @Get('cashflow')
