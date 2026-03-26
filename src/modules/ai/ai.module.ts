@@ -8,7 +8,7 @@ import { GoalCommandService } from './goal-command.service';
 import { GoalModificationService } from './goal-modification.service';
 import { OpenAIModule } from './openai/openai.module';
 import { ConversationSummaryService } from './conversation-summary.service';
-import { AgentRoutingService } from './agent-routing.service';
+import { AgentRoutingModule } from './agent-routing.module';
 import { GreetingSummaryService } from './greeting-summary.service';
 import { AiToolsService } from './ai-tools.service';
 import { ConfigModule } from '@nestjs/config';
@@ -30,6 +30,7 @@ import { RateLimitService } from '../../common/services/rate-limit.service';
     PlaidModule,
     HttpModule,
     ExtractionModule,
+    AgentRoutingModule,
     OpenAIModule,
   ],
   controllers: [AiController, AiGoalChatController, AiOverviewController, SpecialistController],
@@ -38,7 +39,6 @@ import { RateLimitService } from '../../common/services/rate-limit.service';
     GoalCommandService,
     GoalModificationService,
     ConversationSummaryService,
-    AgentRoutingService,
     GreetingSummaryService,
     AiToolsService,
     RateLimitService,
@@ -48,7 +48,6 @@ import { RateLimitService } from '../../common/services/rate-limit.service';
     GoalCommandService,
     GoalModificationService,
     ConversationSummaryService,
-    AgentRoutingService,
     GreetingSummaryService,
     AiToolsService,
     RateLimitService,

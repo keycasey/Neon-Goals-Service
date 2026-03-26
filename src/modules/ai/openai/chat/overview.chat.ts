@@ -70,12 +70,18 @@ export class OverviewChat extends BaseChatService {
 
     // Route finance questions to the wealth advisor
     if (this.detectFinanceIntent(message, goals)) {
-      return this.handleSpecialistRouting(userId, message, goals, chatId, 'finances');
+      const routedResponse = await this.trySpecialistRouting(userId, message, chatId, 'finances');
+      if (routedResponse) {
+        return routedResponse;
+      }
     }
 
     // Route item-related queries (URLs, product links) to the items specialist
     if (this.detectItemsIntent(message, goals)) {
-      return this.handleSpecialistRouting(userId, message, goals, chatId, 'items');
+      const routedResponse = await this.trySpecialistRouting(userId, message, chatId, 'items');
+      if (routedResponse) {
+        return routedResponse;
+      }
     }
 
     // Use a special thread ID for overview chat
@@ -215,9 +221,9 @@ export class OverviewChat extends BaseChatService {
 
     // Route finance questions to the wealth advisor (non-streaming fallback)
     if (this.detectFinanceIntent(message, goals)) {
-      yield { content: '*Consulting your Wealth Advisor...*\n\n', done: false };
-      try {
-        const result = await this.handleSpecialistRouting(userId, message, goals, chatId, 'finances');
+      const result = await this.trySpecialistRouting(userId, message, chatId, 'finances');
+      if (result) {
+        yield { content: '*Consulting your Wealth Advisor...*\n\n', done: false };
         // Strip the routing indicator since we already yielded it
         const specialistContent = result.content.replace('*Consulting your Wealth Advisor...*\n\n', '');
         yield { content: specialistContent, done: false };
@@ -226,18 +232,15 @@ export class OverviewChat extends BaseChatService {
           finalChunk.commands = result.commands;
         }
         yield finalChunk;
-      } catch (error) {
-        yield { content: 'I tried consulting the Wealth Advisor but encountered an issue. Please try the Finance Specialist chat directly.', done: false };
-        yield { content: '', done: true };
+        return;
       }
-      return;
     }
 
     // Route item-related queries to the items specialist
     if (this.detectItemsIntent(message, goals)) {
-      yield { content: '*Consulting your Items Specialist...*\n\n', done: false };
-      try {
-        const result = await this.handleSpecialistRouting(userId, message, goals, chatId, 'items');
+      const result = await this.trySpecialistRouting(userId, message, chatId, 'items');
+      if (result) {
+        yield { content: '*Consulting your Items Specialist...*\n\n', done: false };
         // Strip the routing indicator since we already yielded it
         const specialistContent = result.content.replace('*Consulting your Items Specialist...*\n\n', '');
         yield { content: specialistContent, done: false };
@@ -254,11 +257,8 @@ export class OverviewChat extends BaseChatService {
           finalChunk.extraction = result.extraction;
         }
         yield finalChunk;
-      } catch (error) {
-        yield { content: 'I tried consulting the Items Specialist but encountered an issue. Please try the Items Specialist chat directly.', done: false };
-        yield { content: '', done: true };
+        return;
       }
-      return;
     }
 
     const threadId = `overview_${userId}`;
@@ -384,17 +384,9 @@ export class OverviewChat extends BaseChatService {
   private async handleSpecialistRouting(
     userId: string,
     message: string,
-    goals: any[],
     chatId: string,
     specialist: string,
   ): Promise<ChatResponse> {
-    if (!this.agentRoutingService) {
-      this.logger.warn('AgentRoutingService not available, falling back to direct response');
-      return {
-        content: 'I\'d love to help with that question, but the specialist is currently unavailable. Please try the specialist chat directly.',
-      };
-    }
-
     const threadId = `overview_${userId}`;
 
     // Load recent overview history for context (last 3 exchanges = 6 messages)
@@ -462,9 +454,28 @@ export class OverviewChat extends BaseChatService {
       return response;
     } catch (error: any) {
       this.logger.error(`Specialist routing failed: ${error.message}`);
-      return {
-        content: `I tried consulting the ${config.name} but encountered an issue. You can ask your question directly in the ${config.fallbackChat} chat for the best response.`,
-      };
+      throw error;
+    }
+  }
+
+  private async trySpecialistRouting(
+    userId: string,
+    message: string,
+    chatId: string,
+    specialist: string,
+  ): Promise<ChatResponse | null> {
+    if (!this.agentRoutingService) {
+      this.logger.warn(`AgentRoutingService not available for ${specialist}; falling back to overview handling`);
+      return null;
+    }
+
+    try {
+      return await this.handleSpecialistRouting(userId, message, chatId, specialist);
+    } catch (error: any) {
+      this.logger.warn(
+        `Specialist routing failed for ${specialist}; falling back to overview handling: ${error.message}`,
+      );
+      return null;
     }
   }
 

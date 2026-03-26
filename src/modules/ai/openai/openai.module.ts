@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../../../config/prisma.module';
+import { AgentRoutingModule } from '../agent-routing.module';
 
 // OpenAI sub-services
 import { ThreadService } from './thread/thread.service';
@@ -38,19 +39,19 @@ import { OpenAIService } from './openai.service';
  * **Dependencies (injected from parent AiModule):**
  * - PrismaService: Database access for message persistence (via PrismaModule)
  * - ConversationSummaryService: Summary-aware context building
- * - AgentRoutingService: Optional specialist routing
+ * - AgentRoutingService: Specialist routing
  * - AiToolsService: Optional tool calling for finance data
  * - PlaidService: Optional financial data access
  *
  * Note: This module imports ConfigModule for ConfigService and PrismaModule
- * for database access. The optional services (AgentRoutingService, AiToolsService,
- * PlaidService, ConversationSummaryService) are provided by the parent AiModule
- * and injected via @Optional() decorators in the child services.
+ * for database access and AgentRoutingModule for specialist routing.
+ * Other optional services are injected via @Optional() decorators in the child services.
  */
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
+    AgentRoutingModule,
   ],
   providers: [
     // Core services (no external dependencies except Prisma)
