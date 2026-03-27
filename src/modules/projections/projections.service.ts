@@ -424,14 +424,14 @@ export class ProjectionsService {
     ]
       .filter(Boolean)
       .join(' '));
-    const direction = this.inferDirection(label, categoryText);
+    const direction = this.inferDirection(transaction.amount, label, categoryText);
     return {
       ...transaction,
       accountId: account.id,
       accountName: account.accountName,
       direction,
       normalizedLabel: label,
-      monthlyEquivalent: transaction.amount,
+      monthlyEquivalent: Math.abs(transaction.amount),
     };
   }
 
@@ -458,7 +458,7 @@ export class ProjectionsService {
         continue;
       }
 
-      const amounts = group.map((item) => item.amount);
+      const amounts = group.map((item) => Math.abs(item.amount));
       const averageAmount = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length;
       const first = group[0];
       recurringItems.push({
@@ -497,10 +497,10 @@ export class ProjectionsService {
     const spanMonths = spanDays / 30;
     const net = transactions.reduce((sum, transaction) => {
       if (transaction.direction === 'income') {
-        return sum + transaction.amount;
+        return sum + Math.abs(transaction.amount);
       }
       if (transaction.direction === 'expense') {
-        return sum - transaction.amount;
+        return sum - Math.abs(transaction.amount);
       }
       return sum;
     }, 0);
@@ -551,7 +551,7 @@ export class ProjectionsService {
     return sorted[middle];
   }
 
-  private inferDirection(label: string, categoryText: string): 'income' | 'expense' | 'ignore' {
+  private inferDirection(amount: number, label: string, categoryText: string): 'income' | 'expense' | 'ignore' {
     if (
       this.matchesAny(label, [
         'transfer',
@@ -568,6 +568,14 @@ export class ProjectionsService {
       this.matchesAny(categoryText, ['transfer', 'credit card payment', 'loan payment'])
     ) {
       return 'ignore';
+    }
+
+    if (amount < 0) {
+      return 'income';
+    }
+
+    if (amount > 0) {
+      return 'expense';
     }
 
     if (

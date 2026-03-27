@@ -649,7 +649,7 @@ export class PlaidService {
           create: {
             plaidAccountId: account.id,
             transactionId: txn.transaction_id,
-            amount: Math.abs(txn.amount), // Store as positive for consistency
+            amount: txn.amount,
             currency: txn.iso_currency_code || 'USD',
             date: new Date(txn.date),
             name: txn.name,
@@ -666,7 +666,7 @@ export class PlaidService {
             transactionType: txn.transaction_type,
           },
           update: {
-            amount: Math.abs(txn.amount),
+            amount: txn.amount,
             pending: txn.pending,
             // Update pending status when transaction settles
             updatedAt: new Date(),

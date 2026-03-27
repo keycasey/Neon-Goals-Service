@@ -16,7 +16,7 @@ const checkingAccount = {
     {
       id: 'txn_salary_1',
       transactionId: 'txn_salary_1',
-      amount: 3000,
+      amount: -3000,
       currency: 'USD',
       date: new Date('2026-01-01T00:00:00.000Z'),
       name: 'Payroll Deposit',
@@ -32,7 +32,7 @@ const checkingAccount = {
     {
       id: 'txn_salary_2',
       transactionId: 'txn_salary_2',
-      amount: 3000,
+      amount: -3000,
       currency: 'USD',
       date: new Date('2026-02-01T00:00:00.000Z'),
       name: 'Payroll Deposit',
@@ -268,6 +268,55 @@ describe('ProjectionsService', () => {
 
     expect(cashflow.netMonthlyCashflow).toBe(1785);
     expect(cashflow.recurringExpenses.some((item) => item.label === 'Credit Card Payment Thank You')).toBe(false);
+  });
+
+  it('treats negative signed amounts as income even when labels are ambiguous', async () => {
+    const service = new ProjectionsService(
+      createPrismaMock([
+        {
+          ...checkingAccount,
+          transactions: [
+            {
+              id: 'txn_pay_1',
+              transactionId: 'txn_pay_1',
+              amount: -3047.02,
+              currency: 'USD',
+              date: new Date('2026-02-10T00:00:00.000Z'),
+              name: '100-SFDC INC',
+              merchantName: '100-SFDC INC',
+              category: 'OTHER',
+              categories: ['OTHER'],
+              paymentChannel: 'other',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_pay_2',
+              transactionId: 'txn_pay_2',
+              amount: -3047.02,
+              currency: 'USD',
+              date: new Date('2026-02-24T00:00:00.000Z'),
+              name: '100-SFDC INC',
+              merchantName: '100-SFDC INC',
+              category: 'OTHER',
+              categories: ['OTHER'],
+              paymentChannel: 'other',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+          ],
+        },
+      ]),
+    );
+
+    const cashflow = await service.getCashflow('user_1');
+
+    expect(cashflow.recurringIncome.some((item) => item.label === '100 Sfdc Inc')).toBe(true);
+    expect(cashflow.recurringExpenses.some((item) => item.label === '100 Sfdc Inc')).toBe(false);
   });
 
   it('falls back to balances when no cached transactions exist', async () => {
