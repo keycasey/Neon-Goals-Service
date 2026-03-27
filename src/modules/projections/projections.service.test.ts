@@ -15,6 +15,7 @@ const checkingAccount = {
   transactions: [
     {
       id: 'txn_salary_1',
+      transactionId: 'txn_salary_1',
       amount: 3000,
       currency: 'USD',
       date: new Date('2026-01-01T00:00:00.000Z'),
@@ -30,6 +31,7 @@ const checkingAccount = {
     },
     {
       id: 'txn_salary_2',
+      transactionId: 'txn_salary_2',
       amount: 3000,
       currency: 'USD',
       date: new Date('2026-02-01T00:00:00.000Z'),
@@ -45,6 +47,7 @@ const checkingAccount = {
     },
     {
       id: 'txn_rent_1',
+      transactionId: 'txn_rent_1',
       amount: 1200,
       currency: 'USD',
       date: new Date('2026-01-03T00:00:00.000Z'),
@@ -60,6 +63,7 @@ const checkingAccount = {
     },
     {
       id: 'txn_rent_2',
+      transactionId: 'txn_rent_2',
       amount: 1200,
       currency: 'USD',
       date: new Date('2026-02-03T00:00:00.000Z'),
@@ -75,6 +79,7 @@ const checkingAccount = {
     },
     {
       id: 'txn_sub_1',
+      transactionId: 'txn_sub_1',
       amount: 15,
       currency: 'USD',
       date: new Date('2026-01-05T00:00:00.000Z'),
@@ -90,6 +95,7 @@ const checkingAccount = {
     },
     {
       id: 'txn_sub_2',
+      transactionId: 'txn_sub_2',
       amount: 15,
       currency: 'USD',
       date: new Date('2026-02-05T00:00:00.000Z'),
@@ -156,6 +162,114 @@ describe('ProjectionsService', () => {
     expect(overview.confidence).not.toBe('insufficient');
   });
 
+  it('keeps recurring items scoped to an account and exposes source transaction ids', async () => {
+    const service = new ProjectionsService(
+      createPrismaMock([
+        checkingAccount,
+        {
+          ...checkingAccount,
+          id: 'acct_savings',
+          accountName: 'High Yield Savings',
+          transactions: [
+            {
+              id: 'txn_sub_3',
+              transactionId: 'txn_sub_3',
+              amount: 15,
+              currency: 'USD',
+              date: new Date('2026-01-06T00:00:00.000Z'),
+              name: 'Spotify',
+              merchantName: 'Spotify',
+              category: 'subscriptions',
+              categories: ['subscriptions'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_sub_4',
+              transactionId: 'txn_sub_4',
+              amount: 15,
+              currency: 'USD',
+              date: new Date('2026-02-06T00:00:00.000Z'),
+              name: 'Spotify',
+              merchantName: 'Spotify',
+              category: 'subscriptions',
+              categories: ['subscriptions'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+          ],
+        },
+      ]),
+    );
+
+    const cashflow = await service.getCashflow('user_1');
+    const spotifyExpenses = cashflow.recurringExpenses.filter((item) => item.label === 'Spotify');
+
+    expect(spotifyExpenses).toHaveLength(2);
+    expect(spotifyExpenses.map((item) => item.accountName).sort()).toEqual([
+      'Everyday Checking',
+      'High Yield Savings',
+    ]);
+    expect(spotifyExpenses[0]?.sourceTransactionIds?.length).toBe(2);
+    expect(spotifyExpenses[1]?.sourceTransactionIds?.length).toBe(2);
+  });
+
+  it('ignores recurring credit card payments when estimating cashflow', async () => {
+    const service = new ProjectionsService(
+      createPrismaMock([
+        {
+          ...checkingAccount,
+          transactions: [
+            ...checkingAccount.transactions,
+            {
+              id: 'txn_payment_1',
+              transactionId: 'txn_payment_1',
+              amount: 400,
+              currency: 'USD',
+              date: new Date('2026-01-10T00:00:00.000Z'),
+              name: 'Credit Card Payment Thank You',
+              merchantName: null,
+              category: 'payment',
+              categories: ['payment'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_payment_2',
+              transactionId: 'txn_payment_2',
+              amount: 400,
+              currency: 'USD',
+              date: new Date('2026-02-10T00:00:00.000Z'),
+              name: 'Credit Card Payment Thank You',
+              merchantName: null,
+              category: 'payment',
+              categories: ['payment'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+          ],
+        },
+      ]),
+    );
+
+    const cashflow = await service.getCashflow('user_1');
+
+    expect(cashflow.netMonthlyCashflow).toBe(1785);
+    expect(cashflow.recurringExpenses.some((item) => item.label === 'Credit Card Payment Thank You')).toBe(false);
+  });
+
   it('falls back to balances when no cached transactions exist', async () => {
     const service = new ProjectionsService(
       createPrismaMock([
@@ -197,6 +311,7 @@ describe('ProjectionsService', () => {
           orderBy: { date: 'desc' },
           take: 180,
           select: {
+            transactionId: true,
             amount: true,
             date: true,
             name: true,

@@ -4,6 +4,7 @@ import os
 import logging
 import asyncio
 import time
+import shutil
 import aiohttp
 import requests
 import json
@@ -177,6 +178,35 @@ def get_vpn_manager():
         _vpn_manager = create_vpn_manager(total_configs=5, config_prefix="v")
     return _vpn_manager
 
+
+def get_browser_launcher_prefix() -> list[str]:
+    """
+    Build the launcher prefix for browser-opening scrape jobs.
+
+    Auto mode prefers Prime Run when it is installed locally; otherwise it
+    falls back to plain xvfb-run so the worker still works on non-Nvidia hosts.
+    The SCRAPER_BROWSER_LAUNCHER env var can force `prime-run` or `xvfb-run`.
+    """
+    launcher_mode = os.getenv("SCRAPER_BROWSER_LAUNCHER", "auto").strip().lower()
+    xvfb_args = ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24"]
+    prime_run_available = shutil.which("prime-run") is not None
+
+    if launcher_mode == "xvfb-run":
+        return xvfb_args
+
+    if launcher_mode == "prime-run":
+        if prime_run_available:
+            return ["prime-run", *xvfb_args]
+        logger.warning(
+            "SCRAPER_BROWSER_LAUNCHER=prime-run was requested, but prime-run is not installed; falling back to xvfb-run"
+        )
+        return xvfb_args
+
+    if prime_run_available:
+        return ["prime-run", *xvfb_args]
+
+    return xvfb_args
+
 # Scraper script mapping
 SCRAPER_SCRIPTS: Dict[str, str] = {
     "cargurus-camoufox": "scrape-cargurus.py",
@@ -278,11 +308,8 @@ def run_scraper_and_callback(
         if not os.path.exists(script_path):
             raise FileNotFoundError(f"Script not found: {script_path}")
 
-        # Build the command using xvfb-run for virtual display
-        # --auto-servernum ensures each invocation gets a unique display number,
-        # preventing conflicts when scrapers run sequentially
         python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
-        xvfb_args = ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24"]
+        browser_launcher = get_browser_launcher_prefix()
 
         # Different scrapers expect different parameter formats
         import json as json_mod
@@ -297,20 +324,20 @@ def run_scraper_and_callback(
                 # Old format: structured data, use adapter
                 scraper_input = json_mod.dumps({"structured": vehicle_filters})
             command = [
-                *xvfb_args,
+                *browser_launcher,
                 python_bin, script_path, scraper_input, "10"
             ]
         elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "carvana"] and vehicle_filters:
             # These scrapers expect dict with their specific keys - pass JSON directly
             filters_json = json_mod.dumps(vehicle_filters)
             command = [
-                *xvfb_args,
+                *browser_launcher,
                 python_bin, script_path, filters_json, "10"
             ]
         else:
             # Fallback to plain query string for scrapers without filters
             command = [
-                *xvfb_args,
+                *browser_launcher,
                 python_bin, script_path, f"'{query}'", "10"
             ]
 
@@ -814,11 +841,8 @@ def run_single_scraper(
             if not os.path.exists(script_path):
                 raise FileNotFoundError(f"Script not found: {script_path}")
 
-            # Build the command using xvfb-run for virtual display
-            # --auto-servernum ensures each invocation gets a unique display number,
-            # preventing conflicts when scrapers run sequentially
             python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
-            xvfb_args = ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24"]
+            browser_launcher = get_browser_launcher_prefix()
 
             # Different scrapers expect different parameter formats
             import json as json_mod
@@ -833,20 +857,20 @@ def run_single_scraper(
                     # Old format: structured data, use adapter
                     scraper_input = json_mod.dumps({"structured": vehicle_filters})
                 command = [
-                    *xvfb_args,
+                    *browser_launcher,
                     python_bin, script_path, scraper_input, "10"
                 ]
             elif scraper_name in ["cargurus-camoufox", "truecar", "carmax", "carvana"] and vehicle_filters:
                 # These scrapers expect dict with their specific keys - pass JSON directly
                 filters_json = json_mod.dumps(vehicle_filters)
                 command = [
-                    *xvfb_args,
+                    *browser_launcher,
                     python_bin, script_path, filters_json, "10"
                 ]
             else:
                 # Fallback to plain query string for scrapers without filters
                 command = [
-                    *xvfb_args,
+                    *browser_launcher,
                     python_bin, script_path, f"'{query}'", "10"
                 ]
 

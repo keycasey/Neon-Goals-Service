@@ -45,6 +45,9 @@ type RecurringItem = {
   confidence: 'high' | 'medium' | 'low';
   source: 'linked' | 'manual';
   category?: string;
+  accountId?: string;
+  accountName?: string;
+  sourceTransactionIds?: string[];
 };
 
 type CashflowSummary = {
@@ -87,6 +90,7 @@ type ManualCashflow = {
 };
 
 type PlaidTransactionRecord = {
+  transactionId: string;
   amount: number;
   date: Date;
   name: string;
@@ -297,6 +301,7 @@ export class ProjectionsService {
           orderBy: { date: 'desc' },
           take: 180,
           select: {
+            transactionId: true,
             amount: true,
             date: true,
             name: true,
@@ -440,7 +445,7 @@ export class ProjectionsService {
       if (transaction.normalizedLabel === 'uncategorized') {
         continue;
       }
-      const key = transaction.normalizedLabel;
+      const key = `${transaction.accountId}:${transaction.normalizedLabel}`;
       const bucket = groups.get(key) ?? [];
       bucket.push(transaction);
       groups.set(key, bucket);
@@ -455,14 +460,18 @@ export class ProjectionsService {
 
       const amounts = group.map((item) => item.amount);
       const averageAmount = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length;
+      const first = group[0];
       recurringItems.push({
         id: `${direction}:${key}`,
-        label: this.titleCase(key),
+        label: this.titleCase(first?.normalizedLabel ?? key),
         amount: averageAmount,
         cadence,
         confidence: this.recurringConfidence(group.length, group),
         source: 'linked',
-        category: group[0]?.category ?? undefined,
+        category: first?.category ?? undefined,
+        accountId: first?.accountId,
+        accountName: first?.accountName,
+        sourceTransactionIds: group.map((item) => item.transactionId),
       });
     }
 
@@ -543,7 +552,21 @@ export class ProjectionsService {
   }
 
   private inferDirection(label: string, categoryText: string): 'income' | 'expense' | 'ignore' {
-    if (this.matchesAny(label, ['transfer', 'venmo', 'zelle', 'cash app', 'paypal transfer'])) {
+    if (
+      this.matchesAny(label, [
+        'transfer',
+        'venmo',
+        'zelle',
+        'cash app',
+        'paypal transfer',
+        'credit card payment',
+        'card payment',
+        'payment thank you',
+        'autopay payment',
+        'online payment',
+      ]) ||
+      this.matchesAny(categoryText, ['transfer', 'credit card payment', 'loan payment'])
+    ) {
       return 'ignore';
     }
 
