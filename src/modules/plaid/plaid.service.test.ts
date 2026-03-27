@@ -5,15 +5,17 @@ import { PlaidService } from './plaid.service';
 function createService({
   findFirstImpl = async () => null,
   findUniqueImpl = async () => null,
+  updateImpl = async () => ({ currentBalance: 0, lastSync: new Date(), id: 'acct_1' }),
 }: {
   findFirstImpl?: (args: any) => Promise<any>;
   findUniqueImpl?: (args: any) => Promise<any>;
+  updateImpl?: (args: any) => Promise<any>;
 }) {
   const prisma = {
     plaidAccount: {
       findFirst: findFirstImpl,
       findUnique: findUniqueImpl,
-      update: async () => ({ currentBalance: 0, lastSync: new Date() }),
+      update: updateImpl,
     },
     plaidTransaction: {
       findMany: async () => [],
@@ -76,6 +78,10 @@ describe('PlaidService', () => {
           financeGoalId: null,
         };
       },
+      updateImpl: async (args) => {
+        calls.push(args);
+        return { currentBalance: 100, lastSync: new Date('2026-03-27T00:00:00.000Z') };
+      },
     });
 
     (service as any).plaidClient = {
@@ -106,6 +112,18 @@ describe('PlaidService', () => {
         financeGoalId: true,
       },
     });
+    expect(calls[1]).toEqual({
+      where: { id: 'acct_1' },
+      data: {
+        currentBalance: 100,
+        availableBalance: 100,
+        lastSync: expect.any(Date),
+      },
+      select: {
+        currentBalance: true,
+        lastSync: true,
+      },
+    });
   });
 
   it('queries only the plaid account fields needed for transaction sync', async () => {
@@ -119,6 +137,10 @@ describe('PlaidService', () => {
           plaidAccountId: 'plaid_1',
           accountName: 'Checking',
         };
+      },
+      updateImpl: async (args) => {
+        calls.push(args);
+        return { id: 'acct_1' };
       },
     });
 
@@ -140,6 +162,11 @@ describe('PlaidService', () => {
         plaidAccountId: true,
         accountName: true,
       },
+    });
+    expect(calls[1]).toEqual({
+      where: { id: 'acct_1' },
+      data: { lastSync: expect.any(Date) },
+      select: { id: true },
     });
   });
 });

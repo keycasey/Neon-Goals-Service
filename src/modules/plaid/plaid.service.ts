@@ -386,6 +386,10 @@ export class PlaidService {
         availableBalance: plaidAccount.balances.available || null,
         lastSync: new Date(),
       },
+      select: {
+        currentBalance: true,
+        lastSync: true,
+      },
     });
 
     // If this account is linked to a finance goal, update that too
@@ -698,6 +702,7 @@ export class PlaidService {
     await this.prisma.plaidAccount.update({
       where: { id: plaidAccountId },
       data: { lastSync: new Date() },
+      select: { id: true },
     });
 
     this.logger.log(
