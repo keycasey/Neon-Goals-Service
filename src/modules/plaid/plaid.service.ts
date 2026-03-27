@@ -346,6 +346,13 @@ export class PlaidService {
   async syncAccountBalance(plaidAccountId: string) {
     const account = await this.prisma.plaidAccount.findUnique({
       where: { id: plaidAccountId },
+      select: {
+        id: true,
+        accessToken: true,
+        plaidAccountId: true,
+        lastSync: true,
+        financeGoalId: true,
+      },
     });
 
     if (!account) {
@@ -614,6 +621,12 @@ export class PlaidService {
   ): Promise<{ stored: number; skipped: number }> {
     const account = await this.prisma.plaidAccount.findUnique({
       where: { id: plaidAccountId },
+      select: {
+        id: true,
+        accessToken: true,
+        plaidAccountId: true,
+        accountName: true,
+      },
     });
 
     if (!account) {
