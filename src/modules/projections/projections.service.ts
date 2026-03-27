@@ -285,10 +285,28 @@ export class ProjectionsService {
     const accounts = (await this.prisma.plaidAccount.findMany({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        id: true,
+        accountName: true,
+        accountType: true,
+        accountSubtype: true,
+        currentBalance: true,
+        availableBalance: true,
+        currency: true,
         transactions: {
           orderBy: { date: 'desc' },
           take: 180,
+          select: {
+            amount: true,
+            date: true,
+            name: true,
+            merchantName: true,
+            category: true,
+            categories: true,
+            paymentChannel: true,
+            pending: true,
+            transactionType: true,
+          },
         },
       },
     })) as PlaidAccountRecord[];

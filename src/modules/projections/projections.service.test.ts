@@ -127,6 +127,21 @@ function createPrismaMock(accounts: any[]) {
   } as any;
 }
 
+function createCapturingPrismaMock(accounts: any[]) {
+  const calls: any[] = [];
+  return {
+    prisma: {
+      plaidAccount: {
+        findMany: async (args: any) => {
+          calls.push(args);
+          return accounts;
+        },
+      },
+    } as any,
+    calls,
+  };
+}
+
 describe('ProjectionsService', () => {
   it('projects net worth from cached transactions and balances', async () => {
     const service = new ProjectionsService(createPrismaMock([checkingAccount, creditAccount]));
@@ -158,5 +173,42 @@ describe('ProjectionsService', () => {
     expect(cashflow.netMonthlyCashflow).toBe(0);
     expect(cashflow.recurringIncome).toHaveLength(0);
     expect(cashflow.recurringExpenses).toHaveLength(0);
+  });
+
+  it('queries only the plaid account fields needed for projections', async () => {
+    const { prisma, calls } = createCapturingPrismaMock([checkingAccount]);
+    const service = new ProjectionsService(prisma);
+
+    await service.getOverview('user_1', 12);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      where: { userId: 'user_1', isActive: true },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        accountName: true,
+        accountType: true,
+        accountSubtype: true,
+        currentBalance: true,
+        availableBalance: true,
+        currency: true,
+        transactions: {
+          orderBy: { date: 'desc' },
+          take: 180,
+          select: {
+            amount: true,
+            date: true,
+            name: true,
+            merchantName: true,
+            category: true,
+            categories: true,
+            paymentChannel: true,
+            pending: true,
+            transactionType: true,
+          },
+        },
+      },
+    });
   });
 });
