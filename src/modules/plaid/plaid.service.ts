@@ -754,6 +754,10 @@ export class PlaidService {
     // Verify account belongs to user
     const account = await this.prisma.plaidAccount.findFirst({
       where: { id: plaidAccountId, userId },
+      select: {
+        accountName: true,
+        institutionName: true,
+      },
     });
 
     if (!account) {
