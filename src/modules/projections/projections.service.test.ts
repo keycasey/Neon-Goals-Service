@@ -375,4 +375,223 @@ describe('ProjectionsService', () => {
       },
     });
   });
+
+  it('merges recurring items and includes source transactions in the target item', async () => {
+    const service = new ProjectionsService(
+      createPrismaMock([
+        {
+          ...checkingAccount,
+          transactions: [
+            {
+              id: 'txn_koriander_debit_1',
+              transactionId: 'txn_koriander_debit_1',
+              amount: 28,
+              currency: 'USD',
+              date: new Date('2026-01-07T00:00:00.000Z'),
+              name: 'Koriander Indian',
+              merchantName: 'Koriander Indian',
+              category: 'restaurants',
+              categories: ['restaurants'],
+              paymentChannel: 'in_store',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_koriander_debit_2',
+              transactionId: 'txn_koriander_debit_2',
+              amount: 31,
+              currency: 'USD',
+              date: new Date('2026-01-14T00:00:00.000Z'),
+              name: 'Koriander Indian',
+              merchantName: 'Koriander Indian',
+              category: 'restaurants',
+              categories: ['restaurants'],
+              paymentChannel: 'in_store',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_koriander_debit_3',
+              transactionId: 'txn_koriander_debit_3',
+              amount: 29,
+              currency: 'USD',
+              date: new Date('2026-01-21T00:00:00.000Z'),
+              name: 'Koriander Indian',
+              merchantName: 'Koriander Indian',
+              category: 'restaurants',
+              categories: ['restaurants'],
+              paymentChannel: 'in_store',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+          ],
+        },
+        {
+          ...creditAccount,
+          accountName: 'Rewards Card',
+          transactions: [
+            {
+              id: 'txn_koriander_credit_1',
+              transactionId: 'txn_koriander_credit_1',
+              amount: 32,
+              currency: 'USD',
+              date: new Date('2026-01-06T00:00:00.000Z'),
+              name: 'Koriander Indian Cuis',
+              merchantName: 'Koriander Indian Cuis',
+              category: 'restaurants',
+              categories: ['restaurants'],
+              paymentChannel: 'in_store',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_koriander_credit_2',
+              transactionId: 'txn_koriander_credit_2',
+              amount: 30,
+              currency: 'USD',
+              date: new Date('2026-02-06T00:00:00.000Z'),
+              name: 'Koriander Indian Cuis',
+              merchantName: 'Koriander Indian Cuis',
+              category: 'restaurants',
+              categories: ['restaurants'],
+              paymentChannel: 'in_store',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+          ],
+        },
+      ]),
+    );
+
+    await service.mergeRecurringItems(
+      'user_1',
+      'expense:acct_checking:koriander indian',
+      'expense:acct_credit:koriander indian cuis',
+      'expense',
+    );
+
+    const cashflow = await service.getCashflow('user_1');
+    const merged = cashflow.recurringExpenses.find((item) => item.id === 'expense:acct_checking:koriander indian');
+
+    expect(merged?.sourceTransactionIds).toEqual([
+      'txn_koriander_debit_1',
+      'txn_koriander_debit_2',
+      'txn_koriander_debit_3',
+      'txn_koriander_credit_1',
+      'txn_koriander_credit_2',
+    ]);
+    expect(merged?.mergedSources).toEqual([
+      {
+        id: 'expense:acct_credit:koriander indian cuis',
+        label: 'Koriander Indian Cuis',
+        accountName: 'Rewards Card',
+        sourceTransactionIds: ['txn_koriander_credit_1', 'txn_koriander_credit_2'],
+      },
+    ]);
+    expect(cashflow.recurringExpenses.some((item) => item.id === 'expense:acct_credit:koriander indian cuis')).toBe(false);
+  });
+
+  it('undoes a recurring merge and restores the source item', async () => {
+    const service = new ProjectionsService(
+      createPrismaMock([
+        {
+          ...checkingAccount,
+          transactions: [
+            {
+              id: 'txn_clipper_1',
+              transactionId: 'txn_clipper_1',
+              amount: 14,
+              currency: 'USD',
+              date: new Date('2026-01-01T00:00:00.000Z'),
+              name: 'Clipper',
+              merchantName: 'Clipper',
+              category: 'transport',
+              categories: ['transport'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_clipper_2',
+              transactionId: 'txn_clipper_2',
+              amount: 14,
+              currency: 'USD',
+              date: new Date('2026-02-01T00:00:00.000Z'),
+              name: 'Clipper',
+              merchantName: 'Clipper',
+              category: 'transport',
+              categories: ['transport'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_clipper_mobile_1',
+              transactionId: 'txn_clipper_mobile_1',
+              amount: 14,
+              currency: 'USD',
+              date: new Date('2026-01-02T00:00:00.000Z'),
+              name: 'Clipper Systems Mobile 1',
+              merchantName: 'Clipper Systems Mobile 1',
+              category: 'transport',
+              categories: ['transport'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+            {
+              id: 'txn_clipper_mobile_2',
+              transactionId: 'txn_clipper_mobile_2',
+              amount: 14,
+              currency: 'USD',
+              date: new Date('2026-02-02T00:00:00.000Z'),
+              name: 'Clipper Systems Mobile 1',
+              merchantName: 'Clipper Systems Mobile 1',
+              category: 'transport',
+              categories: ['transport'],
+              paymentChannel: 'online',
+              pending: false,
+              authorizedDate: null,
+              locationData: null,
+              transactionType: 'special',
+            },
+          ],
+        },
+      ]),
+    );
+
+    await service.mergeRecurringItems(
+      'user_1',
+      'expense:acct_checking:clipper',
+      'expense:acct_checking:clipper systems mobile 1',
+      'expense',
+    );
+    await service.unmergeRecurringItems(
+      'user_1',
+      'expense:acct_checking:clipper',
+      'expense:acct_checking:clipper systems mobile 1',
+      'expense',
+    );
+
+    const cashflow = await service.getCashflow('user_1');
+
+    expect(cashflow.recurringExpenses.some((item) => item.id === 'expense:acct_checking:clipper')).toBe(true);
+    expect(cashflow.recurringExpenses.some((item) => item.id === 'expense:acct_checking:clipper systems mobile 1')).toBe(true);
+  });
 });

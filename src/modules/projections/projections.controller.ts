@@ -36,4 +36,30 @@ export class ProjectionsController {
   ) {
     return this.projectionsService.runScenario(req.user.userId, body?.horizon ?? 12, body ?? {});
   }
+
+  @Post('cashflow/merge')
+  mergeRecurringItems(
+    @Req() req: any,
+    @Body() body: { targetItemId: string; sourceItemId: string; direction: 'income' | 'expense' },
+  ) {
+    return this.projectionsService.mergeRecurringItems(
+      req.user.userId,
+      body.targetItemId,
+      body.sourceItemId,
+      body.direction,
+    );
+  }
+
+  @Post('cashflow/unmerge')
+  unmergeRecurringItems(
+    @Req() req: any,
+    @Body() body: { targetItemId: string; sourceItemId: string; direction: 'income' | 'expense' },
+  ) {
+    return this.projectionsService.unmergeRecurringItems(
+      req.user.userId,
+      body.targetItemId,
+      body.sourceItemId,
+      body.direction,
+    );
+  }
 }

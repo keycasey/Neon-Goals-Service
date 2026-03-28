@@ -48,6 +48,12 @@ type RecurringItem = {
   accountId?: string;
   accountName?: string;
   sourceTransactionIds?: string[];
+  mergedSources?: Array<{
+    id: string;
+    label: string;
+    accountName?: string;
+    sourceTransactionIds: string[];
+  }>;
 };
 
 type CashflowSummary = {
@@ -132,10 +138,24 @@ type PlaidCashflowAnalysis = {
   accountCount: number;
 };
 
+type RecurringMergeOverride = {
+  targetItemId: string;
+  sourceItemIds: string[];
+  direction: 'income' | 'expense';
+};
+
+type MergedRecurringSource = NonNullable<RecurringItem['mergedSources']>[number];
+
+type AppliedRecurringGroups = {
+  groups: Map<string, ClassifiedTransaction[]>;
+  mergedSourcesByTarget: Map<string, MergedRecurringSource[]>;
+};
+
 @Injectable()
 export class ProjectionsService {
   private readonly manualAccountsByUser = new Map<string, ManualFinancialAccount[]>();
   private readonly manualCashflowsByUser = new Map<string, ManualCashflow[]>();
+  private readonly recurringMergeOverridesByUser = new Map<string, RecurringMergeOverride[]>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -285,6 +305,64 @@ export class ProjectionsService {
     return { deleted: next.length !== list.length };
   }
 
+  mergeRecurringItems(
+    userId: string,
+    targetItemId: string,
+    sourceItemId: string,
+    direction: 'income' | 'expense',
+  ) {
+    if (targetItemId === sourceItemId) {
+      return { merged: false };
+    }
+
+    const overrides = this.recurringMergeOverridesByUser.get(userId) ?? [];
+    const overrideIndex = overrides.findIndex(
+      (item) => item.targetItemId === targetItemId && item.direction === direction,
+    );
+
+    if (overrideIndex >= 0) {
+      const current = overrides[overrideIndex];
+      const nextSources = Array.from(new Set([...current.sourceItemIds, sourceItemId]));
+      overrides[overrideIndex] = {
+        ...current,
+        sourceItemIds: nextSources.filter((id) => id !== targetItemId),
+      };
+    } else {
+      overrides.push({
+        targetItemId,
+        sourceItemIds: [sourceItemId],
+        direction,
+      });
+    }
+
+    this.recurringMergeOverridesByUser.set(userId, overrides);
+    return { merged: true };
+  }
+
+  unmergeRecurringItems(
+    userId: string,
+    targetItemId: string,
+    sourceItemId: string,
+    direction: 'income' | 'expense',
+  ) {
+    const overrides = this.recurringMergeOverridesByUser.get(userId) ?? [];
+    const next = overrides
+      .map((override) => {
+        if (override.targetItemId !== targetItemId || override.direction !== direction) {
+          return override;
+        }
+
+        return {
+          ...override,
+          sourceItemIds: override.sourceItemIds.filter((id) => id !== sourceItemId),
+        };
+      })
+      .filter((override) => override.sourceItemIds.length > 0);
+
+    this.recurringMergeOverridesByUser.set(userId, next);
+    return { merged: false };
+  }
+
   private async analyzePlaidCashflow(userId: string): Promise<PlaidCashflowAnalysis> {
     const accounts = (await this.prisma.plaidAccount.findMany({
       where: { userId, isActive: true },
@@ -329,8 +407,20 @@ export class ProjectionsService {
         .map((transaction) => this.classifyTransaction(account, transaction)),
     );
 
-    const recurringIncome = this.buildRecurringItems(transactions, 'income');
-    const recurringExpenses = this.buildRecurringItems(transactions, 'expense');
+    const recurringIncome = this.buildRecurringItems(
+      this.applyRecurringMerges(
+        userId,
+        'income',
+        this.groupRecurringTransactions(transactions, 'income'),
+      ),
+    );
+    const recurringExpenses = this.buildRecurringItems(
+      this.applyRecurringMerges(
+        userId,
+        'expense',
+        this.groupRecurringTransactions(transactions, 'expense'),
+      ),
+    );
     const recurringNetCashflow =
       recurringIncome.reduce((sum, item) => sum + this.toMonthly(item.amount, item.cadence), 0) -
       recurringExpenses.reduce((sum, item) => sum + this.toMonthly(item.amount, item.cadence), 0);
@@ -435,7 +525,10 @@ export class ProjectionsService {
     };
   }
 
-  private buildRecurringItems(transactions: ClassifiedTransaction[], direction: 'income' | 'expense'): RecurringItem[] {
+  private groupRecurringTransactions(
+    transactions: ClassifiedTransaction[],
+    direction: 'income' | 'expense',
+  ): Map<string, ClassifiedTransaction[]> {
     const groups = new Map<string, ClassifiedTransaction[]>();
 
     for (const transaction of transactions) {
@@ -451,6 +544,78 @@ export class ProjectionsService {
       groups.set(key, bucket);
     }
 
+    return groups;
+  }
+
+  private applyRecurringMerges(
+    userId: string,
+    direction: 'income' | 'expense',
+    groups: Map<string, ClassifiedTransaction[]>,
+  ): AppliedRecurringGroups {
+    const overrides = (this.recurringMergeOverridesByUser.get(userId) ?? [])
+      .filter((override) => override.direction === direction);
+    if (overrides.length === 0) {
+      return { groups, mergedSourcesByTarget: new Map() };
+    }
+
+    const merged = new Map(groups);
+    const mergedSourcesByTarget = new Map<string, MergedRecurringSource[]>();
+    for (const override of overrides) {
+      const targetKey = override.targetItemId.replace(/^(income|expense):/, '');
+      const targetGroup = merged.get(targetKey);
+      if (!targetGroup) {
+        continue;
+      }
+
+      const combined = [...targetGroup];
+      for (const sourceItemId of override.sourceItemIds) {
+        const sourceKey = sourceItemId.replace(/^(income|expense):/, '');
+        const sourceGroup = merged.get(sourceKey);
+        if (!sourceGroup) {
+          continue;
+        }
+        combined.push(...sourceGroup);
+        merged.delete(sourceKey);
+        const sourceFirst = sourceGroup[0];
+        if (sourceFirst) {
+          const current = mergedSourcesByTarget.get(override.targetItemId) ?? [];
+          current.push({
+            id: sourceItemId,
+            label: this.titleCase(sourceFirst.normalizedLabel),
+            accountName: sourceFirst.accountName,
+            sourceTransactionIds: sourceGroup.map((item) => item.transactionId),
+          });
+          mergedSourcesByTarget.set(override.targetItemId, current);
+        }
+      }
+
+      merged.set(targetKey, combined);
+    }
+
+    return { groups: merged, mergedSourcesByTarget };
+  }
+
+  private buildRecurringItems({ groups, mergedSourcesByTarget }: AppliedRecurringGroups): RecurringItem[] {
+    const itemMeta = new Map<string, RecurringItem>();
+    for (const [key, group] of groups.entries()) {
+      const first = group[0];
+      if (!first) {
+        continue;
+      }
+      itemMeta.set(key, {
+        id: `${first.direction}:${key}`,
+        label: this.titleCase(first.normalizedLabel),
+        amount: 0,
+        cadence: 'monthly',
+        confidence: 'low',
+        source: 'linked',
+        category: first.category ?? undefined,
+        accountId: first.accountId,
+        accountName: first.accountName,
+        sourceTransactionIds: group.map((item) => item.transactionId),
+      });
+    }
+
     const recurringItems: RecurringItem[] = [];
     for (const [key, group] of groups.entries()) {
       const cadence = this.inferCadence(group.map((item) => item.date));
@@ -461,9 +626,11 @@ export class ProjectionsService {
       const amounts = group.map((item) => Math.abs(item.amount));
       const averageAmount = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length;
       const first = group[0];
+      const meta = itemMeta.get(key);
+      const mergedSources = mergedSourcesByTarget.get(meta?.id ?? '') ?? [];
       recurringItems.push({
-        id: `${direction}:${key}`,
-        label: this.titleCase(first?.normalizedLabel ?? key),
+        id: meta?.id ?? key,
+        label: meta?.label ?? this.titleCase(first?.normalizedLabel ?? key),
         amount: averageAmount,
         cadence,
         confidence: this.recurringConfidence(group.length, group),
@@ -472,6 +639,7 @@ export class ProjectionsService {
         accountId: first?.accountId,
         accountName: first?.accountName,
         sourceTransactionIds: group.map((item) => item.transactionId),
+        mergedSources: mergedSources.length > 0 ? mergedSources : undefined,
       });
     }
 
