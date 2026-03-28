@@ -43,6 +43,91 @@ function createService({
 }
 
 describe('PlaidService', () => {
+  it('queries only the plaid account fields needed for fresh balance reads', async () => {
+    const calls: any[] = [];
+    const service = createService({
+      findUniqueImpl: async (args) => {
+        calls.push(args);
+        return {
+          id: 'acct_1',
+          accessToken: 'token',
+          plaidAccountId: 'plaid_1',
+          lastSync: new Date('2026-03-01T00:00:00.000Z'),
+          accountName: 'Brokerage',
+          institutionName: 'Robinhood',
+        };
+      },
+    });
+
+    (service as any).plaidClient = {
+      accountsBalanceGet: async () => ({
+        data: {
+          accounts: [
+            {
+              account_id: 'plaid_1',
+              balances: {
+                current: 1500,
+                available: null,
+                iso_currency_code: 'USD',
+              },
+            },
+          ],
+        },
+      }),
+    };
+
+    await service.getAccountBalance('acct_1');
+
+    expect(calls[0]).toEqual({
+      where: { id: 'acct_1' },
+      select: {
+        id: true,
+        accessToken: true,
+        plaidAccountId: true,
+        lastSync: true,
+        accountName: true,
+        institutionName: true,
+      },
+    });
+  });
+
+  it('queries only the plaid account fields needed for fresh transaction reads', async () => {
+    const calls: any[] = [];
+    const service = createService({
+      findUniqueImpl: async (args) => {
+        calls.push(args);
+        return {
+          id: 'acct_1',
+          accessToken: 'token',
+          plaidAccountId: 'plaid_1',
+          accountName: 'Brokerage',
+          institutionName: 'Robinhood',
+        };
+      },
+    });
+
+    (service as any).plaidClient = {
+      transactionsGet: async () => ({
+        data: {
+          transactions: [],
+        },
+      }),
+    };
+
+    await service.getAccountTransactions('acct_1');
+
+    expect(calls[0]).toEqual({
+      where: { id: 'acct_1' },
+      select: {
+        id: true,
+        accessToken: true,
+        plaidAccountId: true,
+        accountName: true,
+        institutionName: true,
+      },
+    });
+  });
+
   it('queries only the plaid account fields needed for stored transactions', async () => {
     const calls: any[] = [];
     const service = createService({ findFirstImpl: async (args) => {
