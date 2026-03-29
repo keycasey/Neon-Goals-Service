@@ -342,6 +342,8 @@ model PlaidAccount {
 
   // Relations
   transactions    PlaidTransaction[]
+  investmentHoldings PlaidInvestmentHolding[]
+  investmentTransactions PlaidInvestmentTransaction[]
 
   @@unique([plaidAccountId])
 
@@ -384,6 +386,68 @@ model PlaidTransaction {
   @@index([plaidAccountId, date]) // For date-range queries
   @@index([date]) // For global queries
   @@index([plaidAccountId])
+}
+
+model PlaidSecurity {
+  id                String   @id @default(cuid())
+  securityId        String   @unique
+  name              String
+  tickerSymbol      String?
+  type              String?
+  closePrice        Float?
+  closePriceAsOf    DateTime?
+  currency          String?  @default("USD")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  holdings          PlaidInvestmentHolding[]
+  transactions      PlaidInvestmentTransaction[]
+
+  @@index([tickerSymbol])
+}
+
+model PlaidInvestmentHolding {
+  id                    String   @id @default(cuid())
+  plaidAccountId        String
+  account               PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  plaidSecurityId       String
+  security              PlaidSecurity @relation(fields: [plaidSecurityId], references: [id], onDelete: Cascade)
+  quantity              Float
+  institutionPrice      Float?
+  institutionPriceAsOf  DateTime?
+  institutionValue      Float?
+  costBasis             Float?
+  currency              String   @default("USD")
+  lastSync              DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([plaidAccountId, plaidSecurityId])
+  @@index([plaidAccountId])
+}
+
+model PlaidInvestmentTransaction {
+  id                       String   @id @default(cuid())
+  plaidAccountId           String
+  account                  PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  investmentTransactionId  String
+  plaidSecurityId          String?
+  security                 PlaidSecurity? @relation(fields: [plaidSecurityId], references: [id], onDelete: SetNull)
+  amount                   Float
+  quantity                 Float?
+  fees                     Float?
+  price                    Float?
+  date                     DateTime
+  name                     String
+  type                     String?
+  subtype                  String?
+  currency                 String   @default("USD")
+  lastSync                 DateTime @default(now())
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([plaidAccountId, investmentTransactionId])
+  @@index([plaidAccountId, date])
 }
 
 // Scrape Jobs

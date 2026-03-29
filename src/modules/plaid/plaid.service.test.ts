@@ -5,16 +5,28 @@ import { PlaidService } from './plaid.service';
 function createService({
   findFirstImpl = async () => null,
   findUniqueImpl = async () => null,
+  upsertImpl = async () => ({
+    id: 'acct_1',
+    plaidAccountId: 'plaid_1',
+    accountName: 'Checking',
+    institutionName: 'Capital One',
+    accountMask: '1234',
+    accountType: 'depository',
+    accountSubtype: 'checking',
+    currentBalance: 100,
+  }),
   updateImpl = async () => ({ currentBalance: 0, lastSync: new Date(), id: 'acct_1' }),
 }: {
   findFirstImpl?: (args: any) => Promise<any>;
   findUniqueImpl?: (args: any) => Promise<any>;
+  upsertImpl?: (args: any) => Promise<any>;
   updateImpl?: (args: any) => Promise<any>;
 }) {
   const prisma = {
     plaidAccount: {
       findFirst: findFirstImpl,
       findUnique: findUniqueImpl,
+      upsert: upsertImpl,
       update: updateImpl,
     },
     plaidTransaction: {
@@ -37,12 +49,92 @@ function createService({
 
   const demoPlaidService = {
     isDemoUser: async () => false,
+    assertNotDemoUser: async () => undefined,
   } as any;
 
   return new PlaidService(configService, prisma, demoPlaidService);
 }
 
 describe('PlaidService', () => {
+  it('selects only the plaid account fields needed after account link upsert', async () => {
+    const calls: any[] = [];
+    const service = createService({
+      upsertImpl: async (args) => {
+        calls.push(args);
+        return {
+          id: 'acct_1',
+          plaidAccountId: 'plaid_1',
+          accountName: 'Robinhood individual',
+          institutionName: 'Robinhood',
+          accountMask: '1234',
+          accountType: 'investment',
+          accountSubtype: 'brokerage',
+          currentBalance: 2500,
+        };
+      },
+    });
+
+    (service as any).plaidClient = {
+      itemPublicTokenExchange: async () => ({
+        data: {
+          access_token: 'access-token',
+          item_id: 'item_1',
+        },
+      }),
+      itemGet: async () => ({
+        data: {
+          item: {
+            institution_id: 'ins_1',
+          },
+        },
+      }),
+      institutionsGetById: async () => ({
+        data: {
+          institution: {
+            name: 'Robinhood',
+            logo: '',
+          },
+        },
+      }),
+      accountsBalanceGet: async () => ({
+        data: {
+          accounts: [
+            {
+              account_id: 'plaid_1',
+              name: 'Robinhood individual',
+              mask: '1234',
+              type: 'investment',
+              subtype: ['brokerage'],
+              balances: {
+                current: 2500,
+                available: null,
+                iso_currency_code: 'USD',
+              },
+            },
+          ],
+        },
+      }),
+      transactionsGet: async () => ({
+        data: {
+          transactions: [],
+        },
+      }),
+    };
+
+    await service.linkPlaidAccount('user_1', 'public-token');
+
+    expect(calls[0].select).toEqual({
+      id: true,
+      plaidAccountId: true,
+      accountName: true,
+      institutionName: true,
+      accountMask: true,
+      accountType: true,
+      accountSubtype: true,
+      currentBalance: true,
+    });
+  });
+
   it('queries only the plaid account fields needed for fresh balance reads', async () => {
     const calls: any[] = [];
     const service = createService({

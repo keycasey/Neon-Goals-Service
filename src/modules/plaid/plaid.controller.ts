@@ -76,6 +76,18 @@ export class PlaidController {
   }
 
   /**
+   * Sync investments for a linked account
+   * POST /plaid/sync/:accountId/investments
+   */
+  @Post('sync/:accountId/investments')
+  async syncInvestments(@CurrentUser() user: User, @Param('accountId') accountId: string) {
+    this.logger.log(`Sync investments request from user: ${user.id} for account: ${accountId}`);
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    return this.plaidService.fetchAndStoreInvestmentData(accountId, startDate, endDate);
+  }
+
+  /**
    * Link a Plaid account to a finance goal
    * POST /plaid/link-to-goal
    */
@@ -129,6 +141,22 @@ export class PlaidController {
       `Get stored transactions request from user: ${user.id} for account: ${accountId}`,
     );
     return this.plaidService.getStoredTransactions(user.id, accountId, limit || 100);
+  }
+
+  /**
+   * Get stored investments from database
+   * GET /plaid/accounts/:accountId/investments/stored?limit=100
+   */
+  @Get('accounts/:accountId/investments/stored')
+  async getStoredInvestments(
+    @CurrentUser() user: User,
+    @Param('accountId') accountId: string,
+    @Query('limit') limit?: number,
+  ) {
+    this.logger.log(
+      `Get stored investments request from user: ${user.id} for account: ${accountId}`,
+    );
+    return this.plaidService.getStoredInvestments(user.id, accountId, limit || 100);
   }
 
   /**

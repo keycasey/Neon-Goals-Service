@@ -70,6 +70,7 @@ export class PlaidService {
       },
       client_name: 'Neon Goals',
       products: ['transactions'] as any[],
+      optional_products: ['investments'] as any[],
       country_codes: ['US'] as any,
       language: 'en',
       redirect_uri: this.configService.get<string>('PLAID_REDIRECT_URI'),
@@ -199,6 +200,16 @@ export class PlaidService {
               availableBalance: account.balances.available || null,
               currency: account.balances.iso_currency_code || 'USD',
             },
+            select: {
+              id: true,
+              plaidAccountId: true,
+              accountName: true,
+              institutionName: true,
+              accountMask: true,
+              accountType: true,
+              accountSubtype: true,
+              currentBalance: true,
+            },
           });
 
           savedAccounts.push({
@@ -226,9 +237,19 @@ export class PlaidService {
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       for (const savedAccount of savedAccounts) {
-        this.fetchAndStoreTransactions(savedAccount.id, startDate, endDate)
-          .then(result => this.logger.log(`Fetched ${result.stored} transactions for ${savedAccount.accountName}`))
-          .catch(err => this.logger.error(`Failed to fetch transactions for ${savedAccount.accountName}:`, err));
+        const syncPromise = savedAccount.accountType === 'investment'
+          ? this.fetchAndStoreInvestmentData(savedAccount.id, startDate, endDate).then((result) =>
+              this.logger.log(
+                `Fetched ${result.holdings} holdings and ${result.transactions} investment transactions for ${savedAccount.accountName}`,
+              ),
+            )
+          : this.fetchAndStoreTransactions(savedAccount.id, startDate, endDate).then((result) =>
+              this.logger.log(`Fetched ${result.stored} transactions for ${savedAccount.accountName}`),
+            );
+
+        syncPromise.catch((err) =>
+          this.logger.error(`Failed to fetch sync data for ${savedAccount.accountName}:`, err),
+        );
       }
 
       return {
@@ -626,6 +647,250 @@ export class PlaidService {
       totalTransactions: accountTransactions.length,
       startDate: start,
       endDate: end,
+    };
+  }
+
+  async getStoredInvestments(userId: string, plaidAccountId: string, limit = 100) {
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
+      select: {
+        accountName: true,
+        institutionName: true,
+        accountType: true,
+      },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Plaid account not found');
+    }
+
+    const [holdings, transactions] = await Promise.all([
+      this.prisma.plaidInvestmentHolding.findMany({
+        where: { plaidAccountId },
+        orderBy: [{ institutionValue: 'desc' }, { updatedAt: 'desc' }],
+        include: {
+          security: true,
+        },
+      }),
+      this.prisma.plaidInvestmentTransaction.findMany({
+        where: { plaidAccountId },
+        orderBy: { date: 'desc' },
+        take: limit,
+        include: {
+          security: true,
+        },
+      }),
+    ]);
+
+    return {
+      accountName: account.accountName,
+      institutionName: account.institutionName,
+      accountType: account.accountType,
+      holdings: holdings.map((holding) => ({
+        id: holding.id,
+        securityId: holding.security.securityId,
+        name: holding.security.name,
+        tickerSymbol: holding.security.tickerSymbol,
+        quantity: holding.quantity,
+        institutionPrice: holding.institutionPrice,
+        institutionPriceAsOf: holding.institutionPriceAsOf,
+        institutionValue: holding.institutionValue,
+        costBasis: holding.costBasis,
+        currency: holding.currency,
+        currentPrice: holding.institutionPrice ?? holding.security.closePrice,
+        currentPriceAsOf: holding.institutionPriceAsOf ?? holding.security.closePriceAsOf,
+      })),
+      transactions: transactions.map((transaction) => ({
+        id: transaction.id,
+        investmentTransactionId: transaction.investmentTransactionId,
+        securityId: transaction.security?.securityId ?? null,
+        securityName: transaction.security?.name ?? null,
+        tickerSymbol: transaction.security?.tickerSymbol ?? null,
+        amount: transaction.amount,
+        quantity: transaction.quantity,
+        fees: transaction.fees,
+        price: transaction.price,
+        date: transaction.date,
+        name: transaction.name,
+        type: transaction.type,
+        subtype: transaction.subtype,
+        currency: transaction.currency,
+        currentPrice: transaction.security?.closePrice ?? null,
+        currentPriceAsOf: transaction.security?.closePriceAsOf ?? null,
+      })),
+    };
+  }
+
+  async fetchAndStoreInvestmentData(
+    plaidAccountId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<{ holdings: number; transactions: number }> {
+    const account = await this.prisma.plaidAccount.findUnique({
+      where: { id: plaidAccountId },
+      select: {
+        id: true,
+        accessToken: true,
+        plaidAccountId: true,
+        accountName: true,
+        accountType: true,
+      },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Plaid account not found');
+    }
+
+    const [holdingsResponse, transactionsResponse] = await Promise.all([
+      this.plaidClient.investmentsHoldingsGet({
+        access_token: account.accessToken,
+      }),
+      this.plaidClient.investmentsTransactionsGet({
+        access_token: account.accessToken,
+        start_date: startDate,
+        end_date: endDate,
+      }),
+    ]);
+
+    const filteredHoldings = holdingsResponse.data.holdings.filter(
+      (holding) => holding.account_id === account.plaidAccountId,
+    );
+    const filteredTransactions = transactionsResponse.data.investment_transactions.filter(
+      (transaction) => transaction.account_id === account.plaidAccountId,
+    );
+
+    const securityById = new Map<string, any>();
+    for (const security of [
+      ...holdingsResponse.data.securities,
+      ...transactionsResponse.data.securities,
+    ]) {
+      securityById.set(security.security_id, security);
+    }
+
+    for (const security of securityById.values()) {
+      await this.prisma.plaidSecurity.upsert({
+        where: { securityId: security.security_id },
+        update: {
+          name: security.name,
+          tickerSymbol: security.ticker_symbol ?? null,
+          type: security.type ?? null,
+          closePrice: security.close_price ?? null,
+          closePriceAsOf: security.close_price_as_of
+            ? new Date(security.close_price_as_of)
+            : null,
+          currency:
+            security.iso_currency_code ??
+            security.unofficial_currency_code ??
+            'USD',
+        },
+        create: {
+          securityId: security.security_id,
+          name: security.name,
+          tickerSymbol: security.ticker_symbol ?? null,
+          type: security.type ?? null,
+          closePrice: security.close_price ?? null,
+          closePriceAsOf: security.close_price_as_of
+            ? new Date(security.close_price_as_of)
+            : null,
+          currency:
+            security.iso_currency_code ??
+            security.unofficial_currency_code ??
+            'USD',
+        },
+      });
+    }
+
+    await this.prisma.plaidInvestmentHolding.deleteMany({
+      where: { plaidAccountId: account.id },
+    });
+
+    for (const holding of filteredHoldings) {
+      await this.prisma.plaidInvestmentHolding.create({
+        data: {
+          plaidAccountId: account.id,
+          plaidSecurityId: (
+            await this.prisma.plaidSecurity.findUnique({
+              where: { securityId: holding.security_id },
+              select: { id: true },
+            })
+          )!.id,
+          quantity: holding.quantity,
+          institutionPrice: holding.institution_price ?? null,
+          institutionPriceAsOf: holding.institution_price_as_of
+            ? new Date(holding.institution_price_as_of)
+            : null,
+          institutionValue: holding.institution_value ?? null,
+          costBasis: holding.cost_basis ?? null,
+          currency:
+            holding.iso_currency_code ??
+            holding.unofficial_currency_code ??
+            'USD',
+          lastSync: new Date(),
+        },
+      });
+    }
+
+    for (const transaction of filteredTransactions) {
+      const security = transaction.security_id
+        ? await this.prisma.plaidSecurity.findUnique({
+            where: { securityId: transaction.security_id },
+            select: { id: true },
+          })
+        : null;
+
+      await this.prisma.plaidInvestmentTransaction.upsert({
+        where: {
+          plaidAccountId_investmentTransactionId: {
+            plaidAccountId: account.id,
+            investmentTransactionId: transaction.investment_transaction_id,
+          },
+        },
+        update: {
+          plaidSecurityId: security?.id ?? null,
+          amount: transaction.amount,
+          quantity: transaction.quantity ?? null,
+          fees: transaction.fees ?? null,
+          price: transaction.price ?? null,
+          date: new Date(transaction.date),
+          name: transaction.name,
+          type: transaction.type ?? null,
+          subtype: transaction.subtype ?? null,
+          currency:
+            transaction.iso_currency_code ??
+            transaction.unofficial_currency_code ??
+            'USD',
+          lastSync: new Date(),
+        },
+        create: {
+          plaidAccountId: account.id,
+          investmentTransactionId: transaction.investment_transaction_id,
+          plaidSecurityId: security?.id ?? null,
+          amount: transaction.amount,
+          quantity: transaction.quantity ?? null,
+          fees: transaction.fees ?? null,
+          price: transaction.price ?? null,
+          date: new Date(transaction.date),
+          name: transaction.name,
+          type: transaction.type ?? null,
+          subtype: transaction.subtype ?? null,
+          currency:
+            transaction.iso_currency_code ??
+            transaction.unofficial_currency_code ??
+            'USD',
+          lastSync: new Date(),
+        },
+      });
+    }
+
+    await this.prisma.plaidAccount.update({
+      where: { id: plaidAccountId },
+      data: { lastSync: new Date() },
+      select: { id: true },
+    });
+
+    return {
+      holdings: filteredHoldings.length,
+      transactions: filteredTransactions.length,
     };
   }
 
