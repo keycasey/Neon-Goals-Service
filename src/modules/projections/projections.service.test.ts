@@ -126,9 +126,77 @@ const creditAccount = {
 };
 
 function createPrismaMock(accounts: any[]) {
+  const overrides: any[] = [];
   return {
     plaidAccount: {
       findMany: async () => accounts,
+    },
+    recurringMergeOverride: {
+      findUnique: async ({ where }: any) =>
+        overrides.find(
+          (override) =>
+            override.userId === where.userId_targetItemId_direction.userId &&
+            override.targetItemId === where.userId_targetItemId_direction.targetItemId &&
+            override.direction === where.userId_targetItemId_direction.direction,
+        ) ?? null,
+      findMany: async ({ where }: any = {}) =>
+        overrides.filter((override) => {
+          if (where?.userId && override.userId !== where.userId) return false;
+          if (where?.direction && override.direction !== where.direction) return false;
+          return true;
+        }),
+      upsert: async ({ where, create, update }: any) => {
+        const index = overrides.findIndex(
+          (override) =>
+            override.userId === where.userId_targetItemId_direction.userId &&
+            override.targetItemId === where.userId_targetItemId_direction.targetItemId &&
+            override.direction === where.userId_targetItemId_direction.direction,
+        );
+        if (index >= 0) {
+          overrides[index] = {
+            ...overrides[index],
+            ...update,
+          };
+          return overrides[index];
+        }
+        const record = {
+          id: `merge_${overrides.length + 1}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...create,
+        };
+        overrides.push(record);
+        return record;
+      },
+      update: async ({ where, data }: any) => {
+        const index = overrides.findIndex(
+          (override) =>
+            override.userId === where.userId_targetItemId_direction.userId &&
+            override.targetItemId === where.userId_targetItemId_direction.targetItemId &&
+            override.direction === where.userId_targetItemId_direction.direction,
+        );
+        if (index === -1) {
+          throw new Error('Override not found');
+        }
+        overrides[index] = {
+          ...overrides[index],
+          ...data,
+        };
+        return overrides[index];
+      },
+      deleteMany: async ({ where }: any) => {
+        const before = overrides.length;
+        for (let i = overrides.length - 1; i >= 0; i -= 1) {
+          const override = overrides[i];
+          const matchesUser = !where?.userId || override.userId === where.userId;
+          const matchesTarget = !where?.targetItemId || override.targetItemId === where.targetItemId;
+          const matchesDirection = !where?.direction || override.direction === where.direction;
+          if (matchesUser && matchesTarget && matchesDirection) {
+            overrides.splice(i, 1);
+          }
+        }
+        return { count: before - overrides.length };
+      },
     },
   } as any;
 }
@@ -142,6 +210,9 @@ function createCapturingPrismaMock(accounts: any[]) {
           calls.push(args);
           return accounts;
         },
+      },
+      recurringMergeOverride: {
+        findMany: async () => [],
       },
     } as any,
     calls,
@@ -593,5 +664,122 @@ describe('ProjectionsService', () => {
 
     expect(cashflow.recurringExpenses.some((item) => item.id === 'expense:acct_checking:clipper')).toBe(true);
     expect(cashflow.recurringExpenses.some((item) => item.id === 'expense:acct_checking:clipper systems mobile 1')).toBe(true);
+  });
+
+  it('persists merge overrides outside process memory', async () => {
+    const prisma = createPrismaMock([
+      {
+        ...checkingAccount,
+        transactions: [
+          {
+            id: 'txn_koriander_debit_1',
+            transactionId: 'txn_koriander_debit_1',
+            amount: 28,
+            currency: 'USD',
+            date: new Date('2026-01-07T00:00:00.000Z'),
+            name: 'Koriander Indian',
+            merchantName: 'Koriander Indian',
+            category: 'restaurants',
+            categories: ['restaurants'],
+            paymentChannel: 'in_store',
+            pending: false,
+            authorizedDate: null,
+            locationData: null,
+            transactionType: 'special',
+          },
+          {
+            id: 'txn_koriander_debit_2',
+            transactionId: 'txn_koriander_debit_2',
+            amount: 31,
+            currency: 'USD',
+            date: new Date('2026-01-14T00:00:00.000Z'),
+            name: 'Koriander Indian',
+            merchantName: 'Koriander Indian',
+            category: 'restaurants',
+            categories: ['restaurants'],
+            paymentChannel: 'in_store',
+            pending: false,
+            authorizedDate: null,
+            locationData: null,
+            transactionType: 'special',
+          },
+          {
+            id: 'txn_koriander_debit_3',
+            transactionId: 'txn_koriander_debit_3',
+            amount: 29,
+            currency: 'USD',
+            date: new Date('2026-01-21T00:00:00.000Z'),
+            name: 'Koriander Indian',
+            merchantName: 'Koriander Indian',
+            category: 'restaurants',
+            categories: ['restaurants'],
+            paymentChannel: 'in_store',
+            pending: false,
+            authorizedDate: null,
+            locationData: null,
+            transactionType: 'special',
+          },
+        ],
+      },
+      {
+        ...creditAccount,
+        accountName: 'Rewards Card',
+        transactions: [
+          {
+            id: 'txn_koriander_credit_1',
+            transactionId: 'txn_koriander_credit_1',
+            amount: 32,
+            currency: 'USD',
+            date: new Date('2026-01-06T00:00:00.000Z'),
+            name: 'Koriander Indian Cuis',
+            merchantName: 'Koriander Indian Cuis',
+            category: 'restaurants',
+            categories: ['restaurants'],
+            paymentChannel: 'in_store',
+            pending: false,
+            authorizedDate: null,
+            locationData: null,
+            transactionType: 'special',
+          },
+          {
+            id: 'txn_koriander_credit_2',
+            transactionId: 'txn_koriander_credit_2',
+            amount: 30,
+            currency: 'USD',
+            date: new Date('2026-02-06T00:00:00.000Z'),
+            name: 'Koriander Indian Cuis',
+            merchantName: 'Koriander Indian Cuis',
+            category: 'restaurants',
+            categories: ['restaurants'],
+            paymentChannel: 'in_store',
+            pending: false,
+            authorizedDate: null,
+            locationData: null,
+            transactionType: 'special',
+          },
+        ],
+      },
+    ]);
+    const writerService = new ProjectionsService(prisma);
+    const readerService = new ProjectionsService(prisma);
+
+    await writerService.mergeRecurringItems(
+      'user_1',
+      'expense:acct_checking:koriander indian',
+      'expense:acct_credit:koriander indian cuis',
+      'expense',
+    );
+
+    const cashflow = await readerService.getCashflow('user_1');
+    const merged = cashflow.recurringExpenses.find((item) => item.id === 'expense:acct_checking:koriander indian');
+
+    expect(merged?.sourceTransactionIds).toEqual([
+      'txn_koriander_debit_1',
+      'txn_koriander_debit_2',
+      'txn_koriander_debit_3',
+      'txn_koriander_credit_1',
+      'txn_koriander_credit_2',
+    ]);
+    expect(cashflow.recurringExpenses.some((item) => item.id === 'expense:acct_credit:koriander indian cuis')).toBe(false);
   });
 });

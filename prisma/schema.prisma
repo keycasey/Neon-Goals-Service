@@ -40,6 +40,7 @@ model User {
   plaidAccounts PlaidAccount[]
   extractionJobs ExtractionJob[]
   usage         UserUsage?
+  recurringMergeOverrides RecurringMergeOverride[]
 }
 
 // User usage tracking for rate limiting
@@ -448,6 +449,20 @@ model PlaidInvestmentTransaction {
 
   @@unique([plaidAccountId, investmentTransactionId])
   @@index([plaidAccountId, date])
+}
+
+model RecurringMergeOverride {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetItemId  String
+  sourceItemIds String[]
+  direction     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, targetItemId, direction])
+  @@index([userId, direction])
 }
 
 // Scrape Jobs

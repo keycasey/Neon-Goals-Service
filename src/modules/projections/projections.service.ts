@@ -155,7 +155,6 @@ type AppliedRecurringGroups = {
 export class ProjectionsService {
   private readonly manualAccountsByUser = new Map<string, ManualFinancialAccount[]>();
   private readonly manualCashflowsByUser = new Map<string, ManualCashflow[]>();
-  private readonly recurringMergeOverridesByUser = new Map<string, RecurringMergeOverride[]>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -305,7 +304,7 @@ export class ProjectionsService {
     return { deleted: next.length !== list.length };
   }
 
-  mergeRecurringItems(
+  async mergeRecurringItems(
     userId: string,
     targetItemId: string,
     sourceItemId: string,
@@ -315,51 +314,90 @@ export class ProjectionsService {
       return { merged: false };
     }
 
-    const overrides = this.recurringMergeOverridesByUser.get(userId) ?? [];
-    const overrideIndex = overrides.findIndex(
-      (item) => item.targetItemId === targetItemId && item.direction === direction,
-    );
+    const existing = await this.prisma.recurringMergeOverride.findUnique({
+      where: {
+        userId_targetItemId_direction: {
+          userId,
+          targetItemId,
+          direction,
+        },
+      },
+      select: {
+        sourceItemIds: true,
+      },
+    });
 
-    if (overrideIndex >= 0) {
-      const current = overrides[overrideIndex];
-      const nextSources = Array.from(new Set([...current.sourceItemIds, sourceItemId]));
-      overrides[overrideIndex] = {
-        ...current,
-        sourceItemIds: nextSources.filter((id) => id !== targetItemId),
-      };
-    } else {
-      overrides.push({
+    const nextSources = Array.from(
+      new Set([...(existing?.sourceItemIds ?? []), sourceItemId]),
+    ).filter((id) => id !== targetItemId);
+
+    await this.prisma.recurringMergeOverride.upsert({
+      where: {
+        userId_targetItemId_direction: {
+          userId,
+          targetItemId,
+          direction,
+        },
+      },
+      update: {
+        sourceItemIds: nextSources,
+      },
+      create: {
+        userId,
         targetItemId,
-        sourceItemIds: [sourceItemId],
         direction,
-      });
-    }
-
-    this.recurringMergeOverridesByUser.set(userId, overrides);
+        sourceItemIds: nextSources,
+      },
+    });
     return { merged: true };
   }
 
-  unmergeRecurringItems(
+  async unmergeRecurringItems(
     userId: string,
     targetItemId: string,
     sourceItemId: string,
     direction: 'income' | 'expense',
   ) {
-    const overrides = this.recurringMergeOverridesByUser.get(userId) ?? [];
-    const next = overrides
-      .map((override) => {
-        if (override.targetItemId !== targetItemId || override.direction !== direction) {
-          return override;
-        }
+    const existing = await this.prisma.recurringMergeOverride.findUnique({
+      where: {
+        userId_targetItemId_direction: {
+          userId,
+          targetItemId,
+          direction,
+        },
+      },
+      select: {
+        sourceItemIds: true,
+      },
+    });
 
-        return {
-          ...override,
-          sourceItemIds: override.sourceItemIds.filter((id) => id !== sourceItemId),
-        };
-      })
-      .filter((override) => override.sourceItemIds.length > 0);
+    if (!existing) {
+      return { merged: false };
+    }
 
-    this.recurringMergeOverridesByUser.set(userId, next);
+    const nextSources = existing.sourceItemIds.filter((id) => id !== sourceItemId);
+    if (nextSources.length === 0) {
+      await this.prisma.recurringMergeOverride.deleteMany({
+        where: {
+          userId,
+          targetItemId,
+          direction,
+        },
+      });
+    } else {
+      await this.prisma.recurringMergeOverride.update({
+        where: {
+          userId_targetItemId_direction: {
+            userId,
+            targetItemId,
+            direction,
+          },
+        },
+        data: {
+          sourceItemIds: nextSources,
+        },
+      });
+    }
     return { merged: false };
   }
 
@@ -408,14 +446,14 @@ export class ProjectionsService {
     );
 
     const recurringIncome = this.buildRecurringItems(
-      this.applyRecurringMerges(
+      await this.applyRecurringMerges(
         userId,
         'income',
         this.groupRecurringTransactions(transactions, 'income'),
       ),
     );
     const recurringExpenses = this.buildRecurringItems(
-      this.applyRecurringMerges(
+      await this.applyRecurringMerges(
         userId,
         'expense',
         this.groupRecurringTransactions(transactions, 'expense'),
@@ -547,13 +585,22 @@ export class ProjectionsService {
     return groups;
   }
 
-  private applyRecurringMerges(
+  private async applyRecurringMerges(
     userId: string,
     direction: 'income' | 'expense',
     groups: Map<string, ClassifiedTransaction[]>,
-  ): AppliedRecurringGroups {
-    const overrides = (this.recurringMergeOverridesByUser.get(userId) ?? [])
-      .filter((override) => override.direction === direction);
+  ): Promise<AppliedRecurringGroups> {
+    const overrides = ((await this.prisma.recurringMergeOverride.findMany({
+      where: {
+        userId,
+        direction,
+      },
+      select: {
+        targetItemId: true,
+        sourceItemIds: true,
+        direction: true,
+      },
+    })) as RecurringMergeOverride[]);
     if (overrides.length === 0) {
       return { groups, mergedSourcesByTarget: new Map() };
     }
