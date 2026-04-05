@@ -1,5 +1,5 @@
 import { Controller, Post, Body, UseGuards, Res, Param, HttpStatus } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { OpenAIService } from './openai/openai.service';
 import { PrismaService } from '../../config/prisma.service';
 import { GoalCommandService } from './goal-command.service';
@@ -19,6 +19,33 @@ export class AiGoalChatController {
     private rateLimitService: RateLimitService,
   ) {}
 
+  private async loadGoalContext(goalId: string, userId: string) {
+    const goal = await this.prisma.goal.findFirst({
+      where: { id: goalId, userId },
+      include: {
+        itemData: true,
+        financeData: true,
+        actionData: true,
+        groupData: true,
+      },
+    });
+
+    if (!goal) {
+      return null;
+    }
+
+    return {
+      id: goal.id,
+      type: goal.type,
+      title: goal.title,
+      description: goal.description,
+      ...(goal.itemData && { itemData: goal.itemData }),
+      ...(goal.financeData && { financeData: goal.financeData }),
+      ...(goal.actionData && { actionData: goal.actionData }),
+      ...(goal.groupData && { groupData: goal.groupData }),
+    };
+  }
+
   /**
    * Continue conversation for an existing goal
    * Uses Goal.threadId for conversation persistence via database
@@ -32,33 +59,13 @@ export class AiGoalChatController {
     // Check rate limit (throws 429 if exceeded)
     await this.rateLimitService.checkAndIncrement(userId);
 
-    // Fetch the goal from database to get full context including goalId
-    const goal = await this.prisma.goal.findUnique({
-      where: { id: goalId },
-      include: {
-        itemData: true,
-        financeData: true,
-        actionData: true,
-      },
-    });
-
-    if (!goal) {
+    const goalContext = await this.loadGoalContext(goalId, userId);
+    if (!goalContext) {
       return {
         error: 'Goal not found',
       };
     }
 
-    // Build goal context with all required fields including id
-    const goalContext = {
-      id: goal.id,
-      type: goal.type,
-      title: goal.title,
-      description: goal.description,
-      // Include type-specific data
-      ...(goal.itemData && { itemData: goal.itemData }),
-      ...(goal.financeData && { financeData: goal.financeData }),
-      ...(goal.actionData && { actionData: goal.actionData }),
-    };
     const result = await this.openaiService.continueGoalConversation(
       goalId,
       userId,
@@ -83,6 +90,71 @@ export class AiGoalChatController {
       routed: result.routed,
       specialist: result.specialist,
     };
+  }
+
+  /**
+   * Streaming goal chat endpoint kept for frontend compatibility.
+   * Goal view chat currently resolves the response first, then emits one SSE payload.
+   */
+  @Post(':goalId/stream')
+  async chatStream(
+    @Param('goalId') goalId: string,
+    @CurrentUser('userId') userId: string,
+    @Body() body: { message: string },
+    @Res() res: Response,
+  ) {
+    await this.rateLimitService.checkAndIncrement(userId);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    try {
+      const goalContext = await this.loadGoalContext(goalId, userId);
+      if (!goalContext) {
+        res.write(`data: ${JSON.stringify({
+          content: "I couldn't load this goal in the current session.",
+          done: true,
+          error: 'Goal not found',
+        })}\n\n`);
+        res.end();
+        return;
+      }
+
+      const result = await this.openaiService.continueGoalConversation(
+        goalId,
+        userId,
+        body.message,
+        goalContext,
+      );
+
+      res.write(`data: ${JSON.stringify({
+        content: result.content,
+        commands: result.commands,
+        goalPreview: result.goalPreview,
+        awaitingConfirmation: result.awaitingConfirmation,
+        proposalType: result.proposalType,
+        redirectProposal: result.redirectProposal,
+        goalIntent: result.goalIntent,
+        matchedGoalId: result.matchedGoalId,
+        matchedGoalTitle: result.matchedGoalTitle,
+        targetCategory: result.targetCategory,
+        toolScope: result.toolScope,
+        routed: result.routed,
+        specialist: result.specialist,
+        done: true,
+      })}\n\n`);
+      res.end();
+    } catch (error) {
+      console.error('Goal chat stream error:', error);
+      res.write(`data: ${JSON.stringify({
+        content: '',
+        done: true,
+        error: 'Stream error',
+      })}\n\n`);
+      res.end();
+    }
   }
 
   /**
