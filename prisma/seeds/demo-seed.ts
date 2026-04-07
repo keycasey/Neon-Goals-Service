@@ -50,6 +50,31 @@ interface ActionGoalSeed {
   tasks: TaskSeed[];
 }
 
+interface DemoPlaidAccountSeed {
+  plaidAccountId: string;
+  institutionName: string;
+  institutionId: string;
+  accountName: string;
+  accountMask: string;
+  accountType: string;
+  accountSubtype: string;
+  currentBalance: number;
+  availableBalance: number;
+  currency: string;
+}
+
+interface DemoPlaidTransactionSeed {
+  plaidAccountId: string;
+  transactionId: string;
+  amount: number;
+  date: string;
+  name: string;
+  merchantName?: string;
+  category: string;
+  categories?: string[];
+  pending?: boolean;
+}
+
 // Item goals seed data
 export const itemGoalSeeds: ItemGoalSeed[] = [
   {
@@ -238,6 +263,308 @@ export const actionGoalSeeds: ActionGoalSeed[] = [
   },
 ];
 
+export const demoPlaidAccountSeeds: DemoPlaidAccountSeed[] = [
+  {
+    plaidAccountId: 'demo-checking-account',
+    institutionName: 'Demo Bank',
+    institutionId: 'ins_demo',
+    accountName: 'Everyday Checking',
+    accountMask: '1234',
+    accountType: 'depository',
+    accountSubtype: 'checking',
+    currentBalance: 4823.47,
+    availableBalance: 4623.47,
+    currency: 'USD',
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    institutionName: 'Demo Bank',
+    institutionId: 'ins_demo',
+    accountName: 'High Yield Savings',
+    accountMask: '5678',
+    accountType: 'depository',
+    accountSubtype: 'savings',
+    currentBalance: 18250.0,
+    availableBalance: 18250.0,
+    currency: 'USD',
+  },
+  {
+    plaidAccountId: 'demo-credit-account',
+    institutionName: 'Demo Bank',
+    institutionId: 'ins_demo',
+    accountName: 'Rewards Credit Card',
+    accountMask: '9012',
+    accountType: 'credit',
+    accountSubtype: 'credit card',
+    currentBalance: 642.18,
+    availableBalance: 4357.82,
+    currency: 'USD',
+  },
+];
+
+export const demoPlaidTransactionSeeds: DemoPlaidTransactionSeed[] = [
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-payroll-2026-02',
+    amount: -2500.0,
+    date: '2026-02-01T00:00:00.000Z',
+    name: 'Payroll',
+    merchantName: 'Employer Inc',
+    category: 'Income',
+    categories: ['Income'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-payroll-2026-03',
+    amount: -2500.0,
+    date: '2026-03-01T00:00:00.000Z',
+    name: 'Payroll',
+    merchantName: 'Employer Inc',
+    category: 'Income',
+    categories: ['Income'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-payroll-2026-04',
+    amount: -2500.0,
+    date: '2026-04-01T00:00:00.000Z',
+    name: 'Payroll',
+    merchantName: 'Employer Inc',
+    category: 'Income',
+    categories: ['Income'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-rent-2026-02',
+    amount: 1450.0,
+    date: '2026-02-03T00:00:00.000Z',
+    name: 'Monthly Rent',
+    merchantName: 'Parkside Apartments',
+    category: 'Rent',
+    categories: ['Rent', 'Housing'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-rent-2026-03',
+    amount: 1450.0,
+    date: '2026-03-03T00:00:00.000Z',
+    name: 'Monthly Rent',
+    merchantName: 'Parkside Apartments',
+    category: 'Rent',
+    categories: ['Rent', 'Housing'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-rent-2026-04',
+    amount: 1450.0,
+    date: '2026-04-03T00:00:00.000Z',
+    name: 'Monthly Rent',
+    merchantName: 'Parkside Apartments',
+    category: 'Rent',
+    categories: ['Rent', 'Housing'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-utilities-2026-02',
+    amount: 152.34,
+    date: '2026-02-08T00:00:00.000Z',
+    name: 'Utility Bill',
+    merchantName: 'Electric Company',
+    category: 'Utilities',
+    categories: ['Utilities'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-utilities-2026-03',
+    amount: 149.86,
+    date: '2026-03-08T00:00:00.000Z',
+    name: 'Utility Bill',
+    merchantName: 'Electric Company',
+    category: 'Utilities',
+    categories: ['Utilities'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-utilities-2026-04',
+    amount: 154.12,
+    date: '2026-04-08T00:00:00.000Z',
+    name: 'Utility Bill',
+    merchantName: 'Electric Company',
+    category: 'Utilities',
+    categories: ['Utilities'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-streaming-2026-02',
+    amount: 18.99,
+    date: '2026-02-11T00:00:00.000Z',
+    name: 'Streaming Services',
+    merchantName: 'Netflix',
+    category: 'Entertainment',
+    categories: ['Entertainment'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-streaming-2026-03',
+    amount: 18.99,
+    date: '2026-03-11T00:00:00.000Z',
+    name: 'Streaming Services',
+    merchantName: 'Netflix',
+    category: 'Entertainment',
+    categories: ['Entertainment'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-streaming-2026-04',
+    amount: 18.99,
+    date: '2026-04-11T00:00:00.000Z',
+    name: 'Streaming Services',
+    merchantName: 'Netflix',
+    category: 'Entertainment',
+    categories: ['Entertainment'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-grocery-2026-04-02',
+    amount: 96.42,
+    date: '2026-04-02T00:00:00.000Z',
+    name: 'Grocery Store',
+    merchantName: 'Whole Foods',
+    category: 'Food and Drink',
+    categories: ['Food and Drink', 'Groceries'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-grocery-2026-04-05',
+    amount: 84.17,
+    date: '2026-04-05T00:00:00.000Z',
+    name: 'Grocery Store',
+    merchantName: 'Trader Joe\'s',
+    category: 'Food and Drink',
+    categories: ['Food and Drink', 'Groceries'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-credit-payment-2026-03',
+    amount: 615.42,
+    date: '2026-03-18T00:00:00.000Z',
+    name: 'Credit Card Payment Thank You',
+    merchantName: 'Rewards Credit Card',
+    category: 'Transfer',
+    categories: ['Transfer', 'Credit Card Payment'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-credit-payment-2026-04',
+    amount: 642.18,
+    date: '2026-04-18T00:00:00.000Z',
+    name: 'Credit Card Payment Thank You',
+    merchantName: 'Rewards Credit Card',
+    category: 'Transfer',
+    categories: ['Transfer', 'Credit Card Payment'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-restaurant-debit-2026-02',
+    amount: 26.14,
+    date: '2026-02-14T00:00:00.000Z',
+    name: 'Koriander Indian Kitchen',
+    merchantName: 'Koriander Indian Kitchen',
+    category: 'Food and Drink',
+    categories: ['Food and Drink', 'Restaurants'],
+  },
+  {
+    plaidAccountId: 'demo-checking-account',
+    transactionId: 'demo-restaurant-debit-2026-03',
+    amount: 27.48,
+    date: '2026-03-14T00:00:00.000Z',
+    name: 'Koriander Indian Kitchen',
+    merchantName: 'Koriander Indian Kitchen',
+    category: 'Food and Drink',
+    categories: ['Food and Drink', 'Restaurants'],
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    transactionId: 'demo-savings-transfer-2026-02',
+    amount: -800.0,
+    date: '2026-02-05T00:00:00.000Z',
+    name: 'Savings Transfer',
+    merchantName: 'Internal Transfer',
+    category: 'Transfer',
+    categories: ['Transfer', 'Savings'],
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    transactionId: 'demo-savings-transfer-2026-03',
+    amount: -800.0,
+    date: '2026-03-05T00:00:00.000Z',
+    name: 'Savings Transfer',
+    merchantName: 'Internal Transfer',
+    category: 'Transfer',
+    categories: ['Transfer', 'Savings'],
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    transactionId: 'demo-savings-transfer-2026-04',
+    amount: -800.0,
+    date: '2026-04-05T00:00:00.000Z',
+    name: 'Savings Transfer',
+    merchantName: 'Internal Transfer',
+    category: 'Transfer',
+    categories: ['Transfer', 'Savings'],
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    transactionId: 'demo-savings-interest-2026-02',
+    amount: -18.25,
+    date: '2026-02-28T00:00:00.000Z',
+    name: 'Interest Payment',
+    merchantName: 'Demo Bank Interest',
+    category: 'Income',
+    categories: ['Income', 'Interest'],
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    transactionId: 'demo-savings-interest-2026-03',
+    amount: -19.10,
+    date: '2026-03-31T00:00:00.000Z',
+    name: 'Interest Payment',
+    merchantName: 'Demo Bank Interest',
+    category: 'Income',
+    categories: ['Income', 'Interest'],
+  },
+  {
+    plaidAccountId: 'demo-savings-account',
+    transactionId: 'demo-savings-interest-2026-04',
+    amount: -19.84,
+    date: '2026-04-30T00:00:00.000Z',
+    name: 'Interest Payment',
+    merchantName: 'Demo Bank Interest',
+    category: 'Income',
+    categories: ['Income', 'Interest'],
+  },
+  {
+    plaidAccountId: 'demo-credit-account',
+    transactionId: 'demo-restaurant-credit-2026-02',
+    amount: 31.08,
+    date: '2026-02-15T00:00:00.000Z',
+    name: 'Koriander Indian Cuis',
+    merchantName: 'Koriander Indian Cuis',
+    category: 'Food and Drink',
+    categories: ['Food and Drink', 'Restaurants'],
+  },
+  {
+    plaidAccountId: 'demo-credit-account',
+    transactionId: 'demo-restaurant-credit-2026-03',
+    amount: 29.12,
+    date: '2026-03-15T00:00:00.000Z',
+    name: 'Koriander Indian Cuis',
+    merchantName: 'Koriander Indian Cuis',
+    category: 'Food and Drink',
+    categories: ['Food and Drink', 'Restaurants'],
+  },
+];
+
 /**
  * Seed demo user data
  * Creates all goals, goal-specific data, and demo Plaid account
@@ -315,26 +642,51 @@ export async function seedDemoUser(userId: string): Promise<void> {
     });
   }
 
-  // Create demo Plaid account
-  await prisma.plaidAccount.create({
-    data: {
-      userId,
-      accessToken: 'demo-sandbox-token',
-      itemId: 'demo-item-id',
-      plaidAccountId: 'demo-account-id',
-      institutionName: 'Demo Bank',
-      institutionId: 'ins_demo',
-      accountName: 'Demo Checking',
-      accountMask: '1234',
-      accountType: 'depository',
-      accountSubtype: 'checking',
-      currentBalance: 5000.00,
-      availableBalance: 4800.00,
-      currency: 'USD',
-      isDemo: true,
-      isActive: true,
-    },
-  });
+  const createdAccounts = new Map<string, string>();
+
+  for (const seed of demoPlaidAccountSeeds) {
+    const account = await prisma.plaidAccount.create({
+      data: {
+        userId,
+        accessToken: 'demo-sandbox-token',
+        itemId: `demo-item-${seed.plaidAccountId}`,
+        plaidAccountId: seed.plaidAccountId,
+        institutionName: seed.institutionName,
+        institutionId: seed.institutionId,
+        accountName: seed.accountName,
+        accountMask: seed.accountMask,
+        accountType: seed.accountType,
+        accountSubtype: seed.accountSubtype,
+        currentBalance: seed.currentBalance,
+        availableBalance: seed.availableBalance,
+        currency: seed.currency,
+        isDemo: true,
+        isActive: true,
+      },
+    });
+
+    createdAccounts.set(seed.plaidAccountId, account.id);
+  }
+
+  for (const tx of demoPlaidTransactionSeeds) {
+    const accountId = createdAccounts.get(tx.plaidAccountId);
+    if (!accountId) continue;
+
+    await prisma.plaidTransaction.create({
+      data: {
+        plaidAccountId: accountId,
+        transactionId: tx.transactionId,
+        amount: tx.amount,
+        currency: 'USD',
+        date: new Date(tx.date),
+        name: tx.name,
+        merchantName: tx.merchantName,
+        category: tx.category,
+        categories: tx.categories ?? [tx.category],
+        pending: tx.pending ?? false,
+      },
+    });
+  }
 
   // Create user usage record for rate limiting
   const tomorrow = new Date();

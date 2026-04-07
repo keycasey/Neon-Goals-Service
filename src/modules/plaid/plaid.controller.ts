@@ -109,7 +109,7 @@ export class PlaidController {
   @Get('accounts/:accountId/balance')
   async getAccountBalance(@CurrentUser() user: User, @Param('accountId') accountId: string) {
     this.logger.log(`Get balance request from user: ${user.id} for account: ${accountId}`);
-    return this.plaidService.getAccountBalance(accountId);
+    return this.plaidService.getAccountBalance(user.id, accountId);
   }
 
   /**
@@ -124,7 +124,7 @@ export class PlaidController {
   ) {
     this.logger.log(`Get transactions request from user: ${user.id} for account: ${accountId}`);
     // Default to last 30 days
-    return this.plaidService.getAccountTransactions(accountId);
+    return this.plaidService.getAccountTransactions(user.id, accountId);
   }
 
   /**

@@ -53,7 +53,7 @@ export class AiToolsService {
         throw new BadRequestException('Account not found or access denied');
       }
 
-      return await this.plaidService.getAccountBalance(plaidAccountId);
+      return await this.plaidService.getAccountBalance(userId, plaidAccountId);
     }
 
     // Return all user accounts with live balances
@@ -63,7 +63,7 @@ export class AiToolsService {
 
     const balances = await Promise.all(
       accounts.map((account) =>
-        this.plaidService.getAccountBalance(account.id),
+        this.plaidService.getAccountBalance(userId, account.id),
       ),
     );
 
@@ -119,6 +119,7 @@ export class AiToolsService {
     const results = await Promise.all(
       accountsToQuery.map(async (account) => {
         const result = await this.plaidService.getAccountTransactions(
+          userId,
           account.id,
           startDate,
           endDate,

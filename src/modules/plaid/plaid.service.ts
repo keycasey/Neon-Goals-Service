@@ -14,6 +14,7 @@ import { DemoPlaidService } from './demo-plaid.service';
 export class PlaidService {
   private readonly logger = new Logger(PlaidService.name);
   private plaidClient: PlaidApi;
+  private demoPlaidClient: PlaidApi;
 
   constructor(
     private configService: ConfigService,
@@ -21,26 +22,51 @@ export class PlaidService {
     @Inject(forwardRef(() => DemoPlaidService))
     private demoPlaidService: DemoPlaidService,
   ) {
-    const clientId = this.configService.get<string>('PLAID_CLIENT_ID');
-    const secret = this.configService.get<string>('PLAID_SECRET');
-    const env = this.configService.get<string>('PLAID_ENV', 'sandbox');
+    this.plaidClient = this.buildPlaidClient('PLAID');
+    this.demoPlaidClient = this.buildPlaidClient('DEMO_PLAID', 'PLAID');
+    this.logger.log('Plaid clients initialized');
+  }
+
+  private buildPlaidClient(prefix: string, fallbackPrefix?: string): PlaidApi {
+    const clientId =
+      this.configService.get<string>(`${prefix}_CLIENT_ID`) ||
+      (fallbackPrefix ? this.configService.get<string>(`${fallbackPrefix}_CLIENT_ID`) : undefined);
+    const secret =
+      this.configService.get<string>(`${prefix}_SECRET`) ||
+      (fallbackPrefix ? this.configService.get<string>(`${fallbackPrefix}_SECRET`) : undefined);
+    const env =
+      this.configService.get<string>(`${prefix}_ENV`) ||
+      (fallbackPrefix ? this.configService.get<string>(`${fallbackPrefix}_ENV`) : undefined) ||
+      'sandbox';
 
     if (!clientId || !secret) {
-      throw new Error('PLAID_CLIENT_ID and PLAID_SECRET must be set');
+      throw new Error(`${prefix}_CLIENT_ID and ${prefix}_SECRET must be set`);
     }
 
-    const configuration = new Configuration({
-      basePath: PlaidEnvironments[env],
-      baseOptions: {
-        headers: {
-          'PLAID-CLIENT-ID': clientId,
-          'PLAID-SECRET': secret,
+    return new PlaidApi(
+      new Configuration({
+        basePath: PlaidEnvironments[env],
+        baseOptions: {
+          headers: {
+            'PLAID-CLIENT-ID': clientId,
+            'PLAID-SECRET': secret,
+          },
         },
-      },
-    });
+      }),
+    );
+  }
 
-    this.plaidClient = new PlaidApi(configuration);
-    this.logger.log(`Plaid client initialized for ${env} environment`);
+  private async getPlaidClientForUser(userId: string): Promise<PlaidApi> {
+    return (await this.demoPlaidService.isDemoUser(userId)) ? this.demoPlaidClient : this.plaidClient;
+  }
+
+  private getPlaidClientForAccount(account: { isDemo?: boolean | null }): PlaidApi {
+    return account.isDemo ? this.demoPlaidClient : this.plaidClient;
+  }
+
+  private shouldRetryWithoutMinUpdatedDatetime(error: any): boolean {
+    const message = `${error?.response?.data?.error_message || error?.message || ''}`.toLowerCase();
+    return message.includes('requested datetime out of range');
   }
 
   /**
@@ -53,16 +79,7 @@ export class PlaidService {
       throw new BadRequestException('User ID is required for link token creation');
     }
 
-    // Check if this is a demo user - they cannot link real accounts
-    if (await this.demoPlaidService.isDemoUser(userId)) {
-      const demoResponse = this.demoPlaidService.getDemoLinkToken();
-      // Return in Plaid's expected format
-      return {
-        link_token: demoResponse.link_token,
-        expiration: demoResponse.expiration,
-        request_id: demoResponse.request_id,
-      };
-    }
+    const client = await this.getPlaidClientForUser(userId);
 
     const request = {
       user: {
@@ -79,7 +96,7 @@ export class PlaidService {
     this.logger.log(`Link token request: ${JSON.stringify({ ...request, user: { client_user_id: userId.substring(0, 8) + '...' } })}`);
 
     try {
-      const response = await this.plaidClient.linkTokenCreate(request);
+      const response = await client.linkTokenCreate(request);
       this.logger.log(`Link token created for user: ${userId}`);
       return response.data;
     } catch (error: any) {
@@ -122,13 +139,13 @@ export class PlaidService {
       throw new BadRequestException('Public token is required');
     }
 
-    // Block demo users from linking real accounts
-    await this.demoPlaidService.assertNotDemoUser(userId);
+    const isDemoUser = await this.demoPlaidService.isDemoUser(userId);
+    const client = isDemoUser ? this.demoPlaidClient : this.plaidClient;
 
     try {
       // Exchange public token for access token
       this.logger.log('Exchanging public token for access token...');
-      const exchangeResponse = await this.plaidClient.itemPublicTokenExchange({
+      const exchangeResponse = await client.itemPublicTokenExchange({
         public_token: publicToken,
       });
 
@@ -137,12 +154,12 @@ export class PlaidService {
 
       // Get item info (institution details)
       this.logger.log('Fetching item info...');
-      const itemResponse = await this.plaidClient.itemGet({
+      const itemResponse = await client.itemGet({
         access_token: access_token,
       });
 
       const institution = itemResponse.data.item.institution_id
-        ? await this.getInstitutionName(itemResponse.data.item.institution_id)
+        ? await this.getInstitutionName(itemResponse.data.item.institution_id, client)
         : { name: 'Unknown Bank', logo: '' };
 
       this.logger.log(`Institution: ${institution.name}`);
@@ -151,12 +168,24 @@ export class PlaidService {
       this.logger.log('Fetching accounts with balances...');
       // Use 24 hours ago - Plaid balances typically update daily
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const accountsResponse = await this.plaidClient.accountsBalanceGet({
-        access_token: access_token,
-        options: {
-          min_last_updated_datetime: oneDayAgo.toISOString(),
-        },
-      });
+      let accountsResponse;
+      try {
+        accountsResponse = await client.accountsBalanceGet({
+          access_token: access_token,
+          options: {
+            min_last_updated_datetime: oneDayAgo.toISOString(),
+          },
+        });
+      } catch (error: any) {
+        if (!this.shouldRetryWithoutMinUpdatedDatetime(error)) {
+          throw error;
+        }
+
+        this.logger.warn('Retrying account balance fetch without min_last_updated_datetime');
+        accountsResponse = await client.accountsBalanceGet({
+          access_token: access_token,
+        });
+      }
 
       this.logger.log(`Found ${accountsResponse.data.accounts.length} accounts`);
 
@@ -183,6 +212,7 @@ export class PlaidService {
               currentBalance: account.balances.current || 0,
               availableBalance: account.balances.available || null,
               currency: account.balances.iso_currency_code || 'USD',
+              isDemo: isDemoUser,
               isActive: true, // Reactivate if previously soft-deleted
             },
             create: {
@@ -199,6 +229,7 @@ export class PlaidService {
               currentBalance: account.balances.current || 0,
               availableBalance: account.balances.available || null,
               currency: account.balances.iso_currency_code || 'USD',
+              isDemo: isDemoUser,
             },
             select: {
               id: true,
@@ -281,9 +312,12 @@ export class PlaidService {
   /**
    * Get institution name from ID
    */
-  private async getInstitutionName(institutionId: string): Promise<{ name: string; logo: string }> {
+  private async getInstitutionName(
+    institutionId: string,
+    client: PlaidApi = this.plaidClient,
+  ): Promise<{ name: string; logo: string }> {
     try {
-      const response = await this.plaidClient.institutionsGetById({
+      const response = await client.institutionsGetById({
         institution_id: institutionId,
         country_codes: ['US'] as any,
       });
@@ -373,6 +407,7 @@ export class PlaidService {
         plaidAccountId: true,
         lastSync: true,
         financeGoalId: true,
+        isDemo: true,
       },
     });
 
@@ -384,7 +419,7 @@ export class PlaidService {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const minUpdateTime = account.lastSync > oneDayAgo ? account.lastSync : oneDayAgo;
 
-    const response = await this.plaidClient.accountsBalanceGet({
+    const response = await this.getPlaidClientForAccount(account).accountsBalanceGet({
       access_token: account.accessToken,
       options: {
         min_last_updated_datetime: minUpdateTime.toISOString(),
@@ -552,7 +587,40 @@ export class PlaidService {
   /**
    * Get account balance by plaidAccountId (fresh data from Plaid)
    */
-  async getAccountBalance(plaidAccountId: string) {
+  async getAccountBalance(userId: string, plaidAccountId: string) {
+    if (await this.demoPlaidService.isDemoUser(userId)) {
+      const account = await this.prisma.plaidAccount.findFirst({
+        where: {
+          id: plaidAccountId,
+          userId,
+          isDemo: true,
+        },
+        select: {
+          id: true,
+          accountName: true,
+          institutionName: true,
+          currentBalance: true,
+          availableBalance: true,
+          currency: true,
+          lastSync: true,
+        },
+      });
+
+      if (!account) {
+        throw new BadRequestException('Plaid account not found');
+      }
+
+      return {
+        accountId: account.id,
+        accountName: account.accountName,
+        institutionName: account.institutionName,
+        currentBalance: account.currentBalance,
+        availableBalance: account.availableBalance,
+        currency: account.currency || 'USD',
+        lastSync: account.lastSync || new Date(),
+      };
+    }
+
     const account = await this.prisma.plaidAccount.findUnique({
       where: { id: plaidAccountId },
       select: {
@@ -603,10 +671,47 @@ export class PlaidService {
    * Get account transactions by plaidAccountId (fresh data from Plaid)
    */
   async getAccountTransactions(
+    userId: string,
     plaidAccountId: string,
     startDate?: string,
     endDate?: string,
   ) {
+    if (await this.demoPlaidService.isDemoUser(userId)) {
+      const account = await this.prisma.plaidAccount.findFirst({
+        where: {
+          id: plaidAccountId,
+          userId,
+          isDemo: true,
+        },
+        select: {
+          id: true,
+          accountName: true,
+          institutionName: true,
+        },
+      });
+
+      if (!account) {
+        throw new BadRequestException('Plaid account not found');
+      }
+
+      const transactions = await this.demoPlaidService.getDemoTransactions(plaidAccountId, userId);
+
+      const end = endDate || new Date().toISOString().split('T')[0];
+      const start =
+        startDate ||
+        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      return {
+        accountId: account.id,
+        accountName: account.accountName,
+        institutionName: account.institutionName,
+        transactions,
+        totalTransactions: transactions.length,
+        startDate: start,
+        endDate: end,
+      };
+    }
+
     const account = await this.prisma.plaidAccount.findUnique({
       where: { id: plaidAccountId },
       select: {
@@ -734,6 +839,7 @@ export class PlaidService {
         plaidAccountId: true,
         accountName: true,
         accountType: true,
+        isDemo: true,
       },
     });
 
@@ -741,11 +847,13 @@ export class PlaidService {
       throw new BadRequestException('Plaid account not found');
     }
 
+    const client = this.getPlaidClientForAccount(account);
+
     const [holdingsResponse, transactionsResponse] = await Promise.all([
-      this.plaidClient.investmentsHoldingsGet({
+      client.investmentsHoldingsGet({
         access_token: account.accessToken,
       }),
-      this.plaidClient.investmentsTransactionsGet({
+      client.investmentsTransactionsGet({
         access_token: account.accessToken,
         start_date: startDate,
         end_date: endDate,
@@ -910,6 +1018,7 @@ export class PlaidService {
         accessToken: true,
         plaidAccountId: true,
         accountName: true,
+        isDemo: true,
       },
     });
 
@@ -917,7 +1026,7 @@ export class PlaidService {
       throw new BadRequestException('Plaid account not found');
     }
 
-    const response = await this.plaidClient.transactionsGet({
+    const response = await this.getPlaidClientForAccount(account).transactionsGet({
       access_token: account.accessToken,
       start_date: startDate,
       end_date: endDate,
