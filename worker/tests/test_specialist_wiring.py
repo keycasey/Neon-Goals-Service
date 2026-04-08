@@ -92,3 +92,46 @@ def test_live_chat_finance_path_passes_empty_tool_results() -> None:
     assert finance_program.calls[0]["goal_context"] == ""
     assert finance_program.calls[0]["user_message"] == "What should I do next?"
     assert finance_program.calls[0]["tool_results"] == "[]"
+
+
+def test_live_chat_finance_path_uses_follow_up_question_and_normalizes_metadata() -> None:
+    class _Program:
+        def __call__(self, **kwargs):
+            return {
+                "assistant_reply": "",
+                "follow_up_question": "What dates should I use?",
+                "handoff_complete": "false",
+                "tool_requests": [
+                    {"name": "get_financial_context", "arguments": {"includeRecentTransactions": True}},
+                    {"name": "", "arguments": {}},
+                    "not-a-request",
+                ],
+            }
+
+    with (
+        patch("dspy_pipeline.live_chat.DSPyConfig.from_env", return_value=SimpleNamespace()),
+        patch("dspy_pipeline.live_chat.configure_dspy_models", return_value=SimpleNamespace()),
+        patch("dspy_pipeline.live_chat.build_signatures", return_value={"finances": SimpleNamespace()}),
+        patch(
+            "dspy_pipeline.live_chat.build_programs",
+            return_value={
+                "finances": _Program(),
+            },
+        ),
+    ):
+        result = run_live_chat(
+            {
+                "chatType": "finances",
+                "userMessage": "What should I do next?",
+            }
+        )
+
+    assert result.content == "What dates should I use?"
+    assert result.metadata["followUpQuestion"] == "What dates should I use?"
+    assert result.metadata["handoffComplete"] is False
+    assert result.metadata["toolRequests"] == [
+        {
+            "name": "get_financial_context",
+            "arguments": {"includeRecentTransactions": True},
+        }
+    ]

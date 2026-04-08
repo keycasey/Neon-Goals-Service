@@ -303,6 +303,25 @@ def _build_specialist_metadata(prediction: Any) -> dict[str, Any]:
     }
 
 
+def _build_live_chat_content(prediction: Any) -> str:
+    assistant_reply = _extract_prediction_field(prediction, "assistant_reply") or _extract_prediction_field(
+        prediction, "explanation"
+    ) or ""
+    content = str(assistant_reply).strip()
+    if content:
+        return content
+
+    follow_up_question = str(_extract_prediction_field(prediction, "follow_up_question") or "").strip()
+    if follow_up_question:
+        return follow_up_question
+
+    explanation = str(_extract_prediction_field(prediction, "explanation") or "").strip()
+    if explanation:
+        return explanation
+
+    return ""
+
+
 def run_live_chat(payload: dict[str, Any]) -> LiveChatResult:
     config = DSPyConfig.from_env()
     dspy = configure_dspy_models(config)
@@ -338,16 +357,10 @@ def run_live_chat(payload: dict[str, Any]) -> LiveChatResult:
     else:
         raise ValueError(f"Unsupported chatType: {chat_type}")
 
-    assistant_reply = _extract_prediction_field(prediction, "assistant_reply") or _extract_prediction_field(
-        prediction, "explanation"
-    ) or ""
-    content = str(assistant_reply).strip()
+    content = _build_live_chat_content(prediction)
     commands = _build_commands(prediction)
     metadata = _build_metadata(prediction, commands, payload.get("recentMessages") or [])
     metadata.update(_build_specialist_metadata(prediction))
-
-    if not content:
-        content = str(_extract_prediction_field(prediction, "explanation") or "").strip()
 
     if not content and commands:
         content = "I found a structured response for you."
