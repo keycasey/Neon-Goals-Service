@@ -22,6 +22,16 @@ export class PlaidController {
     return this.plaidService.createLinkToken(user.id);
   }
 
+  @Post('accounts/:accountId/reconnect-link-token')
+  async createReconnectLinkToken(
+    @CurrentUser() user: User,
+    @Param('accountId') accountId: string,
+    @Body() body?: { product?: 'investments' },
+  ) {
+    this.logger.log(`Create reconnect link token request from user: ${user.id} for account: ${accountId}`);
+    return this.plaidService.createReconnectLinkToken(user.id, accountId, body?.product ?? 'investments');
+  }
+
   /**
    * Link a Plaid account (exchange public token and save to database)
    * POST /plaid/link-account

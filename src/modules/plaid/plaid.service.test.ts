@@ -163,6 +163,54 @@ describe('PlaidService', () => {
     expect(demoCalls[0].user.client_user_id).toBe('user_1');
   });
 
+  it('creates a reconnect link token that requests investments consent for an existing account', async () => {
+    const calls: any[] = [];
+    const service = createService({
+      findFirstImpl: async (args) => {
+        calls.push(args);
+        return {
+          id: 'acct_1',
+          userId: 'user_1',
+          accessToken: 'access-token',
+          itemId: 'item_1',
+          isDemo: false,
+        };
+      },
+    });
+
+    (service as any).plaidClient = {
+      linkTokenCreate: async (request: any) => {
+        calls.push(request);
+        return {
+          data: {
+            link_token: 'reconnect-link-token',
+            expiration: '2026-04-08T00:00:00.000Z',
+            request_id: 'reconnect-req',
+          },
+        };
+      },
+    };
+
+    const result = await service.createReconnectLinkToken('user_1', 'acct_1', 'investments');
+
+    expect(result.link_token).toBe('reconnect-link-token');
+    expect(calls[0]).toEqual({
+      where: {
+        id: 'acct_1',
+        userId: 'user_1',
+      },
+      select: {
+        accessToken: true,
+        isDemo: true,
+      },
+    });
+    expect(calls[1]).toMatchObject({
+      user: { client_user_id: 'user_1' },
+      access_token: 'access-token',
+      additional_consented_products: ['investments'],
+    });
+  });
+
   it('marks newly linked accounts as demo when a demo user links plaid', async () => {
     const calls: any[] = [];
     const service = createService({
@@ -623,5 +671,50 @@ describe('PlaidService', () => {
       data: { lastSync: expect.any(Date) },
       select: { id: true },
     });
+  });
+
+  it('maps additional investment consent errors to a reconnect-required response', async () => {
+    const service = createService({
+      findUniqueImpl: async () => ({
+        id: 'acct_1',
+        accessToken: 'access-token',
+        plaidAccountId: 'plaid_1',
+        accountName: 'Robinhood individual',
+        accountType: 'investment',
+        isDemo: false,
+      }),
+    });
+
+    (service as any).plaidClient = {
+      investmentsHoldingsGet: async () => {
+        const error: any = new Error('consent required');
+        error.response = {
+          data: {
+            error_code: 'ADDITIONAL_CONSENT_REQUIRED',
+            error_message: 'client does not have user consent to access the PRODUCT_INVESTMENTS product',
+          },
+        };
+        throw error;
+      },
+      investmentsTransactionsGet: async () => ({
+        data: {
+          investment_transactions: [],
+          securities: [],
+        },
+      }),
+    };
+
+    try {
+      await service.fetchAndStoreInvestmentData('acct_1', '2026-01-01', '2026-03-01');
+      throw new Error('expected fetchAndStoreInvestmentData to throw');
+    } catch (error: any) {
+      expect(error.getStatus()).toBe(409);
+      expect(error.getResponse()).toEqual({
+        message: 'Reconnect this investment account to grant investments access.',
+        code: 'PLAID_INVESTMENTS_CONSENT_REQUIRED',
+        reconnectRequired: true,
+        product: 'investments',
+      });
+    }
   });
 });

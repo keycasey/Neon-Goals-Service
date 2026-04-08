@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
@@ -69,6 +69,19 @@ export class PlaidService {
     return message.includes('requested datetime out of range');
   }
 
+  private isAdditionalInvestmentConsentRequired(error: any): boolean {
+    return error?.response?.data?.error_code === 'ADDITIONAL_CONSENT_REQUIRED';
+  }
+
+  private buildInvestmentReconnectRequiredException(): ConflictException {
+    return new ConflictException({
+      message: 'Reconnect this investment account to grant investments access.',
+      code: 'PLAID_INVESTMENTS_CONSENT_REQUIRED',
+      reconnectRequired: true,
+      product: 'investments',
+    });
+  }
+
   /**
    * Create a link token for Plaid Link frontend
    */
@@ -113,6 +126,42 @@ export class PlaidService {
         plaidError?.error_message || 'Failed to create link token',
       );
     }
+  }
+
+  async createReconnectLinkToken(
+    userId: string,
+    plaidAccountId: string,
+    product: 'investments' = 'investments',
+  ): Promise<LinkTokenResponse> {
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: {
+        id: plaidAccountId,
+        userId,
+      },
+      select: {
+        accessToken: true,
+        isDemo: true,
+      },
+    });
+
+    if (!account) {
+      throw new BadRequestException('Plaid account not found');
+    }
+
+    const client = this.getPlaidClientForAccount(account);
+    const response = await client.linkTokenCreate({
+      user: {
+        client_user_id: userId,
+      },
+      client_name: 'Neon Goals',
+      country_codes: ['US'] as any,
+      language: 'en',
+      redirect_uri: this.configService.get<string>('PLAID_REDIRECT_URI'),
+      access_token: account.accessToken,
+      additional_consented_products: [product] as any[],
+    });
+
+    return response.data;
   }
 
   /**
@@ -849,16 +898,25 @@ export class PlaidService {
 
     const client = this.getPlaidClientForAccount(account);
 
-    const [holdingsResponse, transactionsResponse] = await Promise.all([
-      client.investmentsHoldingsGet({
-        access_token: account.accessToken,
-      }),
-      client.investmentsTransactionsGet({
-        access_token: account.accessToken,
-        start_date: startDate,
-        end_date: endDate,
-      }),
-    ]);
+    let holdingsResponse;
+    let transactionsResponse;
+    try {
+      [holdingsResponse, transactionsResponse] = await Promise.all([
+        client.investmentsHoldingsGet({
+          access_token: account.accessToken,
+        }),
+        client.investmentsTransactionsGet({
+          access_token: account.accessToken,
+          start_date: startDate,
+          end_date: endDate,
+        }),
+      ]);
+    } catch (error: any) {
+      if (this.isAdditionalInvestmentConsentRequired(error)) {
+        throw this.buildInvestmentReconnectRequiredException();
+      }
+      throw error;
+    }
 
     const filteredHoldings = holdingsResponse.data.holdings.filter(
       (holding) => holding.account_id === account.plaidAccountId,
