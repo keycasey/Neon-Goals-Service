@@ -684,6 +684,18 @@ You can reference and modify these goals through conversational commands. Refere
 
     // Add transaction data for finances category
     if (categoryId === 'finances' && this.plaidService) {
+      systemPrompt += `
+
+## Finance Tooling Rules
+
+- Linked account and transaction data in this conversation comes from the user's connected financial accounts, not from pasted CSVs or manually shared spreadsheets.
+- Do not say the user "pasted" transaction data unless the user literally pasted it in the chat.
+- Do not say you cannot access linked accounts when finance tools or linked-account summaries are available in context.
+- Do not infer duplicate accounts unless exact duplicate active accounts are returned by tool results.
+- Before giving account-specific spending, income, savings-rate, or cashflow recommendations, call \`get_financial_context\`.
+- Treat recurring income and recurring expenses returned by \`get_financial_context\` as the primary source of truth over raw category labels when available.
+- If you reference unusual or potentially one-off transactions, say that explicitly and ask a clarifying question when the recommendation depends on whether the transaction is recurring.`;
+
       try {
         const transactionSummary = await this.plaidService.getTransactionSummaryForAI(userId);
         if (transactionSummary.totalTransactions > 0) {
@@ -691,7 +703,9 @@ You can reference and modify these goals through conversational commands. Refere
 
 ## Recent Transaction Data
 
-${transactionSummary.totalTransactions} transactions found across ${transactionSummary.accounts.length} accounts:
+The following summary was generated from linked Plaid account data, not pasted user input.
+
+${transactionSummary.totalTransactions} stored transactions found across ${transactionSummary.accounts.length} accounts:
 
 ${transactionSummary.accounts.map(acc => `
 **${acc.institutionName} - ${acc.accountName}** (${acc.transactionCount} transactions)
@@ -718,6 +732,17 @@ ${acc.recentTransactions.map(t =>
     }
 
     return [
+      {
+        type: 'function' as const,
+        function: {
+          name: 'get_financial_context',
+          description: 'Get structured financial context across linked accounts, including recurring income/expenses, recent transactions, likely one-off transactions, and account coverage. Use this before making account-specific financial recommendations.',
+          parameters: {
+            type: 'object',
+            properties: {},
+          },
+        },
+      },
       {
         type: 'function' as const,
         function: {
@@ -806,6 +831,10 @@ ${acc.recentTransactions.map(t =>
         try {
           const args = JSON.parse(toolCall.function.arguments || '{}');
 
+          if (toolName === 'get_financial_context') {
+            const result = await this.aiToolsService!.getFinancialContext(userId);
+            toolResult = JSON.stringify(result);
+          } else
           if (toolName === 'get_live_balance') {
             const result = await this.aiToolsService!.getLiveBalance(userId, args.plaidAccountId);
             toolResult = JSON.stringify(result);
@@ -857,6 +886,9 @@ ${acc.recentTransactions.map(t =>
         let result: any;
         const args = JSON.parse(toolCall.arguments || '{}');
 
+        if (toolCall.name === 'get_financial_context') {
+          result = await this.aiToolsService!.getFinancialContext(userId);
+        } else
         if (toolCall.name === 'get_live_balance') {
           result = await this.aiToolsService!.getLiveBalance(userId, args.plaidAccountId);
         } else if (toolCall.name === 'get_live_transactions') {

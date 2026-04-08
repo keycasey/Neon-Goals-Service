@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { PlaidService } from '../plaid/plaid.service';
+import { ProjectionsService } from '../projections/projections.service';
 
 /**
  * AiToolsService provides agent-accessible tools for live financial data.
@@ -13,6 +14,7 @@ export class AiToolsService {
   constructor(
     private prisma: PrismaService,
     private plaidService: PlaidService,
+    private projectionsService: ProjectionsService,
   ) {}
 
   /**
@@ -166,7 +168,7 @@ export class AiToolsService {
       merchant: string;
       category: string;
     }>;
-  }> { {
+  }> {
     // Get all user accounts
     const accounts = await this.prisma.plaidAccount.findMany({
       where: { userId, isActive: true },
@@ -264,5 +266,181 @@ export class AiToolsService {
       recentTransactions,
     };
   }
-}
+
+  async getFinancialContext(userId: string): Promise<{
+    linkedAccounts: Array<{
+      accountId: string;
+      institutionName: string;
+      accountName: string;
+      accountType: string;
+      accountSubtype: string | null;
+      currentBalance: number;
+      transactionCount: number;
+    }>;
+    recurringIncome: Array<{
+      id: string;
+      label: string;
+      amount: number;
+      cadence: string;
+      accountId?: string;
+      accountName?: string;
+      category?: string;
+      sourceTransactionIds?: string[];
+    }>;
+    recurringExpenses: Array<{
+      id: string;
+      label: string;
+      amount: number;
+      cadence: string;
+      accountId?: string;
+      accountName?: string;
+      category?: string;
+      sourceTransactionIds?: string[];
+    }>;
+    netMonthlyCashflow: number;
+    totalMonthlyIncome: number;
+    totalMonthlyExpenses: number;
+    currentNetWorth: number;
+    assumptions: string[];
+    recentTransactions: Array<{
+      accountId: string;
+      accountName: string;
+      institutionName: string;
+      date: string;
+      amount: number;
+      merchantName: string;
+      category: string;
+      recurringMatch: boolean;
+    }>;
+    potentialOneOffTransactions: Array<{
+      accountId: string;
+      accountName: string;
+      institutionName: string;
+      date: string;
+      amount: number;
+      merchantName: string;
+      category: string;
+    }>;
+    accountsWithoutTransactions: Array<{
+      accountId: string;
+      institutionName: string;
+      accountName: string;
+    }>;
+  }> {
+    const [cashflow, overview, accounts] = await Promise.all([
+      this.projectionsService.getCashflow(userId),
+      this.projectionsService.getOverview(userId, 12),
+      this.prisma.plaidAccount.findMany({
+        where: { userId, isActive: true },
+        select: {
+          id: true,
+          institutionName: true,
+          accountName: true,
+          accountType: true,
+          accountSubtype: true,
+          currentBalance: true,
+          transactions: {
+            orderBy: { date: 'desc' },
+            take: 30,
+            select: {
+              id: true,
+              date: true,
+              amount: true,
+              merchantName: true,
+              name: true,
+              category: true,
+            },
+          },
+        },
+        orderBy: [{ institutionName: 'asc' }, { accountName: 'asc' }],
+      }),
+    ]);
+
+    const recurringTransactionIds = new Set<string>();
+    for (const item of [...cashflow.recurringIncome, ...cashflow.recurringExpenses]) {
+      for (const sourceId of item.sourceTransactionIds ?? []) {
+        recurringTransactionIds.add(sourceId);
+      }
+      for (const mergedSource of item.mergedSources ?? []) {
+        for (const sourceId of mergedSource.sourceTransactionIds ?? []) {
+          recurringTransactionIds.add(sourceId);
+        }
+      }
+    }
+
+    const recentTransactions = accounts
+      .flatMap((account) =>
+        account.transactions.map((transaction) => ({
+          accountId: account.id,
+          accountName: account.accountName,
+          institutionName: account.institutionName,
+          date: transaction.date.toISOString().slice(0, 10),
+          amount: transaction.amount,
+          merchantName: transaction.merchantName || transaction.name,
+          category: transaction.category || 'uncategorized',
+          recurringMatch: recurringTransactionIds.has(transaction.id),
+        })),
+      )
+      .sort((a, b) => {
+        if (a.date === b.date) {
+          return Math.abs(b.amount) - Math.abs(a.amount);
+        }
+        return a.date < b.date ? 1 : -1;
+      })
+      .slice(0, 60);
+
+    const potentialOneOffTransactions = recentTransactions
+      .filter((transaction) => !transaction.recurringMatch)
+      .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+      .slice(0, 12)
+      .map(({ recurringMatch: _recurringMatch, ...transaction }) => transaction);
+
+    const linkedAccounts = accounts.map((account) => ({
+      accountId: account.id,
+      institutionName: account.institutionName,
+      accountName: account.accountName,
+      accountType: account.accountType,
+      accountSubtype: account.accountSubtype,
+      currentBalance: account.currentBalance,
+      transactionCount: account.transactions.length,
+    }));
+
+    return {
+      linkedAccounts,
+      recurringIncome: cashflow.recurringIncome.map((item) => ({
+        id: item.id,
+        label: item.label,
+        amount: item.amount,
+        cadence: item.cadence,
+        accountId: item.accountId,
+        accountName: item.accountName,
+        category: item.category,
+        sourceTransactionIds: item.sourceTransactionIds,
+      })),
+      recurringExpenses: cashflow.recurringExpenses.map((item) => ({
+        id: item.id,
+        label: item.label,
+        amount: item.amount,
+        cadence: item.cadence,
+        accountId: item.accountId,
+        accountName: item.accountName,
+        category: item.category,
+        sourceTransactionIds: item.sourceTransactionIds,
+      })),
+      netMonthlyCashflow: cashflow.netMonthlyCashflow,
+      totalMonthlyIncome: cashflow.totalMonthlyIncome,
+      totalMonthlyExpenses: cashflow.totalMonthlyExpenses,
+      currentNetWorth: overview.currentNetWorth,
+      assumptions: overview.assumptions,
+      recentTransactions,
+      potentialOneOffTransactions,
+      accountsWithoutTransactions: linkedAccounts
+        .filter((account) => account.transactionCount === 0)
+        .map(({ accountId, institutionName, accountName }) => ({
+          accountId,
+          institutionName,
+          accountName,
+        })),
+    };
+  }
 }

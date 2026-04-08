@@ -19,6 +19,7 @@ import { AuthModule } from '../auth/auth.module';
 import { PlaidModule } from '../plaid/plaid.module';
 import { ExtractionModule } from '../extraction/extraction.module';
 import { RateLimitService } from '../../common/services/rate-limit.service';
+import { ProjectionsModule } from '../projections/projections.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { RateLimitService } from '../../common/services/rate-limit.service';
     forwardRef(() => ChatsModule),
     AuthModule,
     PlaidModule,
+    ProjectionsModule,
     HttpModule,
     ExtractionModule,
     AgentRoutingModule,

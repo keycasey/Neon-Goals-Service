@@ -6,5 +6,6 @@ import { ProjectionsService } from './projections.service';
 @Module({
   controllers: [ProjectionsController, ManualFinancialAccountsController, ManualCashflowsController],
   providers: [ProjectionsService],
+  exports: [ProjectionsService],
 })
 export class ProjectionsModule {}
