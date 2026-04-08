@@ -49,6 +49,7 @@ def build_signatures(dspy: Any) -> dict[str, type]:
 
         goal_context = dspy.InputField(desc="Visible finance goals plus recent chat context.")
         user_message = dspy.InputField(desc="The latest user message.")
+        tool_results = dspy.InputField(desc="JSON array of prior tool results, or [] when none.")
         assistant_reply = dspy.OutputField(desc="Helpful finance-specialist reply.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
         tool_requests = dspy.OutputField(
@@ -56,18 +57,6 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         )
         follow_up_question = dspy.OutputField(desc="Clarifying question when more input is required.")
         handoff_complete = dspy.OutputField(desc="true when the specialist is done, false otherwise.")
-        redirect_proposal = dspy.OutputField(
-            desc='Optional JSON object like {"target":"overview","message":"..."} or empty string.'
-        )
-        goal_intent = dspy.OutputField(
-            desc='Short label like "route_to_goal", "route_to_overview", or "answer_question".'
-        )
-        matched_goal_id = dspy.OutputField(desc="Matched goal ID, if one was referenced.")
-        matched_goal_title = dspy.OutputField(desc="Matched goal title, if one was referenced.")
-        target_category = dspy.OutputField(desc='Target category like "items", "finances", or "actions".')
-        tool_scope = dspy.OutputField(
-            desc='JSON array of tool scopes to keep in mind, or empty string.'
-        )
 
     class ActionsSignature(dspy.Signature):
         """Handle action specialist messages, commands, and redirects."""
