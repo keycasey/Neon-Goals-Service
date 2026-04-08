@@ -8,7 +8,7 @@ from .commands import extract_commands, extract_redirect_target
 from .config import DSPyConfig
 from .optimization import configure_dspy_models
 from .signatures import build_programs, build_signatures
-from .specialist_loop import _coerce_dspy_bool, normalize_tool_request
+from .specialist_loop import _coerce_dspy_bool, normalize_tool_request, run_specialist_loop
 
 
 @dataclass(slots=True)
@@ -288,6 +288,8 @@ def _build_metadata(
 
 def _build_specialist_metadata(prediction: Any) -> dict[str, Any]:
     tool_requests_value = _coerce_jsonish(_extract_prediction_field(prediction, "tool_requests"))
+    if tool_requests_value is None:
+        tool_requests_value = _coerce_jsonish(_extract_prediction_field(prediction, "toolRequests"))
     tool_requests: list[dict[str, Any]] = []
     if isinstance(tool_requests_value, list):
         tool_requests = [
@@ -296,14 +298,32 @@ def _build_specialist_metadata(prediction: Any) -> dict[str, Any]:
             if request is not None
         ]
 
-    return {
+    follow_up_question = str(_extract_prediction_field(prediction, "follow_up_question") or "").strip()
+    if not follow_up_question:
+        follow_up_question = str(_extract_prediction_field(prediction, "followUpQuestion") or "").strip()
+
+    handoff_complete_value = _extract_prediction_field(prediction, "handoff_complete")
+    if handoff_complete_value is None:
+        handoff_complete_value = _extract_prediction_field(prediction, "handoffComplete")
+
+    output = {
         "toolRequests": tool_requests or [],
-        "followUpQuestion": str(_extract_prediction_field(prediction, "follow_up_question") or "").strip(),
-        "handoffComplete": _coerce_dspy_bool(_extract_prediction_field(prediction, "handoff_complete")),
+        "followUpQuestion": follow_up_question,
+        "handoffComplete": _coerce_dspy_bool(handoff_complete_value),
     }
+
+    prediction_metadata = _normalize_metadata(_coerce_jsonish(_extract_prediction_field(prediction, "metadata")))
+    if prediction_metadata:
+        output.update(prediction_metadata)
+
+    return output
 
 
 def _build_live_chat_content(prediction: Any) -> str:
+    content = str(_extract_prediction_field(prediction, "content") or "").strip()
+    if content:
+        return content
+
     assistant_reply = _extract_prediction_field(prediction, "assistant_reply") or ""
     content = str(assistant_reply).strip()
     if content:
@@ -338,13 +358,21 @@ def run_live_chat(payload: dict[str, Any]) -> LiveChatResult:
             conversation_context=context,
             user_message=user_message,
         )
-    elif program_key in {"items", "finances", "actions", "goal_view", "proposal"}:
+    elif program_key in {"items", "finances", "actions"}:
+        prediction = run_specialist_loop(
+            program=programs[program_key],
+            goal_context=context,
+            user_message=user_message,
+            tool_runner=lambda request: {
+                "deferred": True,
+                "request": request,
+            },
+        )
+    elif program_key in {"goal_view", "proposal"}:
         specialist_kwargs = {
             "goal_context": context,
             "user_message": user_message,
         }
-        if program_key == "finances":
-            specialist_kwargs["tool_results"] = "[]"
         prediction = programs[program_key](**specialist_kwargs)
     elif program_key == "redirect_judge":
         prediction = programs[program_key](

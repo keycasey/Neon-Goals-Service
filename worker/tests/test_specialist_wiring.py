@@ -96,17 +96,28 @@ def test_live_chat_finance_path_passes_empty_tool_results() -> None:
 
 def test_live_chat_finance_path_uses_follow_up_question_and_normalizes_metadata() -> None:
     class _Program:
+        def __init__(self) -> None:
+            self.calls = 0
+
         def __call__(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "assistant_reply": "",
+                    "explanation": "This explanation should not win.",
+                    "follow_up_question": "What dates should I use?",
+                    "handoff_complete": "false",
+                    "tool_requests": [
+                        {"name": "get_financial_context", "arguments": {"includeRecentTransactions": True}},
+                        {"name": "", "arguments": {}},
+                        "not-a-request",
+                    ],
+                }
             return {
                 "assistant_reply": "",
-                "explanation": "This explanation should not win.",
                 "follow_up_question": "What dates should I use?",
-                "handoff_complete": "false",
-                "tool_requests": [
-                    {"name": "get_financial_context", "arguments": {"includeRecentTransactions": True}},
-                    {"name": "", "arguments": {}},
-                    "not-a-request",
-                ],
+                "handoff_complete": "true",
+                "tool_requests": [],
             }
 
     with (
@@ -129,10 +140,6 @@ def test_live_chat_finance_path_uses_follow_up_question_and_normalizes_metadata(
 
     assert result.content == "What dates should I use?"
     assert result.metadata["followUpQuestion"] == "What dates should I use?"
-    assert result.metadata["handoffComplete"] is False
-    assert result.metadata["toolRequests"] == [
-        {
-            "name": "get_financial_context",
-            "arguments": {"includeRecentTransactions": True},
-        }
-    ]
+    assert result.metadata["handoffComplete"] is True
+    assert result.metadata["toolRequests"] == []
+    assert result.metadata["usedTools"] == ["get_financial_context"]

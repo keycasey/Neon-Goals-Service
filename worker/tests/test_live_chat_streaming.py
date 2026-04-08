@@ -31,6 +31,18 @@ class BuildStreamCompletionEventTests(unittest.TestCase):
         self.assertEqual(result["commands"][0]["type"], "REDIRECT_TO_CATEGORY")
         self.assertEqual(result["metadata"]["goalIntent"], "route_to_category")
 
+    def test_includes_used_tools_in_completion_metadata(self) -> None:
+        result = build_stream_completion_event(
+            streamed_text="Done",
+            metadata_result={
+                "commands": [],
+                "metadata": {"usedTools": ["get_financial_context"], "handoffComplete": True},
+            },
+        )
+
+        self.assertEqual(result["metadata"]["usedTools"], ["get_financial_context"])
+        self.assertTrue(result["metadata"]["handoffComplete"])
+
 
 if __name__ == "__main__":
     unittest.main()
