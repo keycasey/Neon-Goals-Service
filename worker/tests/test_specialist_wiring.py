@@ -99,6 +99,7 @@ def test_live_chat_finance_path_uses_follow_up_question_and_normalizes_metadata(
         def __call__(self, **kwargs):
             return {
                 "assistant_reply": "",
+                "explanation": "This explanation should not win.",
                 "follow_up_question": "What dates should I use?",
                 "handoff_complete": "false",
                 "tool_requests": [

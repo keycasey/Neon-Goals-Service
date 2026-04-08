@@ -8,7 +8,7 @@ from .commands import extract_commands, extract_redirect_target
 from .config import DSPyConfig
 from .optimization import configure_dspy_models
 from .signatures import build_programs, build_signatures
-from .specialist_loop import normalize_tool_request
+from .specialist_loop import _coerce_dspy_bool, normalize_tool_request
 
 
 @dataclass(slots=True)
@@ -299,14 +299,12 @@ def _build_specialist_metadata(prediction: Any) -> dict[str, Any]:
     return {
         "toolRequests": tool_requests or [],
         "followUpQuestion": str(_extract_prediction_field(prediction, "follow_up_question") or "").strip(),
-        "handoffComplete": str(_extract_prediction_field(prediction, "handoff_complete")).lower() == "true",
+        "handoffComplete": _coerce_dspy_bool(_extract_prediction_field(prediction, "handoff_complete")),
     }
 
 
 def _build_live_chat_content(prediction: Any) -> str:
-    assistant_reply = _extract_prediction_field(prediction, "assistant_reply") or _extract_prediction_field(
-        prediction, "explanation"
-    ) or ""
+    assistant_reply = _extract_prediction_field(prediction, "assistant_reply") or ""
     content = str(assistant_reply).strip()
     if content:
         return content

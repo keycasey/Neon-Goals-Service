@@ -18,6 +18,7 @@ def test_normalize_tool_request_accepts_valid_request():
 def test_normalize_tool_request_rejects_invalid_payload():
     assert normalize_tool_request("not-json") is None
     assert normalize_tool_request({"name": "", "arguments": {}}) is None
+    assert normalize_tool_request({"name": "get_financial_context", "arguments": []}) is None
 
 
 def test_should_continue_loop_requires_pending_tool_requests():

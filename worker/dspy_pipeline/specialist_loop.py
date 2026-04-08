@@ -20,7 +20,7 @@ def normalize_tool_request(value: Any) -> dict[str, Any] | None:
         return None
 
     name = str(value.get("name") or "").strip()
-    arguments = value.get("arguments") or {}
+    arguments = value.get("arguments")
 
     if not name or not isinstance(arguments, dict):
         return None
