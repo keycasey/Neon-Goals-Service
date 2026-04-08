@@ -8,6 +8,7 @@ from .commands import extract_commands, extract_redirect_target
 from .config import DSPyConfig
 from .optimization import configure_dspy_models
 from .signatures import build_programs, build_signatures
+from .specialist_loop import normalize_tool_request
 
 
 @dataclass(slots=True)
@@ -285,6 +286,23 @@ def _build_metadata(
     return {key: value for key, value in output.items() if value is not None}
 
 
+def _build_specialist_metadata(prediction: Any) -> dict[str, Any]:
+    tool_requests_value = _coerce_jsonish(_extract_prediction_field(prediction, "tool_requests"))
+    tool_requests: list[dict[str, Any]] = []
+    if isinstance(tool_requests_value, list):
+        tool_requests = [
+            request
+            for request in (normalize_tool_request(item) for item in tool_requests_value)
+            if request is not None
+        ]
+
+    return {
+        "toolRequests": tool_requests or [],
+        "followUpQuestion": str(_extract_prediction_field(prediction, "follow_up_question") or "").strip(),
+        "handoffComplete": str(_extract_prediction_field(prediction, "handoff_complete")).lower() == "true",
+    }
+
+
 def run_live_chat(payload: dict[str, Any]) -> LiveChatResult:
     config = DSPyConfig.from_env()
     dspy = configure_dspy_models(config)
@@ -323,6 +341,7 @@ def run_live_chat(payload: dict[str, Any]) -> LiveChatResult:
     content = str(assistant_reply).strip()
     commands = _build_commands(prediction)
     metadata = _build_metadata(prediction, commands, payload.get("recentMessages") or [])
+    metadata.update(_build_specialist_metadata(prediction))
 
     if not content:
         content = str(_extract_prediction_field(prediction, "explanation") or "").strip()

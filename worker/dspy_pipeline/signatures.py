@@ -45,12 +45,17 @@ def build_signatures(dspy: Any) -> dict[str, type]:
         )
 
     class FinancesSignature(dspy.Signature):
-        """Handle finance specialist messages, commands, and redirects."""
+        """Handle finance specialist messages, commands, redirects, and tool planning."""
 
         goal_context = dspy.InputField(desc="Visible finance goals plus recent chat context.")
         user_message = dspy.InputField(desc="The latest user message.")
         assistant_reply = dspy.OutputField(desc="Helpful finance-specialist reply.")
         commands = dspy.OutputField(desc="JSON array of structured commands or [].")
+        tool_requests = dspy.OutputField(
+            desc='JSON array like [{"name":"get_financial_context","arguments":{}}] or [].'
+        )
+        follow_up_question = dspy.OutputField(desc="Clarifying question when more input is required.")
+        handoff_complete = dspy.OutputField(desc="true when the specialist is done, false otherwise.")
         redirect_proposal = dspy.OutputField(
             desc='Optional JSON object like {"target":"overview","message":"..."} or empty string.'
         )
