@@ -322,10 +322,13 @@ def run_live_chat(payload: dict[str, Any]) -> LiveChatResult:
             user_message=user_message,
         )
     elif program_key in {"items", "finances", "actions", "goal_view", "proposal"}:
-        prediction = programs[program_key](
-            goal_context=context,
-            user_message=user_message,
-        )
+        specialist_kwargs = {
+            "goal_context": context,
+            "user_message": user_message,
+        }
+        if program_key == "finances":
+            specialist_kwargs["tool_results"] = "[]"
+        prediction = programs[program_key](**specialist_kwargs)
     elif program_key == "redirect_judge":
         prediction = programs[program_key](
             conversation_context=context,

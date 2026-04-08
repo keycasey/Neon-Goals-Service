@@ -169,8 +169,19 @@ def build_programs(dspy: Any, signatures: dict[str, type]) -> dict[str, Any]:
             super().__init__()
             self.predict = dspy.Predict(signatures[key])
 
-        def forward(self, goal_context: str, user_message: str) -> Any:
-            return self.predict(goal_context=goal_context, user_message=user_message)
+        def forward(
+            self,
+            goal_context: str,
+            user_message: str,
+            tool_results: Any | None = None,
+        ) -> Any:
+            if tool_results is None:
+                return self.predict(goal_context=goal_context, user_message=user_message)
+            return self.predict(
+                goal_context=goal_context,
+                user_message=user_message,
+                tool_results=tool_results,
+            )
 
     class GoalViewProgram(dspy.Module):
         def __init__(self) -> None:
