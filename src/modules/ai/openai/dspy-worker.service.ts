@@ -19,6 +19,11 @@ export interface DspyChatRequest {
   userId?: string;
   chatId?: string;
   modelId?: string;
+  specialistContext?: {
+    handoffReason?: string;
+    conversationSummary?: string;
+    toolScope?: string[];
+  };
 }
 
 @Injectable()

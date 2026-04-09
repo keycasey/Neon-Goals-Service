@@ -11,6 +11,7 @@ import { ConversationSummaryService } from './conversation-summary.service';
 import { AgentRoutingModule } from './agent-routing.module';
 import { GreetingSummaryService } from './greeting-summary.service';
 import { AiToolsService } from './ai-tools.service';
+import { DspySpecialistToolsService } from './dspy-specialist-tools.service';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../../config/prisma.module';
 import { ScraperModule } from '../scraper/scraper.module';
@@ -43,6 +44,7 @@ import { ProjectionsModule } from '../projections/projections.module';
     ConversationSummaryService,
     GreetingSummaryService,
     AiToolsService,
+    DspySpecialistToolsService,
     RateLimitService,
   ],
   exports: [
@@ -52,6 +54,7 @@ import { ProjectionsModule } from '../projections/projections.module';
     ConversationSummaryService,
     GreetingSummaryService,
     AiToolsService,
+    DspySpecialistToolsService,
     RateLimitService,
     // OpenAIService is exported by OpenAIModule which we import
     // Consumers get it through the module import chain
