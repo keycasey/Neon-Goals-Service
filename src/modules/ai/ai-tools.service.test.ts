@@ -90,7 +90,11 @@ describe('AiToolsService', () => {
       accountId: 'acct_checking',
     });
     expect(result.accountsWithoutTransactions).toEqual([
-      'Capital One - 360 Performance Savings',
+      {
+        accountId: 'acct_savings',
+        institutionName: 'Capital One',
+        accountName: '360 Performance Savings',
+      },
     ]);
     expect(result.recentTransactions[0]).toMatchObject({
       merchantName: 'Airline',

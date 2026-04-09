@@ -528,15 +528,12 @@ export class CategoryChat extends BaseChatService {
       message,
       chatId,
     );
-    const request = {
-      chatType: categoryId as 'items' | 'finances' | 'actions',
-      userMessage: message,
+    const request = buildCategoryDspyContext({
+      categoryId: categoryId as 'items' | 'finances' | 'actions',
+      message,
       goals: categoryGoals,
       recentMessages: persistedMessages,
-      userId,
-      chatId,
-      currentChatType: 'category',
-    };
+    });
 
     const self = this;
     return (async function* () {

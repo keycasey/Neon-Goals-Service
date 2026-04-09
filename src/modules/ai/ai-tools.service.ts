@@ -326,7 +326,7 @@ export class AiToolsService {
       accountId: string;
       institutionName: string;
       accountName: string;
-    }> | string[];
+    }>;
   }> {
     const [cashflow, overview, accounts] = await Promise.all([
       this.projectionsService.getCashflow(userId),
@@ -438,7 +438,11 @@ export class AiToolsService {
       potentialOneOffTransactions,
       accountsWithoutTransactions: linkedAccounts
         .filter((account) => account.transactionCount === 0)
-        .map(({ institutionName, accountName }) => `${institutionName} - ${accountName}`),
+        .map(({ accountId, institutionName, accountName }) => ({
+          accountId,
+          institutionName,
+          accountName,
+        })),
     };
   }
 }
