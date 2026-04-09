@@ -62,6 +62,8 @@ describe('buildAssistantResponseMetadata', () => {
       matchedGoalTitle: 'Emergency Fund',
       targetCategory: 'finances',
       toolScope: ['overview', 'goal'],
+      usedTools: [],
+      linkedAccountsConsidered: [],
       awaitingConfirmation: true,
       proposalType: 'accept_decline',
     });

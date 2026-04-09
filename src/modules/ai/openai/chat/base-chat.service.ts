@@ -35,6 +35,10 @@ export interface StreamChunk {
   targetCategory?: string;
   /** Tool scope that should remain visible to the model */
   toolScope?: string[];
+  /** Tools used during DSPy execution */
+  usedTools?: string[];
+  /** Linked accounts considered during DSPy execution */
+  linkedAccountsConsidered?: string[];
   /** Whether this was routed to a specialist */
   routed?: boolean;
   /** Which specialist handled this */
@@ -63,6 +67,10 @@ export interface ChatResponse {
   targetCategory?: string;
   /** Tool scope that should remain visible to the model */
   toolScope?: string[];
+  /** Tools used during DSPy execution */
+  usedTools?: string[];
+  /** Linked accounts considered during DSPy execution */
+  linkedAccountsConsidered?: string[];
   /** Goal preview for confirmation UI */
   goalPreview?: string;
   /** Whether awaiting user confirmation */

@@ -15,6 +15,7 @@ import { ThreadHistory } from '../thread/thread.types';
 import { DspyWorkerService } from '../dspy-worker.service';
 import { buildDspyChatResponse, DspyWorkerChatResponse } from './dspy-chat-contract';
 import { buildAssistantResponseMetadata } from './chat-response-metadata';
+import { buildCategoryDspyContext } from './category-dspy-context';
 
 /**
  * Context for agent-routed messages
@@ -80,6 +81,23 @@ export class CategoryChat extends BaseChatService {
     chatId: string,
     agentContext?: AgentContext,
   ): Promise<ChatResponse> {
+    if (categoryId === 'finances') {
+      const workerResponse = await this.getDspyCategoryWorkerResponse(
+        userId,
+        categoryId,
+        message,
+        categoryGoals,
+        chatId,
+      );
+
+      if (!workerResponse) {
+        throw new Error('Finance specialist DSPy worker unavailable');
+      }
+
+      const chatResponse = buildDspyChatResponse(workerResponse);
+      return this.persistDspyCategoryResponse(userId, message, chatId, chatResponse, categoryId);
+    }
+
     const dspyResponse = await this.tryDspyCategoryChat(
       userId,
       categoryId,
@@ -238,6 +256,29 @@ export class CategoryChat extends BaseChatService {
     categoryGoals: any[],
     chatId: string,
   ): AsyncGenerator<StreamChunk, void, unknown> {
+    if (categoryId === 'finances') {
+      const dspyStreamKey = `category_${categoryId}_${userId}_${Date.now()}`;
+      const dspyController = this.registerStream(dspyStreamKey);
+      try {
+        const dspyStream = await this.tryDspyCategoryChatStream(
+          userId,
+          categoryId,
+          message,
+          categoryGoals,
+          chatId,
+          dspyController.signal,
+        );
+        if (!dspyStream) {
+          throw new Error('Finance specialist DSPy worker unavailable');
+        }
+
+        yield* dspyStream;
+        return;
+      } finally {
+        this.unregisterStream(dspyStreamKey);
+      }
+    }
+
     if (this.dspyWorkerService?.isAvailable()) {
       const dspyStreamKey = `category_${categoryId}_${userId}_${Date.now()}`;
       const dspyController = this.registerStream(dspyStreamKey);
@@ -586,16 +627,19 @@ export class CategoryChat extends BaseChatService {
       message,
       chatId,
     );
-
-    return this.dspyWorkerService.tryGenerateChat({
-      chatType: categoryId as 'items' | 'finances' | 'actions',
-      userMessage: message,
+    const request = buildCategoryDspyContext({
+      categoryId: categoryId as 'items' | 'finances' | 'actions',
+      message,
       goals: categoryGoals,
       recentMessages,
+    });
+
+    return this.dspyWorkerService?.tryGenerateChat({
+      ...request,
       userId,
       chatId,
       currentChatType: 'category',
-    });
+    }) || null;
   }
 
   private async persistDspyCategoryResponse(

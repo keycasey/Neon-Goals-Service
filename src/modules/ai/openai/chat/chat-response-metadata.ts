@@ -16,6 +16,8 @@ export interface DspyResponseMetadata {
   matchedGoalTitle?: string;
   targetCategory?: string;
   toolScope?: string[];
+  usedTools?: string[];
+  linkedAccountsConsidered?: string[];
 }
 
 export interface AssistantResponseMetadata extends DspyResponseMetadata {
@@ -172,6 +174,8 @@ export function buildAssistantResponseMetadata(
           ? ['overview', redirectProposal.categoryId || 'category']
           : ['overview']
       : undefined);
+  const usedTools = dspyMetadata.usedTools || [];
+  const linkedAccountsConsidered = dspyMetadata.linkedAccountsConsidered || [];
 
   return stripUndefined({
     commands,
@@ -181,6 +185,8 @@ export function buildAssistantResponseMetadata(
     matchedGoalTitle,
     targetCategory,
     toolScope,
+    usedTools,
+    linkedAccountsConsidered,
     goalPreview: input.goalPreview,
     awaitingConfirmation: hasConfirmationState(commands, dspyMetadata, input.awaitingConfirmation),
     proposalType: resolveProposalType(commands, dspyMetadata, input.proposalType),

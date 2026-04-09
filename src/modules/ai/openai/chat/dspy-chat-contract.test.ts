@@ -19,20 +19,22 @@ describe('dspy chat contract', () => {
           },
         },
       ],
-      metadata: {
-        redirectProposal: {
-          target: 'goal',
-          goalId: 'goal_7',
-          goalTitle: 'Emergency Fund',
-          message: 'I will take you there.',
+        metadata: {
+          redirectProposal: {
+            target: 'goal',
+            goalId: 'goal_7',
+            goalTitle: 'Emergency Fund',
+            message: 'I will take you there.',
+          },
+          goalIntent: 'route_to_goal',
+          matchedGoalId: 'goal_7',
+          matchedGoalTitle: 'Emergency Fund',
+          targetCategory: 'finances',
+          toolScope: ['overview', 'goal'],
+          usedTools: ['get_financial_context'],
+          linkedAccountsConsidered: ['Capital One - 360 Checking'],
         },
-        goalIntent: 'route_to_goal',
-        matchedGoalId: 'goal_7',
-        matchedGoalTitle: 'Emergency Fund',
-        targetCategory: 'finances',
-        toolScope: ['overview', 'goal'],
-      },
-    };
+      };
 
     const response = buildDspyChatResponse(workerResponse);
     expect(response.redirectProposal).toEqual(workerResponse.metadata.redirectProposal);
@@ -41,6 +43,8 @@ describe('dspy chat contract', () => {
     expect(response.matchedGoalTitle).toBe('Emergency Fund');
     expect(response.targetCategory).toBe('finances');
     expect(response.toolScope).toEqual(['overview', 'goal']);
+    expect(response.usedTools).toEqual(['get_financial_context']);
+    expect(response.linkedAccountsConsidered).toEqual(['Capital One - 360 Checking']);
     expect(response.awaitingConfirmation).toBe(true);
     expect(response.proposalType).toBe('accept_decline');
 
@@ -53,6 +57,8 @@ describe('dspy chat contract', () => {
     expect(finalChunk.matchedGoalId).toBe('goal_7');
     expect(finalChunk.targetCategory).toBe('finances');
     expect(finalChunk.toolScope).toEqual(['overview', 'goal']);
+    expect(finalChunk.usedTools).toEqual(['get_financial_context']);
+    expect(finalChunk.linkedAccountsConsidered).toEqual(['Capital One - 360 Checking']);
     expect(finalChunk.commands).toEqual(workerResponse.commands);
   });
 });

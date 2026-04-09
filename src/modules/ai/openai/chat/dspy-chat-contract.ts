@@ -95,6 +95,8 @@ export function buildDspyStreamChunks(
     matchedGoalTitle: response.matchedGoalTitle,
     targetCategory: response.targetCategory,
     toolScope: response.toolScope,
+    usedTools: response.usedTools,
+    linkedAccountsConsidered: response.linkedAccountsConsidered,
     goalPreview: response.goalPreview,
     awaitingConfirmation: response.awaitingConfirmation,
     proposalType: response.proposalType,

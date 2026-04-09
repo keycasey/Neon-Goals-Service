@@ -48,20 +48,21 @@ describe('AiToolsService', () => {
 
     const plaidService = {} as any;
     const projectionsService = {
-      getCashflow: async () => ({
-        totalMonthlyIncome: 2500,
-        totalMonthlyExpenses: 1450,
-        netMonthlyCashflow: 1050,
-        recurringIncome: [
-          {
-            id: 'income:acct_checking:sfdc payroll',
-            label: 'SFDC Payroll',
-            amount: 2500,
-            cadence: 'monthly',
-            accountId: 'acct_checking',
-            accountName: '360 Checking',
-            sourceTransactionIds: ['txn_payroll'],
-          },
+        getCashflow: async () => ({
+          totalMonthlyIncome: 2500,
+          totalMonthlyExpenses: 1450,
+          netMonthlyCashflow: 1050,
+          recurringIncome: [
+            {
+              id: 'income:acct_checking:sfdc payroll',
+              label: 'Payroll',
+              amount: 2500,
+              averageMonthlyAmount: 4000,
+              cadence: 'monthly',
+              accountId: 'acct_checking',
+              accountName: '360 Checking',
+              sourceTransactionIds: ['txn_payroll'],
+            },
         ],
         recurringExpenses: [],
       }),
@@ -84,16 +85,12 @@ describe('AiToolsService', () => {
 
     expect(result.linkedAccounts).toHaveLength(2);
     expect(result.recurringIncome[0]).toMatchObject({
-      label: 'SFDC Payroll',
-      amount: 2500,
+      label: 'Payroll',
+      averageMonthlyAmount: 4000,
       accountId: 'acct_checking',
     });
     expect(result.accountsWithoutTransactions).toEqual([
-      {
-        accountId: 'acct_savings',
-        institutionName: 'Capital One',
-        accountName: '360 Performance Savings',
-      },
+      'Capital One - 360 Performance Savings',
     ]);
     expect(result.recentTransactions[0]).toMatchObject({
       merchantName: 'Airline',

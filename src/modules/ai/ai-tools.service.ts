@@ -281,6 +281,7 @@ export class AiToolsService {
       id: string;
       label: string;
       amount: number;
+      averageMonthlyAmount?: number;
       cadence: string;
       accountId?: string;
       accountName?: string;
@@ -325,7 +326,7 @@ export class AiToolsService {
       accountId: string;
       institutionName: string;
       accountName: string;
-    }>;
+    }> | string[];
   }> {
     const [cashflow, overview, accounts] = await Promise.all([
       this.projectionsService.getCashflow(userId),
@@ -411,6 +412,7 @@ export class AiToolsService {
         id: item.id,
         label: item.label,
         amount: item.amount,
+        averageMonthlyAmount: (item as any).averageMonthlyAmount ?? item.amount,
         cadence: item.cadence,
         accountId: item.accountId,
         accountName: item.accountName,
@@ -436,11 +438,7 @@ export class AiToolsService {
       potentialOneOffTransactions,
       accountsWithoutTransactions: linkedAccounts
         .filter((account) => account.transactionCount === 0)
-        .map(({ accountId, institutionName, accountName }) => ({
-          accountId,
-          institutionName,
-          accountName,
-        })),
+        .map(({ institutionName, accountName }) => `${institutionName} - ${accountName}`),
     };
   }
 }
