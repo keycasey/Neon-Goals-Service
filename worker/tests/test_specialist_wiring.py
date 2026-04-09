@@ -143,3 +143,39 @@ def test_live_chat_finance_path_uses_follow_up_question_and_normalizes_metadata(
     assert result.metadata["handoffComplete"] is True
     assert result.metadata["toolRequests"] == []
     assert result.metadata["usedTools"] == ["get_financial_context"]
+
+
+def test_live_chat_non_finance_specialists_skip_specialist_loop() -> None:
+    class _Program:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def __call__(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"assistant_reply": "ok"}
+
+    items_program = _Program()
+    actions_program = _Program()
+
+    with (
+        patch("dspy_pipeline.live_chat.DSPyConfig.from_env", return_value=SimpleNamespace()),
+        patch("dspy_pipeline.live_chat.configure_dspy_models", return_value=SimpleNamespace()),
+        patch(
+            "dspy_pipeline.live_chat.build_signatures",
+            return_value={"items": SimpleNamespace(), "actions": SimpleNamespace()},
+        ),
+        patch(
+            "dspy_pipeline.live_chat.build_programs",
+            return_value={
+                "items": items_program,
+                "actions": actions_program,
+            },
+        ),
+        patch("dspy_pipeline.live_chat.run_specialist_loop") as run_loop,
+    ):
+        run_live_chat({"chatType": "items", "userMessage": "What should I do next?"})
+        run_live_chat({"chatType": "actions", "userMessage": "What should I do next?"})
+
+    assert run_loop.call_count == 0
+    assert "tool_results" not in items_program.calls[0]
+    assert "tool_results" not in actions_program.calls[0]

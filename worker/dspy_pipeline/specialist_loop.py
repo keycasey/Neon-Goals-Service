@@ -51,6 +51,8 @@ def _coerce_jsonish(value: Any) -> Any:
 
 def normalize_specialist_prediction(prediction: Any) -> dict[str, Any]:
     tool_requests_value = _coerce_jsonish(_extract_prediction_field(prediction, "tool_requests"))
+    if tool_requests_value is None:
+        tool_requests_value = _coerce_jsonish(_extract_prediction_field(prediction, "toolRequests"))
     tool_requests: list[dict[str, Any]] = []
     if isinstance(tool_requests_value, list):
         tool_requests = [
@@ -69,7 +71,11 @@ def normalize_specialist_prediction(prediction: Any) -> dict[str, Any]:
 
     assistant_reply = str(_extract_prediction_field(prediction, "assistant_reply") or "").strip()
     if not assistant_reply:
+        assistant_reply = str(_extract_prediction_field(prediction, "content") or "").strip()
+    if not assistant_reply:
         follow_up_question = str(_extract_prediction_field(prediction, "follow_up_question") or "").strip()
+        if not follow_up_question:
+            follow_up_question = str(_extract_prediction_field(prediction, "followUpQuestion") or "").strip()
         if follow_up_question:
             assistant_reply = follow_up_question
     if not assistant_reply:
@@ -81,8 +87,16 @@ def normalize_specialist_prediction(prediction: Any) -> dict[str, Any]:
         "content": assistant_reply,
         "commands": commands,
         "toolRequests": tool_requests,
-        "followUpQuestion": str(_extract_prediction_field(prediction, "follow_up_question") or "").strip(),
-        "handoffComplete": _coerce_dspy_bool(_extract_prediction_field(prediction, "handoff_complete")),
+        "followUpQuestion": str(
+            _extract_prediction_field(prediction, "follow_up_question")
+            or _extract_prediction_field(prediction, "followUpQuestion")
+            or ""
+        ).strip(),
+        "handoffComplete": _coerce_dspy_bool(
+            _extract_prediction_field(prediction, "handoff_complete")
+            if _extract_prediction_field(prediction, "handoff_complete") is not None
+            else _extract_prediction_field(prediction, "handoffComplete")
+        ),
         "metadata": metadata,
     }
 
