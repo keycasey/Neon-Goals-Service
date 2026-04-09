@@ -1,3 +1,5 @@
+import json
+
 from dspy_pipeline.specialist_loop import normalize_tool_request, run_specialist_loop, should_continue_loop
 
 
@@ -36,9 +38,11 @@ def test_run_specialist_loop_reinjects_tool_results():
     class FakeProgram:
         def __init__(self):
             self.calls = 0
+            self.tool_results_calls = []
 
         def __call__(self, *, goal_context: str, user_message: str, tool_results: str):
             self.calls += 1
+            self.tool_results_calls.append(tool_results)
             if self.calls == 1:
                 return {
                     "assistant_reply": "",
@@ -61,8 +65,9 @@ def test_run_specialist_loop_reinjects_tool_results():
         observed.append(request)
         return {"ok": True, "result": {"netMonthlyCashflow": 1050}}
 
+    program = FakeProgram()
     result = run_specialist_loop(
-        program=FakeProgram(),
+        program=program,
         goal_context="finance context",
         user_message="How am I doing?",
         tool_runner=tool_runner,
@@ -70,5 +75,12 @@ def test_run_specialist_loop_reinjects_tool_results():
     )
 
     assert observed == [{"name": "get_financial_context", "arguments": {}}]
+    assert program.tool_results_calls[0] == "[]"
+    assert json.loads(program.tool_results_calls[1]) == [
+        {
+            "request": {"name": "get_financial_context", "arguments": {}},
+            "response": {"ok": True, "result": {"netMonthlyCashflow": 1050}},
+        }
+    ]
     assert result["content"] == "Your recurring expenses are lower than your recurring income."
     assert result["metadata"]["usedTools"] == ["get_financial_context"]
