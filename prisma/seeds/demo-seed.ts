@@ -1,13 +1,19 @@
 /**
  * Demo user seed data
  *
- * This data mirrors the frontend's mockGoals.ts to provide
- * consistent demo experience between frontend mock mode and backend demo user.
+ * This data mirrors the shared demo seed dataset to provide
+ * consistent demo experience between frontend demo mode and backend demo user.
  *
  * Used by DemoResetService to reset demo user data every 30 minutes.
  */
 
 import { PrismaClient, GoalType, GoalStatus, ItemStatusBadge, ItemCategory } from '@prisma/client';
+import {
+  mockActionGoals,
+  mockFinanceGoals,
+  mockGoals,
+  mockItemGoals,
+} from './demo-data/goals';
 
 const prisma = new PrismaClient();
 
@@ -16,13 +22,17 @@ export const DEMO_USER_EMAIL = 'demo@goals-af.com';
 
 // Types for seed data
 interface TaskSeed {
+  id: string;
   title: string;
   completed: boolean;
+  createdAt: Date;
 }
 
 interface ItemGoalSeed {
+  id: string;
   title: string;
   description: string;
+  status: GoalStatus;
   productImage: string | null;
   bestPrice: number;
   currency: string;
@@ -30,25 +40,58 @@ interface ItemGoalSeed {
   retailerName: string;
   statusBadge: ItemStatusBadge;
   category: ItemCategory;
+  searchResults?: unknown;
+  candidates?: unknown;
+  selectedCandidateId?: string;
+  shortlistedCandidates?: unknown;
+  deniedCandidates?: unknown;
+  stackId?: string;
+  stackOrder?: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface FinanceGoalSeed {
+  id: string;
   title: string;
   description: string;
+  status: GoalStatus;
   institutionIcon: string;
   accountName: string;
   currentBalance: number;
   targetBalance: number;
   currency: string;
   progressHistory: number[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface ActionGoalSeed {
+  id: string;
   title: string;
   description: string;
+  status: GoalStatus;
   completionPercentage: number;
   tasks: TaskSeed[];
+  createdAt: Date;
+  updatedAt: Date;
 }
+
+interface GroupGoalSeed {
+  id: string;
+  title: string;
+  description: string;
+  status: GoalStatus;
+  icon?: string;
+  color?: string;
+  layout: 'grid' | 'list' | 'kanban';
+  progressType: 'average' | 'sum' | 'manual';
+  createdAt: Date;
+  updatedAt: Date;
+  subgoals: GoalSeed[];
+}
+
+type GoalSeed = ItemGoalSeed | FinanceGoalSeed | ActionGoalSeed | GroupGoalSeed;
 
 interface DemoPlaidAccountSeed {
   plaidAccountId: string;
@@ -75,193 +118,119 @@ interface DemoPlaidTransactionSeed {
   pending?: boolean;
 }
 
-// Item goals seed data
-export const itemGoalSeeds: ItemGoalSeed[] = [
-  {
-    title: 'Sony WH-1000XM5 Headphones',
-    description: 'Premium noise-canceling wireless headphones for work and travel',
-    productImage: 'https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?w=400',
-    bestPrice: 299.00,
-    currency: 'USD',
-    retailerUrl: 'https://amazon.com/dp/B0C4HYX144',
-    retailerName: 'Amazon',
-    statusBadge: ItemStatusBadge.price_drop,
-    category: ItemCategory.technology,
-  },
-  {
-    title: 'MacBook Pro 16" M3 Max',
-    description: 'Ultimate powerhouse for creative work and development',
-    productImage: 'https://images.unsplash.com/photo-1517336714731-489679fd1ca8?w=400',
-    bestPrice: 2499.00,
-    currency: 'USD',
-    retailerUrl: 'https://apple.com/macbook-pro',
-    retailerName: 'Apple',
-    statusBadge: ItemStatusBadge.in_stock,
-    category: ItemCategory.technology,
-  },
-  {
-    title: 'Herman Miller Aeron Chair',
-    description: 'Ergonomic office chair for long work sessions',
-    productImage: 'https://images.unsplash.com/photo-1592078615290-033ee584e267?w=400',
-    bestPrice: 895.00,
-    currency: 'USD',
-    retailerUrl: 'https://amazon.com/herman-miller-aeron',
-    retailerName: 'Amazon',
-    statusBadge: ItemStatusBadge.pending_search,
-    category: ItemCategory.furniture,
-  },
-  {
-    title: 'DJI Mini 4 Pro Drone',
-    description: 'Compact drone for aerial photography and videography',
-    productImage: 'https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=400',
-    bestPrice: 759.00,
-    currency: 'USD',
-    retailerUrl: 'https://djistore.com/mini-4-pro',
-    retailerName: 'DJI Store',
-    statusBadge: ItemStatusBadge.in_stock,
-    category: ItemCategory.technology,
-  },
-  {
-    title: 'Longboard Deck',
-    description: 'Loaded Tan Tien flex 2 deck - smooth carving bamboo',
-    productImage: 'https://images.unsplash.com/photo-1547447134-cd3f5c716030?w=400',
-    bestPrice: 189.00,
-    currency: 'USD',
-    retailerUrl: 'https://loadedboards.com/tan-tien',
-    retailerName: 'Loaded Boards',
-    statusBadge: ItemStatusBadge.in_stock,
-    category: ItemCategory.sporting_goods,
-  },
-  {
-    title: 'Longboard Wheels',
-    description: 'Orangatang Stimulus 70mm 86a - grippy urethane',
-    productImage: 'https://images.unsplash.com/photo-1604754742629-3e5728249d73?w=400',
-    bestPrice: 56.00,
-    currency: 'USD',
-    retailerUrl: 'https://orangatangwheels.com/stimulus',
-    retailerName: 'Orangatang',
-    statusBadge: ItemStatusBadge.price_drop,
-    category: ItemCategory.sporting_goods,
-  },
-  {
-    title: 'Longboard Trucks',
-    description: 'Paris V3 180mm 50° - precision cast trucks',
-    productImage: 'https://images.unsplash.com/photo-1531565637446-32307b194362?w=400',
-    bestPrice: 64.95,
-    currency: 'USD',
-    retailerUrl: 'https://paristruckco.com/v3-180mm',
-    retailerName: 'Paris Truck Co',
-    statusBadge: ItemStatusBadge.in_stock,
-    category: ItemCategory.sporting_goods,
-  },
-];
+const STATUS_BADGE_MAP: Record<string, ItemStatusBadge> = {
+  'in-stock': ItemStatusBadge.in_stock,
+  in_stock: ItemStatusBadge.in_stock,
+  'price-drop': ItemStatusBadge.price_drop,
+  price_drop: ItemStatusBadge.price_drop,
+  'pending-search': ItemStatusBadge.pending_search,
+  pending_search: ItemStatusBadge.pending_search,
+  candidates_found: ItemStatusBadge.candidates_found,
+  not_found: ItemStatusBadge.not_found,
+  not_supported: ItemStatusBadge.not_supported,
+};
 
-// Finance goals seed data
-export const financeGoalSeeds: FinanceGoalSeed[] = [
-  {
-    title: 'Emergency Fund',
-    description: '6 months of expenses for financial security',
-    institutionIcon: '🏦',
-    accountName: 'Chase Savings',
-    currentBalance: 18500.00,
-    targetBalance: 30000.00,
-    currency: 'USD',
-    progressHistory: [5000, 7500, 10000, 12000, 14000, 16000, 17500, 18500],
-  },
-  {
-    title: 'Down Payment on House',
-    description: 'Save $100,000 for a down payment on first home',
-    institutionIcon: '🏠',
-    accountName: 'Ally High-Yield Savings',
-    currentBalance: 45250.00,
-    targetBalance: 100000.00,
-    currency: 'USD',
-    progressHistory: [10000, 15000, 20000, 25000, 30000, 35000, 40000, 45250],
-  },
-  {
-    title: 'Investment Portfolio',
-    description: 'Build a diversified stock portfolio for long-term growth',
-    institutionIcon: '📈',
-    accountName: 'Fidelity IRA',
-    currentBalance: 28750.00,
-    targetBalance: 50000.00,
-    currency: 'USD',
-    progressHistory: [5000, 8000, 12000, 15000, 18000, 21000, 25000, 28750],
-  },
-  {
-    title: 'Travel Fund - Japan Trip',
-    description: 'Save up for an amazing 2-week trip to Japan',
-    institutionIcon: '✈️',
-    accountName: 'Capital One 360',
-    currentBalance: 4200.00,
-    targetBalance: 8000.00,
-    currency: 'USD',
-    progressHistory: [1000, 1500, 2000, 2500, 3000, 3500, 4000, 4200],
-  },
-];
+const CATEGORY_BY_TITLE: Record<string, ItemCategory> = {
+  'Sony WH-1000XM5 Headphones': ItemCategory.technology,
+  'MacBook Pro 16" M3 Max': ItemCategory.technology,
+  'Herman Miller Aeron Chair': ItemCategory.furniture,
+  'DJI Mini 4 Pro Drone': ItemCategory.technology,
+  'Longboard Deck': ItemCategory.sporting_goods,
+  'Longboard Wheels': ItemCategory.sporting_goods,
+  'Longboard Trucks': ItemCategory.sporting_goods,
+  'Longboard Deck - 42"': ItemCategory.sporting_goods,
+  'Longboard Trucks - Paris V3': ItemCategory.sporting_goods,
+  'Longboard Wheels - 70mm': ItemCategory.sporting_goods,
+  'Bearings - Bones Reds': ItemCategory.sporting_goods,
+  'Herman Miller Aeron Chair::group': ItemCategory.furniture,
+  'Sony A7 IV Camera': ItemCategory.technology,
+  'Travel Tripod': ItemCategory.technology,
+};
 
-// Action goals seed data
-export const actionGoalSeeds: ActionGoalSeed[] = [
-  {
-    title: 'Learn Japanese',
-    description: 'Reach conversational fluency in Japanese (N3 level)',
-    completionPercentage: 35,
-    tasks: [
-      { title: 'Master Hiragana and Katakana', completed: true },
-      { title: 'Complete Genki I textbook', completed: true },
-      { title: 'Learn 500 kanji characters', completed: false },
-      { title: 'Practice daily conversation with language partner', completed: false },
-      { title: 'Watch Japanese media without subtitles', completed: false },
-    ],
-  },
-  {
-    title: 'Build Morning Exercise Routine',
-    description: 'Establish a consistent 30-minute morning workout habit',
-    completionPercentage: 60,
-    tasks: [
-      { title: 'Wake up at 6am daily for 30 days', completed: true },
-      { title: 'Create workout playlist', completed: true },
-      { title: 'Week 1-2: Light stretching and yoga', completed: true },
-      { title: 'Week 3-4: Add bodyweight exercises', completed: true },
-      { title: 'Week 5-6: Incorporate resistance training', completed: false },
-      { title: 'Week 7-8: Full HIIT workouts', completed: false },
-    ],
-  },
-  {
-    title: 'Read 24 Books This Year',
-    description: 'Read 2 books per month to foster learning and growth',
-    completionPercentage: 50,
-    tasks: [
-      { title: 'Create reading list of 24 books', completed: true },
-      { title: 'Set up reading nook at home', completed: true },
-      { title: 'January: Atomic Habits', completed: true },
-      { title: 'January: Deep Work', completed: true },
-      { title: 'February: The Psychology of Money', completed: true },
-      { title: 'February: Thinking, Fast and Slow', completed: true },
-      { title: 'March: The Lean Startup', completed: true },
-      { title: 'March: Zero to One', completed: true },
-      { title: 'April: Good Strategy Bad Strategy', completed: true },
-      { title: 'April: The Mom Test', completed: true },
-      { title: 'May: Start with Why', completed: false },
-      { title: 'May: Built to Last', completed: false },
-    ],
-  },
-  {
-    title: 'Launch Side Project',
-    description: 'Build and launch a SaaS product to generate passive income',
-    completionPercentage: 20,
-    tasks: [
-      { title: 'Brainstorm product ideas', completed: true },
-      { title: 'Validate idea with potential users', completed: true },
-      { title: 'Create MVP roadmap', completed: false },
-      { title: 'Build landing page', completed: false },
-      { title: 'Develop core features', completed: false },
-      { title: 'Beta testing with early users', completed: false },
-      { title: 'Launch on Product Hunt', completed: false },
-      { title: 'Get first 10 paying customers', completed: false },
-    ],
-  },
-];
+const normalizeItemSeed = (goal: any, categoryKey = goal.title): ItemGoalSeed => ({
+  id: goal.id,
+  title: goal.title,
+  description: goal.description,
+  status: goal.status === 'completed' ? GoalStatus.completed : GoalStatus.active,
+  productImage: goal.productImage,
+  bestPrice: goal.bestPrice,
+  currency: goal.currency,
+  retailerUrl: goal.retailerUrl,
+  retailerName: goal.retailerName,
+  statusBadge: STATUS_BADGE_MAP[goal.statusBadge] ?? ItemStatusBadge.pending_search,
+  category: CATEGORY_BY_TITLE[categoryKey] ?? ItemCategory.general,
+  searchResults: goal.searchResults,
+  candidates: goal.candidates,
+  selectedCandidateId: goal.selectedCandidateId,
+  shortlistedCandidates: goal.shortlistedCandidates,
+  deniedCandidates: goal.deniedCandidates,
+  stackId: goal.stackId,
+  stackOrder: goal.stackOrder,
+  createdAt: goal.createdAt,
+  updatedAt: goal.updatedAt,
+});
+
+const normalizeFinanceSeed = (goal: any): FinanceGoalSeed => ({
+  id: goal.id,
+  title: goal.title,
+  description: goal.description,
+  status: goal.status === 'completed' ? GoalStatus.completed : GoalStatus.active,
+  institutionIcon: goal.institutionIcon,
+  accountName: goal.accountName,
+  currentBalance: goal.currentBalance,
+  targetBalance: goal.targetBalance,
+  currency: goal.currency,
+  progressHistory: goal.progressHistory,
+  createdAt: goal.createdAt,
+  updatedAt: goal.updatedAt,
+});
+
+const normalizeActionSeed = (goal: any): ActionGoalSeed => ({
+  id: goal.id,
+  title: goal.title,
+  description: goal.description,
+  status: goal.status === 'completed' ? GoalStatus.completed : GoalStatus.active,
+  completionPercentage: goal.completionPercentage,
+  tasks: goal.tasks.map((task: any) => ({
+    id: task.id,
+    title: task.title,
+    completed: task.completed,
+    createdAt: task.createdAt,
+  })),
+  createdAt: goal.createdAt,
+  updatedAt: goal.updatedAt,
+});
+
+const normalizeGoalSeed = (goal: any): GoalSeed => {
+  if (goal.type === 'item') return normalizeItemSeed(goal);
+  if (goal.type === 'finance') return normalizeFinanceSeed(goal);
+  if (goal.type === 'action') return normalizeActionSeed(goal);
+
+  return {
+    id: goal.id,
+    title: goal.title,
+    description: goal.description,
+    status: goal.status === 'completed' ? GoalStatus.completed : GoalStatus.active,
+    icon: goal.icon,
+    color: goal.color,
+    layout: goal.layout,
+    progressType: goal.progressType,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt,
+    subgoals: goal.subgoals.map((subgoal: any) =>
+      subgoal.id === 'item-office-1'
+        ? normalizeItemSeed({ ...subgoal, selectedCandidateId: 'chair-2' }, `${subgoal.title}::group`)
+        : normalizeGoalSeed(subgoal),
+    ),
+  } satisfies GroupGoalSeed;
+};
+
+export const itemGoalSeeds: ItemGoalSeed[] = mockItemGoals.map((goal) => normalizeItemSeed(goal));
+export const financeGoalSeeds: FinanceGoalSeed[] = mockFinanceGoals.map((goal) => normalizeFinanceSeed(goal));
+export const actionGoalSeeds: ActionGoalSeed[] = mockActionGoals.map((goal) => normalizeActionSeed(goal));
+export const groupGoalSeeds: GroupGoalSeed[] = mockGoals
+  .filter((goal) => goal.type === 'group')
+  .map((goal) => normalizeGoalSeed(goal) as GroupGoalSeed);
 
 export const demoPlaidAccountSeeds: DemoPlaidAccountSeed[] = [
   {
@@ -570,76 +539,152 @@ export const demoPlaidTransactionSeeds: DemoPlaidTransactionSeed[] = [
  * Creates all goals, goal-specific data, and demo Plaid account
  */
 export async function seedDemoUser(userId: string): Promise<void> {
-  // Create item goals
-  for (const seed of itemGoalSeeds) {
-    const goal = await prisma.goal.create({
-      data: {
-        userId,
-        type: GoalType.item,
-        title: seed.title,
-        description: seed.description,
-        status: GoalStatus.active,
-        itemData: {
-          create: {
-            productImage: seed.productImage,
-            bestPrice: seed.bestPrice,
-            currency: seed.currency,
-            retailerUrl: seed.retailerUrl,
-            retailerName: seed.retailerName,
-            statusBadge: seed.statusBadge,
-            category: seed.category,
+  const seedGoal = async (seed: GoalSeed, parentGoalId?: string): Promise<void> => {
+    if ('subgoals' in seed) {
+      await prisma.goal.create({
+        data: {
+          id: seed.id,
+          userId,
+          type: GoalType.group,
+          title: seed.title,
+          description: seed.description,
+          status: seed.status,
+          parentGoalId,
+          createdAt: seed.createdAt,
+          updatedAt: seed.updatedAt,
+          groupData: {
+            create: {
+              icon: seed.icon,
+              color: seed.color,
+              layout: seed.layout,
+              progressType: seed.progressType,
+              progress: 0,
+              createdAt: seed.createdAt,
+              updatedAt: seed.updatedAt,
+            },
           },
         },
-      },
-    });
-  }
+      });
 
-  // Create finance goals
-  for (const seed of financeGoalSeeds) {
-    await prisma.goal.create({
-      data: {
-        userId,
-        type: GoalType.finance,
-        title: seed.title,
-        description: seed.description,
-        status: GoalStatus.active,
-        financeData: {
-          create: {
-            institutionIcon: seed.institutionIcon,
-            accountName: seed.accountName,
-            currentBalance: seed.currentBalance,
-            targetBalance: seed.targetBalance,
-            currency: seed.currency,
-            progressHistory: seed.progressHistory,
-            lastSync: new Date(),
+      for (const subgoal of seed.subgoals) {
+        await seedGoal(subgoal, seed.id);
+      }
+
+      return;
+    }
+
+    if ('productImage' in seed) {
+      await prisma.goal.create({
+        data: {
+          id: seed.id,
+          userId,
+          type: GoalType.item,
+          title: seed.title,
+          description: seed.description,
+          status: seed.status,
+          parentGoalId,
+          createdAt: seed.createdAt,
+          updatedAt: seed.updatedAt,
+          itemData: {
+            create: {
+              productImage: seed.productImage,
+              bestPrice: seed.bestPrice,
+              currency: seed.currency,
+              retailerUrl: seed.retailerUrl,
+              retailerName: seed.retailerName,
+              statusBadge: seed.statusBadge,
+              searchResults: seed.searchResults ?? null,
+              candidates: seed.candidates ?? null,
+              selectedCandidateId: seed.selectedCandidateId ?? null,
+              shortlistedCandidates: seed.shortlistedCandidates ?? null,
+              deniedCandidates: seed.deniedCandidates ?? null,
+              stackId: seed.stackId ?? null,
+              stackOrder: seed.stackOrder ?? null,
+              category: seed.category,
+              createdAt: seed.createdAt,
+              updatedAt: seed.updatedAt,
+            },
           },
         },
-      },
-    });
-  }
+      });
+      return;
+    }
 
-  // Create action goals
-  for (const seed of actionGoalSeeds) {
+    if ('institutionIcon' in seed) {
+      await prisma.goal.create({
+        data: {
+          id: seed.id,
+          userId,
+          type: GoalType.finance,
+          title: seed.title,
+          description: seed.description,
+          status: seed.status,
+          parentGoalId,
+          createdAt: seed.createdAt,
+          updatedAt: seed.updatedAt,
+          financeData: {
+            create: {
+              institutionIcon: seed.institutionIcon,
+              accountName: seed.accountName,
+              currentBalance: seed.currentBalance,
+              targetBalance: seed.targetBalance,
+              currency: seed.currency,
+              progressHistory: seed.progressHistory,
+              lastSync: seed.updatedAt,
+              createdAt: seed.createdAt,
+              updatedAt: seed.updatedAt,
+            },
+          },
+        },
+      });
+      return;
+    }
+
     await prisma.goal.create({
       data: {
+        id: seed.id,
         userId,
         type: GoalType.action,
         title: seed.title,
         description: seed.description,
-        status: GoalStatus.active,
+        status: seed.status,
+        parentGoalId,
+        createdAt: seed.createdAt,
+        updatedAt: seed.updatedAt,
         actionData: {
           create: {
             completionPercentage: seed.completionPercentage,
+            createdAt: seed.createdAt,
+            updatedAt: seed.updatedAt,
             tasks: {
               create: seed.tasks.map((task) => ({
+                id: task.id,
                 title: task.title,
                 completed: task.completed,
+                createdAt: task.createdAt,
+                updatedAt: seed.updatedAt,
               })),
             },
           },
         },
       },
     });
+  };
+
+  for (const seed of itemGoalSeeds) {
+    await seedGoal(seed);
+  }
+
+  for (const seed of financeGoalSeeds) {
+    await seedGoal(seed);
+  }
+
+  for (const seed of actionGoalSeeds) {
+    await seedGoal(seed);
+  }
+
+  for (const seed of groupGoalSeeds) {
+    await seedGoal(seed);
   }
 
   const createdAccounts = new Map<string, string>();

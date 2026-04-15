@@ -78,7 +78,7 @@ Runs every 30 minutes at `:00` and `:30` of each hour.
 
 ### Seed Data
 
-Create `prisma/seeds/demo-seed.ts` that mirrors the frontend's `mockGoals.ts` structure:
+Create `prisma/seeds/demo-seed.ts` backed by canonical demo seed modules under `prisma/seeds/demo-data/`:
 
 - 7 Item goals (headphones, macbook, chair, drone, longboard parts)
 - 4 Finance goals (emergency fund, house down payment, investments, travel)
@@ -162,7 +162,10 @@ src/
 prisma/
 ├── schema.prisma                      # Add UserUsage, isDemo fields
 └── seeds/
-    └── demo-seed.ts                   # Goal seed data from mockGoals
+    ├── demo-seed.ts                   # Seeds demo user data into the database
+    └── demo-data/
+        ├── goals.ts                   # Canonical demo goal data
+        └── candidateMockData.ts       # Canonical demo candidate data
 ```
 
 ### Modified Files
