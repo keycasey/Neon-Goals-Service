@@ -3,6 +3,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { AiModelsService } from '../ai/ai-models.service';
 
 const VALID_AGENT_CONVERSATION_MODES = new Set(['single_agent', 'group_chat']);
+const VALID_THEMES = new Set(['miami-vice', 'cyberpunk', 'synthwave']);
 const ALLOWED_SETTINGS_KEYS = new Set([
   'theme',
   'chatModel',
@@ -59,15 +60,36 @@ export class UsersService {
     }
 
     if (
+      Object.prototype.hasOwnProperty.call(data, 'theme') &&
+      (typeof data.theme !== 'string' || !VALID_THEMES.has(data.theme))
+    ) {
+      throw new BadRequestException(`Unsupported theme: ${data.theme}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'displayName')) {
+      if (
+        typeof data.displayName !== 'string' ||
+        data.displayName.trim().length === 0 ||
+        data.displayName.length > 120
+      ) {
+        throw new BadRequestException(
+          'Display name must be a non-empty string of 120 characters or fewer',
+        );
+      }
+    }
+
+    if (
       Object.prototype.hasOwnProperty.call(data, 'chatModel') &&
-      !this.aiModelsService.isSupportedModelId(data.chatModel as string)
+      (typeof data.chatModel !== 'string' ||
+        !this.aiModelsService.isSupportedModelId(data.chatModel))
     ) {
       throw new BadRequestException(`Unsupported chat model: ${data.chatModel}`);
     }
 
     if (
       Object.prototype.hasOwnProperty.call(data, 'agentConversationMode') &&
-      !VALID_AGENT_CONVERSATION_MODES.has(data.agentConversationMode as string)
+      (typeof data.agentConversationMode !== 'string' ||
+        !VALID_AGENT_CONVERSATION_MODES.has(data.agentConversationMode))
     ) {
       throw new BadRequestException(
         `Unsupported agent conversation mode: ${data.agentConversationMode}`,

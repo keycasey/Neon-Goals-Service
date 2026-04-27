@@ -75,4 +75,70 @@ describe('UsersService settings validation', () => {
     );
     expect(prisma.settings.upsert).not.toHaveBeenCalled();
   });
+
+  it('rejects invalid theme strings without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.updateSettings('user_1', { theme: 'default' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects null or object theme values without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.updateSettings('user_1', { theme: null })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.updateSettings('user_1', { theme: {} })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty display names without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.updateSettings('user_1', { displayName: '   ' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects object display names without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.updateSettings('user_1', { displayName: {} })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-string chat models without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(service.updateSettings('user_1', { chatModel: {} })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects overlong display names without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.updateSettings('user_1', { displayName: 'a'.repeat(121) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-string agent conversation modes without writing settings', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.updateSettings('user_1', { agentConversationMode: {} }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.settings.upsert).not.toHaveBeenCalled();
+  });
 });
