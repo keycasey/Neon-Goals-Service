@@ -11,29 +11,31 @@ export class AgentOrchestratorService {
   constructor(private prisma: PrismaService) {}
 
   async createRun(input: CreateRunInput) {
-    const run = await this.prisma.agentRun.create({
-      data: {
-        userId: input.userId,
-        chatId: input.chatId,
-        userMessageId: input.userMessageId,
-        status: 'running',
-      },
-    });
-
-    if (input.workItems.length > 0) {
-      await this.prisma.agentWorkItem.createMany({
-        data: input.workItems.map((item) => ({
-          runId: run.id,
+    return this.prisma.$transaction(async (tx) => {
+      const run = await tx.agentRun.create({
+        data: {
           userId: input.userId,
-          kind: item.kind,
-          assignedAgent: item.assignedAgent,
-          status: 'pending',
-          input: item.input as any,
-        })),
+          chatId: input.chatId,
+          userMessageId: input.userMessageId,
+          status: 'running',
+        },
       });
-    }
 
-    return run;
+      if (input.workItems.length > 0) {
+        await tx.agentWorkItem.createMany({
+          data: input.workItems.map((item) => ({
+            runId: run.id,
+            userId: input.userId,
+            kind: item.kind,
+            assignedAgent: item.assignedAgent,
+            status: 'pending',
+            input: item.input as any,
+          })),
+        });
+      }
+
+      return run;
+    });
   }
 
   async recordEvent(input: RecordAgentEventInput) {

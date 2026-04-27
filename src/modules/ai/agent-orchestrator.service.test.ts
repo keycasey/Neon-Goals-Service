@@ -13,7 +13,9 @@ const createService = () => {
     agentEvent: {
       create: mock(async (args: any) => ({ id: 'event_1', ...args.data })),
     },
+    $transaction: undefined as any,
   };
+  prisma.$transaction = mock(async (callback: any) => callback(prisma));
 
   return { service: new AgentOrchestratorService(prisma as any), prisma };
 };
@@ -69,6 +71,43 @@ describe('AgentOrchestratorService', () => {
         },
       ],
     });
+  });
+
+  it('rejects work item insertion failures through a transaction', async () => {
+    const insertionError = new Error('work item insert failed');
+    const prisma = {
+      agentRun: {
+        create: mock(async (args: any) => ({ id: 'run_1', ...args.data })),
+        update: mock(async (args: any) => ({ id: args.where.id, ...args.data })),
+      },
+      agentWorkItem: {
+        createMany: mock(async () => {
+          throw insertionError;
+        }),
+      },
+      agentEvent: {
+        create: mock(async (args: any) => ({ id: 'event_1', ...args.data })),
+      },
+      $transaction: undefined as any,
+    };
+    prisma.$transaction = mock(async (callback: any) => callback(prisma));
+    const service = new AgentOrchestratorService(prisma as any);
+
+    await expect(
+      service.createRun({
+        userId: 'user_1',
+        chatId: 'chat_1',
+        userMessageId: 'message_1',
+        workItems: [
+          {
+            kind: 'answer_question',
+            assignedAgent: 'finances',
+            input: { question: 'Can I afford this?' },
+          },
+        ],
+      }),
+    ).rejects.toThrow('work item insert failed');
+    expect(prisma.$transaction).toHaveBeenCalled();
   });
 
   it('records group-mode specialist progress events as visible only in group mode', async () => {
