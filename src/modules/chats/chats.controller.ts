@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { ChatsService } from './chats.service';
+import { ChatContextBridgeService } from './chat-context-bridge.service';
 import { GreetingSummaryService } from '../ai/greeting-summary.service';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -18,6 +19,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 export class ChatsController {
   constructor(
     private chatsService: ChatsService,
+    private contextBridgeService: ChatContextBridgeService,
     private greetingSummaryService: GreetingSummaryService,
   ) {}
 
@@ -61,6 +63,18 @@ export class ChatsController {
     @CurrentUser('userId') userId: string,
   ) {
     return this.chatsService.getGoalChat(userId, goalId);
+  }
+
+  @Post('context/switch')
+  async switchContext(
+    @CurrentUser('userId') userId: string,
+    @Body() body: { fromChatId: string; toChatId: string },
+  ) {
+    return this.contextBridgeService.switchContext({
+      userId,
+      fromChatId: body.fromChatId,
+      toChatId: body.toChatId,
+    });
   }
 
   @Post(':id/messages')
