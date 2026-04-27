@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../config/prisma.service';
 import { AiModelsService } from '../ai/ai-models.service';
 
+const VALID_AGENT_CONVERSATION_MODES = new Set(['single_agent', 'group_chat']);
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -40,6 +42,15 @@ export class UsersService {
       !this.aiModelsService.isSupportedModelId(settings.chatModel)
     ) {
       throw new BadRequestException(`Unsupported chat model: ${settings.chatModel}`);
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(settings, 'agentConversationMode') &&
+      !VALID_AGENT_CONVERSATION_MODES.has(settings.agentConversationMode)
+    ) {
+      throw new BadRequestException(
+        `Unsupported agent conversation mode: ${settings.agentConversationMode}`,
+      );
     }
 
     return this.prisma.settings.upsert({
