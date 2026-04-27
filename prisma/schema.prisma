@@ -12,35 +12,39 @@ datasource db {
 
 // User model
 model User {
-  id            String    @id @default(cuid())
-  githubId      String?   @unique
-  name          String
-  email         String    @unique
-  avatar        String?
-  githubLogin   String?
-  githubBio     String?
-  githubLocation String?
-  githubBlog    String?
+  id                   String    @id @default(cuid())
+  githubId             String?   @unique
+  name                 String
+  email                String    @unique
+  avatar               String?
+  githubLogin          String?
+  githubBio            String?
+  githubLocation       String?
+  githubBlog           String?
   // Email/password authentication fields
-  passwordHash  String?   // Nullable for OAuth-only users
-  emailVerified DateTime? // When email was verified
-  resetPasswordToken String? @unique  // Password reset token
-  resetPasswordExpires DateTime?  // Reset token expiration
-  failedLoginAttempts Int @default(0)  // Track failed login attempts
-  lockUntil    DateTime?  // Account lockout after failed attempts
-  isDemo       Boolean   @default(false)  // Demo user flag
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  passwordHash         String? // Nullable for OAuth-only users
+  emailVerified        DateTime? // When email was verified
+  resetPasswordToken   String?   @unique // Password reset token
+  resetPasswordExpires DateTime? // Reset token expiration
+  failedLoginAttempts  Int       @default(0) // Track failed login attempts
+  lockUntil            DateTime? // Account lockout after failed attempts
+  isDemo               Boolean   @default(false) // Demo user flag
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   // Relations
-  goals         Goal[]
-  settings      Settings?
-  messages      Message[]
-  chats         ChatState[]
-  plaidAccounts PlaidAccount[]
-  extractionJobs ExtractionJob[]
-  usage         UserUsage?
+  goals                   Goal[]
+  settings                Settings?
+  messages                Message[]
+  chats                   ChatState[]
+  plaidAccounts           PlaidAccount[]
+  extractionJobs          ExtractionJob[]
+  usage                   UserUsage?
   recurringMergeOverrides RecurringMergeOverride[]
+  agentRuns               AgentRun[]
+  agentEvents             AgentEvent[]
+  agentWorkItems          AgentWorkItem[]
+  contextBridges          ChatContextBridge[]
 }
 
 // User usage tracking for rate limiting
@@ -56,37 +60,38 @@ model UserUsage {
 
 // Settings model
 model Settings {
-  id        String   @id @default(cuid())
-  theme     String   @default("miami-vice")
-  chatModel String   @default("gpt-4")
-  displayName String @default("User")
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  theme                 String   @default("miami-vice")
+  chatModel             String   @default("gpt-4")
+  displayName           String   @default("User")
+  agentConversationMode String   @default("single_agent")
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 // Base Goal model (using polymorphism via type field)
 model Goal {
-  id          String        @id @default(cuid())
-  type        GoalType
-  title       String
-  description String
-  status      GoalStatus    @default(active)
-  deadline    DateTime?     // Optional deadline for goal completion
-  threadId    String?       // OpenAI thread ID for continuing conversation
-  parentGoalId String?      // For subgoals - references parent goal
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  userId      String
+  id           String     @id @default(cuid())
+  type         GoalType
+  title        String
+  description  String
+  status       GoalStatus @default(active)
+  deadline     DateTime? // Optional deadline for goal completion
+  threadId     String? // OpenAI thread ID for continuing conversation
+  parentGoalId String? // For subgoals - references parent goal
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  userId       String
 
   // Relations
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chats       ChatState[]
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chats ChatState[]
 
   // Subgoal relations (self-referential)
-  parentGoal  Goal?         @relation("GoalSubgoals", fields: [parentGoalId], references: [id], onDelete: Cascade)
-  subgoals    Goal[]        @relation("GoalSubgoals")
+  parentGoal Goal?  @relation("GoalSubgoals", fields: [parentGoalId], references: [id], onDelete: Cascade)
+  subgoals   Goal[] @relation("GoalSubgoals")
 
   // One-to-one relations for goal-specific data
   itemData    ItemGoalData?
@@ -95,7 +100,7 @@ model Goal {
   groupData   GroupGoalData?
 
   // Scrape jobs for this goal
-  scrapeJobs  ScrapeJob[]
+  scrapeJobs ScrapeJob[]
 
   @@index([userId, type])
   @@index([userId, status])
@@ -106,50 +111,50 @@ model Goal {
 
 // ItemGoal specific fields (using one-to-one relation)
 model ItemGoalData {
-  id               String               @id @default(cuid())
-  goalId           String               @unique
-  goal             Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  goalId String @unique
+  goal   Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
-  productImage     String?
-  bestPrice        Float
-  currency         String               @default("USD")
-  retailerUrl      String
-  retailerName     String
-  statusBadge      ItemStatusBadge
+  productImage String?
+  bestPrice    Float
+  currency     String          @default("USD")
+  retailerUrl  String
+  retailerName String
+  statusBadge  ItemStatusBadge
 
   // Optional search results (stored as JSONB)
-  searchResults    Json?
+  searchResults Json?
 
   // Search term for scraping (optimized search query)
-  searchTerm       String?
+  searchTerm String?
 
   // Item category for specialized handling
-  category         ItemCategory?
+  category ItemCategory?
 
   // Generic search preferences/filters for ALL categories
   // Vehicles: { make?, model?, year?, trims?: string[], series?, colors?: string[], ... }
   // Technology: { brands?: string[], minRam?, minStorage?, screenSize?, ... }
   // Furniture: { brands?: string[], colors?: string[], material?, ... }
   // UI displays these to user, scrapers use to refine searches
-  searchFilters     Json?
+  searchFilters Json?
 
   // Retailer-specific filters generated by LLM from natural language query
   // Contains per-retailer filter mappings for all supported retailers
   // Format: { query: string, retailers: { autotrader: {...}, cargurus: {...}, ... } }
-  retailerFilters   Json?
+  retailerFilters Json?
 
   // Candidate stack for Tinder-style swiping (array of ProductCandidate objects)
-  candidates           Json?  // Active candidates user can swipe through
-  selectedCandidateId  String?
-  shortlistedCandidates Json?  // Full ProductCandidate objects user swiped right on (The Shortlist/Bench)
-  deniedCandidates     Json?  // Full ProductCandidate objects user swiped left on
+  candidates            Json? // Active candidates user can swipe through
+  selectedCandidateId   String?
+  shortlistedCandidates Json? // Full ProductCandidate objects user swiped right on (The Shortlist/Bench)
+  deniedCandidates      Json? // Full ProductCandidate objects user swiped left on
 
   // Card stacking support (for grouping related goals created by scraper)
-  stackId          String?
-  stackOrder       Int?
+  stackId    String?
+  stackOrder Int?
 
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([stackId])
   @@index([category])
@@ -157,51 +162,51 @@ model ItemGoalData {
 
 // FinanceGoal specific fields
 model FinanceGoalData {
-  id               String               @id @default(cuid())
-  goalId           String               @unique
-  goal             Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  goalId String @unique
+  goal   Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
-  institutionIcon  String
-  accountName      String
-  currentBalance   Float
-  targetBalance    Float
-  currency         String               @default("USD")
-  progressHistory   Float[]
-  lastSync         DateTime?
+  institutionIcon String
+  accountName     String
+  currentBalance  Float
+  targetBalance   Float
+  currency        String    @default("USD")
+  progressHistory Float[]
+  lastSync        DateTime?
 
   // Optional: Link to a Plaid account for automatic balance updates
-  plaidAccount      PlaidAccount?
+  plaidAccount PlaidAccount?
 
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ActionGoal specific fields
 model ActionGoalData {
-  id                    String               @id @default(cuid())
-  goalId                String               @unique
-  goal                  Goal                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  goalId String @unique
+  goal   Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
-  completionPercentage Int                  @default(0)
-  motivation            String?              @db.Text
+  completionPercentage Int     @default(0)
+  motivation           String? @db.Text
 
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  tasks                 Task[]
+  tasks Task[]
 }
 
 // Task model for ActionGoals
 model Task {
-  id          String    @id @default(cuid())
-  title       String
-  completed   Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String   @id @default(cuid())
+  title     String
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  actionGoal  ActionGoalData @relation(fields: [actionGoalId], references: [id], onDelete: Cascade)
+  actionGoal   ActionGoalData @relation(fields: [actionGoalId], references: [id], onDelete: Cascade)
   actionGoalId String
 
   @@index([actionGoalId, completed])
@@ -209,21 +214,21 @@ model Task {
 
 // Group Goal Data
 model GroupGoalData {
-  id              String          @id @default(cuid())
-  goalId          String          @unique
-  goal            Goal            @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  goalId String @unique
+  goal   Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
   // Group visualization
-  icon            String?         // Emoji or icon identifier
-  color           String?         // CSS gradient class or color value
-  layout          GroupLayout     @default(grid)
+  icon   String? // Emoji or icon identifier
+  color  String? // CSS gradient class or color value
+  layout GroupLayout @default(grid)
 
   // Progress calculation
-  progressType    ProgressType    @default(average)
-  progress        Float           @default(0)  // Calculated progress (0-100)
+  progressType ProgressType @default(average)
+  progress     Float        @default(0) // Calculated progress (0-100)
 
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum GroupLayout {
@@ -233,27 +238,29 @@ enum GroupLayout {
 }
 
 enum ProgressType {
-  average  // Average progress of all children
-  sum      // Sum of numeric values (for finance groups)
-  manual   // Manually set progress
+  average // Average progress of all children
+  sum // Sum of numeric values (for finance groups)
+  manual // Manually set progress
 }
 
 // Chat messages
 model Message {
   id        String   @id @default(cuid())
-  role      String   // "user" | "assistant" | "system"
+  role      String // "user" | "assistant" | "system"
   content   String   @db.Text
-  threadId  String?  // OpenAI thread ID for conversation persistence
-  source    String   @default("user")   // "user" | "agent" | "system"
-  visible   Boolean  @default(true)     // false = hidden from chat UI (agent-to-agent messages)
-  metadata  Json?    // Proposal UI state: goalPreview, proposalType, awaitingConfirmation, commands, handled
+  threadId  String? // OpenAI thread ID for conversation persistence
+  source    String   @default("user") // "user" | "agent" | "system"
+  visible   Boolean  @default(true) // false = hidden from chat UI (agent-to-agent messages)
+  metadata  Json? // Proposal UI state: goalPreview, proposalType, awaitingConfirmation, commands, handled
   createdAt DateTime @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  chat      ChatState? @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  chatId    String?  // Required: Always has a ChatState (nullable during migration)
+  user                    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId                  String
+  chat                    ChatState?         @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId                  String? // Required: Always has a ChatState (nullable during migration)
+  agentRunsForUserMessage AgentRun[]
+  contextBridgeSummary    ChatContextBridge? @relation("ContextBridgeSummary")
 
   @@index([userId])
   @@index([chatId])
@@ -263,39 +270,43 @@ model Message {
 
 // Conversation summaries for context window management
 model ConversationSummary {
-  id          String   @id @default(cuid())
-  chatId      String
-  summary     String   @db.Text
+  id           String   @id @default(cuid())
+  chatId       String
+  summary      String   @db.Text
   messageCount Int
-  createdAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
 
-  chat        ChatState @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chat ChatState @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
   @@index([chatId, createdAt])
 }
 
 // Chat state for tracking conversations
 model ChatState {
-  id        String   @id @default(cuid())
-  type      String   // "overview" | "category" | "goal"
-  categoryId String?  // For type="category": "items" | "finances" | "actions"
-  goalId    String?
-  isLoading Boolean  @default(false)
+  id         String  @id @default(cuid())
+  type       String // "overview" | "category" | "goal"
+  categoryId String? // For type="category": "items" | "finances" | "actions"
+  goalId     String?
+  isLoading  Boolean @default(false)
 
   // Summary tracking for context window management
-  lastSummaryId String?  // Points to most recent summary
-  summaryCursor  Int?     // How many messages are summarized (offset)
+  lastSummaryId String? // Points to most recent summary
+  summaryCursor Int? // How many messages are summarized (offset)
 
   // Agent routing tracking
-  lastUserVisit         DateTime?  // When user last opened this chat
-  lastGreetingSummaryAt DateTime?  // When last greeting summary was generated
+  lastUserVisit         DateTime? // When user last opened this chat
+  lastGreetingSummaryAt DateTime? // When last greeting summary was generated
 
   // Relations
-  goal      Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  summaries ConversationSummary[]
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
+  goal                 Goal?                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  messages             Message[]
+  summaries            ConversationSummary[]
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId               String
+  agentRuns            AgentRun[]
+  agentEvents          AgentEvent[]
+  sourceContextBridges ChatContextBridge[]   @relation("ContextBridgeSource")
+  targetContextBridges ChatContextBridge[]   @relation("ContextBridgeTarget")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -307,47 +318,46 @@ model ChatState {
 
 // Plaid linked accounts
 model PlaidAccount {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Plaid credentials (encrypted in production)
-  accessToken     String   @db.Text  // Store securely - encrypt in production
-  itemId          String   // Plaid item ID
-  plaidAccountId  String   // Plaid account ID (for this specific account)
+  accessToken    String @db.Text // Store securely - encrypt in production
+  itemId         String // Plaid item ID
+  plaidAccountId String // Plaid account ID (for this specific account)
 
   // Account info from Plaid
   institutionName String
   institutionId   String
   accountName     String
-  accountMask     String   // Last 4 digits
-  accountType     String   // depository, credit, etc.
-  accountSubtype  String   // savings, checking, etc.
+  accountMask     String // Last 4 digits
+  accountType     String // depository, credit, etc.
+  accountSubtype  String // savings, checking, etc.
 
   // Current balance snapshot
-  currentBalance  Float
+  currentBalance   Float
   availableBalance Float?
-  currency        String   @default("USD")
+  currency         String @default("USD")
 
   // Link to finance goal (optional - one account per goal)
-  financeGoalId   String?            @unique
-  financeGoal     FinanceGoalData?   @relation(fields: [financeGoalId], references: [id])
+  financeGoalId String?          @unique
+  financeGoal   FinanceGoalData? @relation(fields: [financeGoalId], references: [id])
 
   // Metadata
-  lastSync        DateTime @default(now())
-  isActive        Boolean  @default(true)  // Can be disabled without deleting
-  isDemo          Boolean  @default(false) // Demo account flag
+  lastSync DateTime @default(now())
+  isActive Boolean  @default(true) // Can be disabled without deleting
+  isDemo   Boolean  @default(false) // Demo account flag
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  transactions    PlaidTransaction[]
-  investmentHoldings PlaidInvestmentHolding[]
+  transactions           PlaidTransaction[]
+  investmentHoldings     PlaidInvestmentHolding[]
   investmentTransactions PlaidInvestmentTransaction[]
 
   @@unique([plaidAccountId])
-
   @@index([userId])
   @@index([itemId])
   @@index([plaidAccountId])
@@ -356,32 +366,32 @@ model PlaidAccount {
 
 // Plaid transactions - synced weekly for AI analysis
 model PlaidTransaction {
-  id              String   @id @default(cuid())
-  plaidAccountId  String
-  account         PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  plaidAccountId String
+  account        PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
 
   // Plaid transaction data
-  transactionId   String   // Plaid's unique transaction ID
-  amount          Float
-  currency        String   @default("USD")
-  date            DateTime
-  name            String   // Transaction description
-  merchantName    String?  // Merchant name if available
-  category        String?  // Primary category
-  categories      String[] // All categories (stored as array)
-  paymentChannel  String?  // online, in store, etc.
-  pending         Boolean  @default(false)
+  transactionId  String // Plaid's unique transaction ID
+  amount         Float
+  currency       String   @default("USD")
+  date           DateTime
+  name           String // Transaction description
+  merchantName   String? // Merchant name if available
+  category       String? // Primary category
+  categories     String[] // All categories (stored as array)
+  paymentChannel String? // online, in store, etc.
+  pending        Boolean  @default(false)
 
   // Optional rich data
   authorizedDate  DateTime?
-  locationData    Json?    // {address, city, state, zip, lat, lon}
+  locationData    Json? // {address, city, state, zip, lat, lon}
   transactionType String?
 
   // Metadata
-  lastSync        DateTime @default(now())
+  lastSync DateTime @default(now())
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([plaidAccountId, transactionId]) // Prevent duplicates
   @@index([plaidAccountId, date]) // For date-range queries
@@ -390,62 +400,62 @@ model PlaidTransaction {
 }
 
 model PlaidSecurity {
-  id                String   @id @default(cuid())
-  securityId        String   @unique
-  name              String
-  tickerSymbol      String?
-  type              String?
-  closePrice        Float?
-  closePriceAsOf    DateTime?
-  currency          String?  @default("USD")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id             String    @id @default(cuid())
+  securityId     String    @unique
+  name           String
+  tickerSymbol   String?
+  type           String?
+  closePrice     Float?
+  closePriceAsOf DateTime?
+  currency       String?   @default("USD")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  holdings          PlaidInvestmentHolding[]
-  transactions      PlaidInvestmentTransaction[]
+  holdings     PlaidInvestmentHolding[]
+  transactions PlaidInvestmentTransaction[]
 
   @@index([tickerSymbol])
 }
 
 model PlaidInvestmentHolding {
-  id                    String   @id @default(cuid())
-  plaidAccountId        String
-  account               PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
-  plaidSecurityId       String
-  security              PlaidSecurity @relation(fields: [plaidSecurityId], references: [id], onDelete: Cascade)
-  quantity              Float
-  institutionPrice      Float?
-  institutionPriceAsOf  DateTime?
-  institutionValue      Float?
-  costBasis             Float?
-  currency              String   @default("USD")
-  lastSync              DateTime @default(now())
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                   String        @id @default(cuid())
+  plaidAccountId       String
+  account              PlaidAccount  @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  plaidSecurityId      String
+  security             PlaidSecurity @relation(fields: [plaidSecurityId], references: [id], onDelete: Cascade)
+  quantity             Float
+  institutionPrice     Float?
+  institutionPriceAsOf DateTime?
+  institutionValue     Float?
+  costBasis            Float?
+  currency             String        @default("USD")
+  lastSync             DateTime      @default(now())
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   @@unique([plaidAccountId, plaidSecurityId])
   @@index([plaidAccountId])
 }
 
 model PlaidInvestmentTransaction {
-  id                       String   @id @default(cuid())
-  plaidAccountId           String
-  account                  PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
-  investmentTransactionId  String
-  plaidSecurityId          String?
-  security                 PlaidSecurity? @relation(fields: [plaidSecurityId], references: [id], onDelete: SetNull)
-  amount                   Float
-  quantity                 Float?
-  fees                     Float?
-  price                    Float?
-  date                     DateTime
-  name                     String
-  type                     String?
-  subtype                  String?
-  currency                 String   @default("USD")
-  lastSync                 DateTime @default(now())
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  id                      String         @id @default(cuid())
+  plaidAccountId          String
+  account                 PlaidAccount   @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  investmentTransactionId String
+  plaidSecurityId         String?
+  security                PlaidSecurity? @relation(fields: [plaidSecurityId], references: [id], onDelete: SetNull)
+  amount                  Float
+  quantity                Float?
+  fees                    Float?
+  price                   Float?
+  date                    DateTime
+  name                    String
+  type                    String?
+  subtype                 String?
+  currency                String         @default("USD")
+  lastSync                DateTime       @default(now())
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
 
   @@unique([plaidAccountId, investmentTransactionId])
   @@index([plaidAccountId, date])
@@ -465,12 +475,95 @@ model RecurringMergeOverride {
   @@index([userId, direction])
 }
 
+model AgentRun {
+  id            String    @id @default(cuid())
+  userId        String
+  chatId        String
+  userMessageId String
+  status        String    @default("running")
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chat        ChatState       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userMessage Message         @relation(fields: [userMessageId], references: [id], onDelete: Cascade)
+  workItems   AgentWorkItem[]
+  events      AgentEvent[]
+
+  @@index([userId, status])
+  @@index([chatId, createdAt])
+  @@index([userMessageId])
+}
+
+model AgentWorkItem {
+  id            String   @id @default(cuid())
+  runId         String
+  userId        String
+  kind          String
+  assignedAgent String
+  status        String   @default("pending")
+  input         Json
+  result        Json?
+  error         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  run    AgentRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events AgentEvent[]
+
+  @@index([runId, status])
+  @@index([userId, assignedAgent])
+}
+
+model AgentEvent {
+  id         String   @id @default(cuid())
+  runId      String
+  workItemId String?
+  chatId     String
+  userId     String
+  agent      String
+  eventType  String
+  content    String   @db.Text
+  visibility String   @default("hidden")
+  createdAt  DateTime @default(now())
+
+  run      AgentRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  workItem AgentWorkItem? @relation(fields: [workItemId], references: [id], onDelete: SetNull)
+  chat     ChatState      @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+  @@index([chatId, visibility, createdAt])
+  @@index([userId, agent])
+}
+
+model ChatContextBridge {
+  id               String    @id @default(cuid())
+  userId           String
+  sourceChatId     String
+  targetChatId     String
+  summaryMessageId String    @unique
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  clearedAt        DateTime?
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceChat     ChatState @relation("ContextBridgeSource", fields: [sourceChatId], references: [id], onDelete: Cascade)
+  targetChat     ChatState @relation("ContextBridgeTarget", fields: [targetChatId], references: [id], onDelete: Cascade)
+  summaryMessage Message   @relation("ContextBridgeSummary", fields: [summaryMessageId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([sourceChatId, status])
+  @@index([targetChatId, status])
+}
+
 // Scrape Jobs
 model ScrapeJob {
   id        Int      @id @default(autoincrement())
   goalId    String
   goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  status    String   // 'pending', 'running', 'completed', 'failed'
+  status    String // 'pending', 'running', 'completed', 'failed'
   attempts  Int      @default(0)
   error     String?
   createdAt DateTime @default(now())
@@ -499,36 +592,36 @@ enum ItemStatusBadge {
   price_drop
   pending_search
   candidates_found // Candidates found but user hasn't selected one yet
-  not_found        // Searched but no results found
-  not_supported    // Category doesn't have a scraper yet
+  not_found // Searched but no results found
+  not_supported // Category doesn't have a scraper yet
 }
 
 // Item categories for specialized scraping/handling
 enum ItemCategory {
-  vehicle          // Cars, trucks, motorcycles, etc.
-  vehicle_parts    // Car parts, accessories, etc.
-  technology       // Computers, phones, electronics
-  electronics      // Deprecated - use technology
-  sporting_goods   // Sports equipment, fitness gear
-  clothing         // Apparel, shoes, accessories
-  apparel          // Deprecated - use clothing
-  pets            // Pet supplies, equipment
-  furniture       // Home furniture, decor
-  general         // Other items
+  vehicle // Cars, trucks, motorcycles, etc.
+  vehicle_parts // Car parts, accessories, etc.
+  technology // Computers, phones, electronics
+  electronics // Deprecated - use technology
+  sporting_goods // Sports equipment, fitness gear
+  clothing // Apparel, shoes, accessories
+  apparel // Deprecated - use clothing
+  pets // Pet supplies, equipment
+  furniture // Home furniture, decor
+  general // Other items
 }
 
 // Extraction Jobs for product link extraction
 model ExtractionJob {
-  id          String   @id @default(uuid())
-  url         String
-  status      String   @default("pending") // pending, running, completed, failed
-  result      Json?    // { success: boolean, name?: string, price?: number, imageUrl?: string, currency?: string, error?: string }
-  error       String?
-  groupId     String   // Groups multiple extractions together for batch processing
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  url       String
+  status    String   @default("pending") // pending, running, completed, failed
+  result    Json? // { success: boolean, name?: string, price?: number, imageUrl?: string, currency?: string, error?: string }
+  error     String?
+  groupId   String // Groups multiple extractions together for batch processing
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([groupId])
