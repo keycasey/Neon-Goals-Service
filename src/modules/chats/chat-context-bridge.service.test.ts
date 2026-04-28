@@ -8,11 +8,25 @@ const createService = () => {
     chatContextBridge: {
       findMany: mock(async () => [
         {
+          id: 'old_bridge_1',
           summaryMessageId: 'old_summary_1',
           summaryMessage: {
             metadata: {
               source: 'context_bridge',
               sourceChatId: 'items_chat',
+              targetChatId: 'overview_chat',
+              expiresOnReturnToChatId: 'items_chat',
+            },
+          },
+        },
+        {
+          id: 'old_bridge_2',
+          summaryMessageId: 'old_summary_2',
+          summaryMessage: {
+            metadata: {
+              source: 'context_bridge',
+              bridgeId: 'old_bridge_2',
+              sourceChatId: 'actions_chat',
               targetChatId: 'overview_chat',
               expiresOnReturnToChatId: 'items_chat',
             },
@@ -105,7 +119,7 @@ describe('ChatContextBridgeService', () => {
     });
   });
 
-  it('returns null and does no DB writes when switching to the same chat', async () => {
+  it('verifies same-chat ownership before returning null without bridge writes', async () => {
     const { service, prisma } = createService();
 
     const result = await service.switchContext({
@@ -115,10 +129,31 @@ describe('ChatContextBridgeService', () => {
     });
 
     expect(result).toBeNull();
-    expect(prisma.chatState.findFirst).not.toHaveBeenCalled();
+    expect(prisma.chatState.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.chatState.findFirst).toHaveBeenCalledWith({
+      where: { id: 'overview_chat', userId: 'user_1' },
+    });
     expect(prisma.message.findMany).not.toHaveBeenCalled();
     expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.chatContextBridge.updateMany).not.toHaveBeenCalled();
+    expect(prisma.chatContextBridge.create).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException for missing or cross-user same-chat ids', async () => {
+    const { service, prisma } = createService();
+    prisma.chatState.findFirst.mockResolvedValueOnce(null);
+
+    await expect(
+      service.switchContext({
+        userId: 'user_1',
+        fromChatId: 'missing_chat',
+        toChatId: 'missing_chat',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
     expect(prisma.chatContextBridge.create).not.toHaveBeenCalled();
   });
 
@@ -165,7 +200,7 @@ describe('ChatContextBridgeService', () => {
       toChatId: 'items_chat',
     });
 
-    expect(prisma.chatContextBridge.updateMany).toHaveBeenCalledWith({
+    expect(prisma.chatContextBridge.findMany).toHaveBeenCalledWith({
       where: {
         userId: 'user_1',
         status: 'active',
@@ -174,6 +209,22 @@ describe('ChatContextBridgeService', () => {
             path: ['expiresOnReturnToChatId'],
             equals: 'items_chat',
           },
+        },
+      },
+      select: {
+        id: true,
+        summaryMessageId: true,
+        summaryMessage: {
+          select: {
+            metadata: true,
+          },
+        },
+      },
+    });
+    expect(prisma.chatContextBridge.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: {
+          in: ['old_bridge_1', 'old_bridge_2'],
         },
       },
       data: {
@@ -189,6 +240,21 @@ describe('ChatContextBridgeService', () => {
         metadata: {
           source: 'context_bridge',
           sourceChatId: 'items_chat',
+          targetChatId: 'overview_chat',
+          expiresOnReturnToChatId: 'items_chat',
+          cleared: true,
+          clearedAt: expect.any(String),
+        },
+      },
+    });
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { id: 'old_summary_2' },
+      data: {
+        content: '[Cleared context bridge summary]',
+        metadata: {
+          source: 'context_bridge',
+          bridgeId: 'old_bridge_2',
+          sourceChatId: 'actions_chat',
           targetChatId: 'overview_chat',
           expiresOnReturnToChatId: 'items_chat',
           cleared: true,
@@ -217,6 +283,7 @@ describe('ChatContextBridgeService', () => {
         content: expect.stringContaining('Context from overview chat'),
         metadata: {
           source: 'context_bridge',
+          bridgeId: 'pending',
           sourceChatId: 'overview_chat',
           targetChatId: 'items_chat',
           expiresOnReturnToChatId: 'overview_chat',
@@ -242,6 +309,18 @@ describe('ChatContextBridgeService', () => {
         targetChatId: 'items_chat',
         summaryMessageId: 'message_summary_1',
         status: 'active',
+      },
+    });
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { id: 'message_summary_1' },
+      data: {
+        metadata: {
+          source: 'context_bridge',
+          bridgeId: 'bridge_1',
+          sourceChatId: 'overview_chat',
+          targetChatId: 'items_chat',
+          expiresOnReturnToChatId: 'overview_chat',
+        },
       },
     });
   });

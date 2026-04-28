@@ -17,6 +17,14 @@ export class ChatContextBridgeService {
     const toChatId = this.requireChatId(input.toChatId, 'toChatId');
 
     if (fromChatId === toChatId) {
+      const chat = await this.prisma.chatState.findFirst({
+        where: { id: fromChatId, userId: input.userId },
+      });
+
+      if (!chat) {
+        throw new NotFoundException('Chat not found');
+      }
+
       return null;
     }
 
@@ -57,6 +65,7 @@ export class ChatContextBridgeService {
           content,
           metadata: {
             source: 'context_bridge',
+            bridgeId: 'pending',
             sourceChatId: fromChatId,
             targetChatId: toChatId,
             expiresOnReturnToChatId: fromChatId,
@@ -64,7 +73,7 @@ export class ChatContextBridgeService {
         },
       });
 
-      return tx.chatContextBridge.create({
+      const bridge = await tx.chatContextBridge.create({
         data: {
           userId: input.userId,
           sourceChatId: fromChatId,
@@ -73,6 +82,20 @@ export class ChatContextBridgeService {
           status: 'active',
         },
       });
+
+      await tx.message.update({
+        where: { id: summaryMessage.id },
+        data: {
+          metadata: this.contextBridgeMetadata({
+            bridgeId: bridge.id,
+            sourceChatId: fromChatId,
+            targetChatId: toChatId,
+            expiresOnReturnToChatId: fromChatId,
+          }),
+        },
+      });
+
+      return bridge;
     });
   }
 
@@ -84,6 +107,7 @@ export class ChatContextBridgeService {
     const summariesToClear = await tx.chatContextBridge.findMany({
       where: this.activeBridgeWhere(userId, returnedChatId),
       select: {
+        id: true,
         summaryMessageId: true,
         summaryMessage: {
           select: {
@@ -92,6 +116,12 @@ export class ChatContextBridgeService {
         },
       },
     });
+    const bridgeIds = summariesToClear.map((bridge) => bridge.id);
+
+    if (bridgeIds.length === 0) {
+      return;
+    }
+
     const clearedAt = new Date();
     const clearedAtIso = clearedAt.toISOString();
 
@@ -106,7 +136,11 @@ export class ChatContextBridgeService {
     }
 
     await tx.chatContextBridge.updateMany({
-      where: this.activeBridgeWhere(userId, returnedChatId),
+      where: {
+        id: {
+          in: bridgeIds,
+        },
+      },
       data: {
         status: 'cleared',
         clearedAt,
@@ -132,6 +166,21 @@ export class ChatContextBridgeService {
       ...(this.isRecord(metadata) ? metadata : {}),
       cleared: true,
       clearedAt,
+    };
+  }
+
+  private contextBridgeMetadata(input: {
+    bridgeId: string;
+    sourceChatId: string;
+    targetChatId: string;
+    expiresOnReturnToChatId: string;
+  }) {
+    return {
+      source: 'context_bridge',
+      bridgeId: input.bridgeId,
+      sourceChatId: input.sourceChatId,
+      targetChatId: input.targetChatId,
+      expiresOnReturnToChatId: input.expiresOnReturnToChatId,
     };
   }
 
