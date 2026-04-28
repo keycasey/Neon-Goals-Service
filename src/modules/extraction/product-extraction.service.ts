@@ -262,24 +262,49 @@ export class ProductExtractionService {
           })
         ).id;
 
-    await this.prisma.message.create({
-      data: {
-        userId,
-        chatId,
-        role: 'assistant',
-        content,
-        metadata: {
-          extraction: {
-            groupId,
-            successfulCount: successful.length,
-            failedCount,
-          },
-          suggestion: {
-            action: 'create_group_item_goal',
-            groupId,
+    await this.prisma.$transaction(async (tx) => {
+      const assistantMessage = await tx.message.create({
+        data: {
+          userId,
+          chatId,
+          role: 'assistant',
+          source: 'agent',
+          content,
+          metadata: {
+            extraction: {
+              groupId,
+              successfulCount: successful.length,
+              failedCount,
+            },
+            suggestion: {
+              action: 'create_group_item_goal',
+              groupId,
+            },
           },
         },
-      },
+      });
+
+      const run = await tx.agentRun.create({
+        data: {
+          userId,
+          chatId,
+          userMessageId: assistantMessage.id,
+          status: 'completed',
+          completedAt: new Date(),
+        },
+      });
+
+      await tx.agentEvent.create({
+        data: {
+          runId: run.id,
+          chatId,
+          userId,
+          agent: 'items',
+          eventType: 'result',
+          content,
+          visibility: 'visible_in_group_mode',
+        },
+      });
     });
   }
 
