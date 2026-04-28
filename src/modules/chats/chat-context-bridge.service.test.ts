@@ -1,13 +1,29 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, mock } from 'bun:test';
 import { ChatContextBridgeService } from './chat-context-bridge.service';
+import { ChatsController } from './chats.controller';
 
 const createService = () => {
   const prisma = {
     chatContextBridge: {
+      findMany: mock(async () => [
+        {
+          summaryMessageId: 'old_summary_1',
+          summaryMessage: {
+            metadata: {
+              source: 'context_bridge',
+              sourceChatId: 'items_chat',
+              targetChatId: 'overview_chat',
+              expiresOnReturnToChatId: 'items_chat',
+            },
+          },
+        },
+      ]),
       updateMany: mock(async (args: any) => ({ count: 1, args })),
       create: mock(async (args: any) => ({ id: 'bridge_1', ...args.data })),
     },
     message: {
+      update: mock(async (args: any) => ({ id: args.where.id, ...args.data })),
       create: mock(async (args: any) => ({ id: 'message_summary_1', ...args.data })),
       findMany: mock(async () => [
         {
@@ -23,7 +39,7 @@ const createService = () => {
       ]),
     },
     chatState: {
-      findFirstOrThrow: mock(async ({ where }: any) => ({
+      findFirst: mock(async ({ where }: any) => ({
         id: where.id,
         userId: where.userId,
         type: where.id === 'overview_chat' ? 'overview' : 'category',
@@ -31,12 +47,64 @@ const createService = () => {
         goalId: null,
       })),
     },
+    $transaction: undefined as any,
   };
+  prisma.$transaction = mock(async (callback: any) => callback(prisma));
 
   return { service: new ChatContextBridgeService(prisma as any), prisma };
 };
 
 describe('ChatContextBridgeService', () => {
+  it('rejects missing or empty chat ids without DB writes', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.switchContext({
+        userId: 'user_1',
+        fromChatId: undefined as any,
+        toChatId: undefined as any,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.switchContext({
+        userId: 'user_1',
+        fromChatId: '   ',
+        toChatId: 'items_chat',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.switchContext({
+        userId: 'user_1',
+        fromChatId: 'overview_chat',
+        toChatId: 42 as any,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.chatState.findFirst).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.chatContextBridge.create).not.toHaveBeenCalled();
+  });
+
+  it('controller passes an absent body to service validation instead of treating it as same-chat', async () => {
+    const contextBridgeService = {
+      switchContext: mock(async () => null),
+    };
+    const controller = new ChatsController(
+      {} as any,
+      contextBridgeService as any,
+      {} as any,
+    );
+
+    await controller.switchContext('user_1', undefined as any);
+
+    expect(contextBridgeService.switchContext).toHaveBeenCalledWith({
+      userId: 'user_1',
+      fromChatId: undefined,
+      toChatId: undefined,
+    });
+  });
+
   it('returns null and does no DB writes when switching to the same chat', async () => {
     const { service, prisma } = createService();
 
@@ -47,10 +115,44 @@ describe('ChatContextBridgeService', () => {
     });
 
     expect(result).toBeNull();
-    expect(prisma.chatState.findFirstOrThrow).not.toHaveBeenCalled();
+    expect(prisma.chatState.findFirst).not.toHaveBeenCalled();
     expect(prisma.message.findMany).not.toHaveBeenCalled();
     expect(prisma.message.create).not.toHaveBeenCalled();
     expect(prisma.chatContextBridge.updateMany).not.toHaveBeenCalled();
+    expect(prisma.chatContextBridge.create).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException when source or target chat is not owned by the user', async () => {
+    const { service, prisma } = createService();
+    prisma.chatState.findFirst.mockImplementation(async ({ where }: any) =>
+      where.id === 'missing_chat'
+        ? null
+        : {
+            id: where.id,
+            userId: where.userId,
+            type: 'overview',
+            categoryId: null,
+            goalId: null,
+          },
+    );
+
+    await expect(
+      service.switchContext({
+        userId: 'user_1',
+        fromChatId: 'missing_chat',
+        toChatId: 'items_chat',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.switchContext({
+        userId: 'user_1',
+        fromChatId: 'overview_chat',
+        toChatId: 'missing_chat',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.chatContextBridge.updateMany).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
     expect(prisma.chatContextBridge.create).not.toHaveBeenCalled();
   });
 
@@ -77,6 +179,21 @@ describe('ChatContextBridgeService', () => {
       data: {
         status: 'cleared',
         clearedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { id: 'old_summary_1' },
+      data: {
+        content: '[Cleared context bridge summary]',
+        metadata: {
+          source: 'context_bridge',
+          sourceChatId: 'items_chat',
+          targetChatId: 'overview_chat',
+          expiresOnReturnToChatId: 'items_chat',
+          cleared: true,
+          clearedAt: expect.any(String),
+        },
       },
     });
   });
@@ -138,10 +255,10 @@ describe('ChatContextBridgeService', () => {
       toChatId: 'items_chat',
     });
 
-    expect(prisma.chatState.findFirstOrThrow).toHaveBeenCalledWith({
+    expect(prisma.chatState.findFirst).toHaveBeenCalledWith({
       where: { id: 'overview_chat', userId: 'user_1' },
     });
-    expect(prisma.chatState.findFirstOrThrow).toHaveBeenCalledWith({
+    expect(prisma.chatState.findFirst).toHaveBeenCalledWith({
       where: { id: 'items_chat', userId: 'user_1' },
     });
     expect(prisma.message.findMany).toHaveBeenCalledWith({

@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../config/prisma.service';
 
 interface SwitchContextInput {
   userId: string;
-  fromChatId: string;
-  toChatId: string;
+  fromChatId: unknown;
+  toChatId: unknown;
 }
 
 @Injectable()
@@ -12,73 +13,138 @@ export class ChatContextBridgeService {
   constructor(private prisma: PrismaService) {}
 
   async switchContext(input: SwitchContextInput) {
-    if (input.fromChatId === input.toChatId) {
+    const fromChatId = this.requireChatId(input.fromChatId, 'fromChatId');
+    const toChatId = this.requireChatId(input.toChatId, 'toChatId');
+
+    if (fromChatId === toChatId) {
       return null;
     }
 
     const [sourceChat, targetChat] = await Promise.all([
-      this.prisma.chatState.findFirstOrThrow({
-        where: { id: input.fromChatId, userId: input.userId },
+      this.prisma.chatState.findFirst({
+        where: { id: fromChatId, userId: input.userId },
       }),
-      this.prisma.chatState.findFirstOrThrow({
-        where: { id: input.toChatId, userId: input.userId },
+      this.prisma.chatState.findFirst({
+        where: { id: toChatId, userId: input.userId },
       }),
     ]);
 
-    await this.clearBridgesForReturnedChat(input.userId, input.toChatId);
+    if (!sourceChat) {
+      throw new NotFoundException('Source chat not found');
+    }
+
+    if (!targetChat) {
+      throw new NotFoundException('Target chat not found');
+    }
 
     const content = await this.buildCompactSummary({
       userId: input.userId,
-      sourceChatId: input.fromChatId,
+      sourceChatId: fromChatId,
       sourceChat,
       targetChat,
     });
 
-    const summaryMessage = await this.prisma.message.create({
-      data: {
-        userId: input.userId,
-        chatId: input.toChatId,
-        role: 'system',
-        source: 'context_bridge',
-        visible: false,
-        content,
-        metadata: {
+    return this.prisma.$transaction(async (tx) => {
+      await this.clearBridgesForReturnedChat(tx, input.userId, toChatId);
+
+      const summaryMessage = await tx.message.create({
+        data: {
+          userId: input.userId,
+          chatId: toChatId,
+          role: 'system',
           source: 'context_bridge',
-          sourceChatId: input.fromChatId,
-          targetChatId: input.toChatId,
-          expiresOnReturnToChatId: input.fromChatId,
+          visible: false,
+          content,
+          metadata: {
+            source: 'context_bridge',
+            sourceChatId: fromChatId,
+            targetChatId: toChatId,
+            expiresOnReturnToChatId: fromChatId,
+          },
+        },
+      });
+
+      return tx.chatContextBridge.create({
+        data: {
+          userId: input.userId,
+          sourceChatId: fromChatId,
+          targetChatId: toChatId,
+          summaryMessageId: summaryMessage.id,
+          status: 'active',
+        },
+      });
+    });
+  }
+
+  private async clearBridgesForReturnedChat(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    returnedChatId: string,
+  ) {
+    const summariesToClear = await tx.chatContextBridge.findMany({
+      where: this.activeBridgeWhere(userId, returnedChatId),
+      select: {
+        summaryMessageId: true,
+        summaryMessage: {
+          select: {
+            metadata: true,
+          },
         },
       },
     });
+    const clearedAt = new Date();
+    const clearedAtIso = clearedAt.toISOString();
 
-    return this.prisma.chatContextBridge.create({
+    for (const bridge of summariesToClear) {
+      await tx.message.update({
+        where: { id: bridge.summaryMessageId },
+        data: {
+          content: '[Cleared context bridge summary]',
+          metadata: this.mergeClearedMetadata(bridge.summaryMessage.metadata, clearedAtIso),
+        },
+      });
+    }
+
+    await tx.chatContextBridge.updateMany({
+      where: this.activeBridgeWhere(userId, returnedChatId),
       data: {
-        userId: input.userId,
-        sourceChatId: input.fromChatId,
-        targetChatId: input.toChatId,
-        summaryMessageId: summaryMessage.id,
-        status: 'active',
+        status: 'cleared',
+        clearedAt,
       },
     });
   }
 
-  private async clearBridgesForReturnedChat(userId: string, returnedChatId: string) {
-    return this.prisma.chatContextBridge.updateMany({
-      where: {
-        userId,
-        status: 'active',
-        summaryMessage: {
-          metadata: {
-            path: ['expiresOnReturnToChatId'],
-            equals: returnedChatId,
-          },
+  private activeBridgeWhere(userId: string, returnedChatId: string) {
+    return {
+      userId,
+      status: 'active',
+      summaryMessage: {
+        metadata: {
+          path: ['expiresOnReturnToChatId'],
+          equals: returnedChatId,
         },
       },
-      data: {
-        status: 'cleared',
-        clearedAt: new Date(),
-      },
-    });
+    };
+  }
+
+  private mergeClearedMetadata(metadata: unknown, clearedAt: string) {
+    return {
+      ...(this.isRecord(metadata) ? metadata : {}),
+      cleared: true,
+      clearedAt,
+    };
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private requireChatId(value: unknown, fieldName: 'fromChatId' | 'toChatId') {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new BadRequestException(`${fieldName} must be a non-empty string`);
+    }
+
+    return value.trim();
   }
 
   private async buildCompactSummary(input: {

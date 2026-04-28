@@ -72,8 +72,8 @@ export class ChatsController {
   ) {
     return this.contextBridgeService.switchContext({
       userId,
-      fromChatId: body.fromChatId,
-      toChatId: body.toChatId,
+      fromChatId: body?.fromChatId,
+      toChatId: body?.toChatId,
     });
   }
 
