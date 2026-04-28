@@ -99,8 +99,38 @@ export class ThreadService {
     threadId: string | null;
     createdAt: Date;
   }>> {
+    const bridgeSummaries = await this.prisma.chatContextBridge.findMany({
+      where: {
+        userId,
+        targetChatId: chatId,
+        status: 'active',
+      },
+      orderBy: { createdAt: 'asc' },
+      take: 4,
+      select: {
+        id: true,
+        summaryMessage: {
+          select: {
+            role: true,
+            content: true,
+            metadata: true,
+            source: true,
+            visible: true,
+            threadId: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
     const messages = await this.prisma.message.findMany({
-      where: { chatId, userId },
+      where: {
+        chatId,
+        userId,
+        NOT: {
+          source: 'context_bridge',
+        },
+      },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: {
@@ -114,7 +144,11 @@ export class ThreadService {
       },
     });
 
-    return [...messages].reverse().map((message) => ({
+    const activeBridgeMessages = bridgeSummaries
+      .map((bridge) => bridge.summaryMessage)
+      .filter((message) => !this.isClearedContextBridgeMessage(message.metadata));
+
+    return [...activeBridgeMessages, ...messages.reverse()].map((message) => ({
       role: message.role,
       content: message.content,
       metadata: message.metadata,
@@ -123,6 +157,15 @@ export class ThreadService {
       threadId: message.threadId,
       createdAt: message.createdAt,
     }));
+  }
+
+  private isClearedContextBridgeMessage(metadata: unknown): boolean {
+    return (
+      typeof metadata === 'object' &&
+      metadata !== null &&
+      !Array.isArray(metadata) &&
+      (metadata as { cleared?: unknown }).cleared === true
+    );
   }
 
   /**
