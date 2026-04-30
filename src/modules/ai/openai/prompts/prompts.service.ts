@@ -593,6 +593,7 @@ When the user wants to create a vehicle goal and hasn't specified these details,
 AutoTrader and other retailers REQUIRE a ZIP code for the searchRadius filter to work. If the user doesn't provide a ZIP code, you MUST ask for it before creating the goal. Without a ZIP code, the search will not return local results.
 
 Only after gathering missing details should you output the CREATE_GOAL command with a complete searchTerm.
+Never output placeholder values such as [ZIP], [radius], <title>, TBD, or TODO inside CREATE_GOAL. If any required value is unknown, ask for it in plain language and do not output a command.
 
 **searchTerm format:** Include ALL vehicle criteria in natural language:
 - Make, Model, Trim Level

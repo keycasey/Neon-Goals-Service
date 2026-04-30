@@ -189,16 +189,31 @@ export class CommandParserService {
   sanitizeCommands(commands: ParsedCommand[]): ParsedCommand[] {
     const fieldsToRemove = ['proposalType', 'awaitingConfirmation'];
 
-    return commands.map((cmd) => {
-      if (cmd.data && typeof cmd.data === 'object') {
-        const sanitized = { ...cmd.data };
-        for (const field of fieldsToRemove) {
-          delete sanitized[field];
+    return commands
+      .map((cmd) => {
+        if (cmd.data && typeof cmd.data === 'object') {
+          const sanitized = { ...cmd.data };
+          for (const field of fieldsToRemove) {
+            delete sanitized[field];
+          }
+          return { ...cmd, data: sanitized };
         }
-        return { ...cmd, data: sanitized };
-      }
-      return cmd;
-    });
+        return cmd;
+      })
+      .filter((cmd) => !this.hasUnresolvedPlaceholders(cmd.data));
+  }
+
+  private hasUnresolvedPlaceholders(value: unknown): boolean {
+    if (typeof value === 'string') {
+      return /(\[[^\]]+\]|<[^>]+>|\bTBD\b|\bTODO\b)/i.test(value);
+    }
+    if (Array.isArray(value)) {
+      return value.some((item) => this.hasUnresolvedPlaceholders(item));
+    }
+    if (value && typeof value === 'object') {
+      return Object.values(value).some((item) => this.hasUnresolvedPlaceholders(item));
+    }
+    return false;
   }
 
   /**
