@@ -4,6 +4,7 @@ Carvana scraper using Camoufox with interactive filter selection
 Opens browser, clicks filter UI elements, then extracts results
 """
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -21,6 +22,7 @@ from dotenv import load_dotenv
 
 # Import model name mappings
 from model_mappings import normalize_model_for_site
+from vehicle_listing_details import extract_exterior_color
 
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
@@ -39,6 +41,26 @@ def extract_number(text: str) -> int:
         return int(float(cleaned))
     except:
         return 0
+
+
+def build_cvnaid_filter(make: str = None, model: str = None, max_price: int = None, mileage_max: int = None) -> str:
+    filters = {}
+
+    if max_price:
+        filters['price'] = {'max': int(max_price)}
+    if mileage_max:
+        filters['mileage'] = {'max': int(mileage_max)}
+    if make:
+        make_filter = {'name': make}
+        if model:
+            make_filter['parentModels'] = [{'name': model}]
+        filters['makes'] = [make_filter]
+
+    if not filters:
+        return ''
+
+    payload = json.dumps({'filters': filters}, separators=(',', ':')).encode('utf-8')
+    return base64.urlsafe_b64encode(payload).decode('ascii').rstrip('=')
 
 
 def adapt_structured_to_carvana_interactive(structured: dict) -> dict:
@@ -76,6 +98,18 @@ def adapt_structured_to_carvana_interactive(structured: dict) -> dict:
     if structured.get('trims'):
         params['trims'] = structured['trims']
 
+    exterior_color = structured.get('exteriorColor') or structured.get('color')
+    if exterior_color:
+        params['exteriorColor'] = exterior_color
+
+    max_price = structured.get('maxPrice') or structured.get('priceMax')
+    if max_price:
+        params['maxPrice'] = max_price
+
+    mileage_max = structured.get('mileageMax') or structured.get('maxMileage')
+    if mileage_max:
+        params['mileageMax'] = mileage_max
+
     # Year - extract max year from range or use single year
     if structured.get('year'):
         year = structured['year']
@@ -93,6 +127,9 @@ async def scrape_carvana_interactive(
     model: Optional[str] = None,
     trims: Optional[List[str]] = None,
     year: Optional[int] = None,
+    exteriorColor: Optional[str] = None,
+    maxPrice: Optional[int] = None,
+    mileageMax: Optional[int] = None,
     max_results: int = 10
 ):
     """
@@ -127,7 +164,18 @@ async def scrape_carvana_interactive(
 
         # Start at Carvana search page
         logging.error(f"[Carvana] Starting search")
-        await page.goto("https://www.carvana.com/cars", wait_until='domcontentloaded', timeout=60000)
+        has_encoded_filters = bool(maxPrice or mileageMax)
+        start_url = "https://www.carvana.com/cars/filters" if has_encoded_filters else "https://www.carvana.com/cars"
+        query_params = []
+        if exteriorColor:
+            color_slug = exteriorColor.lower().replace(' ', '-')
+            query_params.append("email-capture=")
+            query_params.append(f"color={color_slug}")
+        if has_encoded_filters:
+            query_params.append(f"cvnaid={build_cvnaid_filter(make, model, maxPrice, mileageMax)}")
+        if query_params:
+            start_url = f"{start_url}?{'&'.join(query_params)}"
+        await page.goto(start_url, wait_until='domcontentloaded', timeout=60000)
         await asyncio.sleep(3)
 
         # Step 1: Click "Make & Model" filter button to expand filters
@@ -454,6 +502,8 @@ async def scrape_carvana_interactive(
                     if 'k' in mileage_match.group(0).lower():
                         mileage = mileage * 1000
 
+                exterior_color = extract_exterior_color(all_text)
+
                 # Get image
                 img_elem = await listing.query_selector('img')
                 image = await img_elem.get_attribute('src') or '' if img_elem else ''
@@ -466,7 +516,8 @@ async def scrape_carvana_interactive(
                         'image': image,
                         'retailer': 'Carvana',
                         'url': url,
-                        'location': 'Carvana'
+                        'location': 'Carvana',
+                        'exteriorColor': exterior_color
                     })
                     logging.error(f"[Carvana] {title[:40]} - ${price:,} - {mileage:,} mi")
 
@@ -533,13 +584,23 @@ async def main():
         if 'year_min' in filters and 'year' not in filters:
             filters['year'] = int(filters['year_max']) if filters.get('year_max') else int(filters['year_min'])
 
-        logging.error(f"[Carvana] Calling scrape_carvana_interactive with make={filters.get('make')}, model={filters.get('model')}, trims={filters.get('trims')}, year={filters.get('year')}")
+        if filters.get('color') and not filters.get('exteriorColor'):
+            filters['exteriorColor'] = filters['color']
+        if filters.get('priceMax') and not filters.get('maxPrice'):
+            filters['maxPrice'] = filters['priceMax']
+        if filters.get('maxMileage') and not filters.get('mileageMax'):
+            filters['mileageMax'] = filters['maxMileage']
+
+        logging.error(f"[Carvana] Calling scrape_carvana_interactive with make={filters.get('make')}, model={filters.get('model')}, trims={filters.get('trims')}, year={filters.get('year')}, exteriorColor={filters.get('exteriorColor')}, maxPrice={filters.get('maxPrice')}, mileageMax={filters.get('mileageMax')}")
 
         result = await scrape_carvana_interactive(
             make=filters.get('make'),
             model=filters.get('model'),
             trims=filters.get('trims'),
             year=filters.get('year'),
+            exteriorColor=filters.get('exteriorColor'),
+            maxPrice=filters.get('maxPrice'),
+            mileageMax=filters.get('mileageMax'),
             max_results=max_results
         )
 

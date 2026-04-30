@@ -39,6 +39,7 @@ logging.basicConfig(
 from camoufox.async_api import AsyncCamoufox
 from browserforge.fingerprints import Screen
 from dotenv import load_dotenv
+from vehicle_listing_details import extract_exterior_color
 
 # Load environment variables
 env_path = Path(__file__).parent.parent / '.env'
@@ -56,7 +57,7 @@ FILTER_PARAM_MAPPING = {
     'drivetrain': 'drivetrain',
     'fuelType': 'fuelType',
     'transmission': 'transmission',
-    'mileageMax': 'mileageMax'
+    'mileageMax': 'maxMileage'
 }
 
 
@@ -114,6 +115,12 @@ def adapt_structured_to_cargurus(structured: dict) -> dict:
             params['minPrice'] = url_params['minPrice']
         if url_params.get('maxPrice') is not None:
             params['maxPrice'] = url_params['maxPrice']
+        if url_params.get('mileageMax') is not None:
+            params['mileageMax'] = url_params['mileageMax']
+        if url_params.get('zip'):
+            params['zip'] = url_params['zip']
+        if url_params.get('distance') is not None:
+            params['distance'] = url_params['distance']
     else:
         # Legacy generic format - convert from old structure
         # CarGurus only supports single make/model (take first if multiple)
@@ -171,11 +178,17 @@ def adapt_structured_to_cargurus(structured: dict) -> dict:
             params['minPrice'] = structured['minPrice']
         if structured.get('maxPrice') is not None:
             params['maxPrice'] = structured['maxPrice']
+        if structured.get('mileageMax') is not None:
+            params['mileageMax'] = structured['mileageMax']
+        elif structured.get('maxMileage') is not None:
+            params['mileageMax'] = structured['maxMileage']
 
     # Location (required for CarGurus) - use from either format
     location = structured.get('location', {})
-    params['zip'] = location.get('zip') or '94002'  # Default zip
-    params['distance'] = location.get('distance') or 200  # Default distance
+    if not params.get('zip'):
+        params['zip'] = location.get('zip') or '94002'  # Default zip
+    if not params.get('distance'):
+        params['distance'] = location.get('distance') or 200  # Default distance
 
     return params
 
@@ -580,6 +593,7 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                 for i, listing in enumerate(listings[:max_results]):
                     try:
                         all_text = await listing.inner_text()
+                        exterior_color = extract_exterior_color(all_text)
                         name = f"{make} {model}"
                         name_elem = await listing.query_selector('h4, h3, h2')
                         if name_elem:
@@ -637,7 +651,8 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                                 'image': image,
                                 'retailer': 'CarGurus',
                                 'url': url,
-                                'location': location
+                                'location': location,
+                                'exteriorColor': exterior_color
                             })
                             logging.error(f"Extracted: {name[:40]} - ${price} - {mileage} mi")
                     except Exception as e:
@@ -753,6 +768,7 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
             try:
                 # Get all text
                 all_text = await listing.inner_text()
+                exterior_color = extract_exterior_color(all_text)
 
                 # Extract name from heading or use search criteria
                 name = f"{make} {model}"
@@ -823,7 +839,8 @@ async def scrape_cars(search_filters: dict, max_results: int = 10):
                         'image': image,
                         'retailer': 'CarGurus',
                         'url': url,
-                        'location': location
+                        'location': location,
+                        'exteriorColor': exterior_color
                     })
                     logging.error(f"Extracted: {name[:40]} - ${price} - {mileage} mi")
 

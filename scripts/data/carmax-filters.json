@@ -30,6 +30,22 @@
       "mileageMax": "Maximum mileage"
     }
   },
+  "model_examples": {
+    "Honda": {
+      "Passport": {
+        "label": "Passport",
+        "path_value": "passport",
+        "example_path": "/cars/honda/passport"
+      }
+    },
+    "GMC": {
+      "Sierra 3500HD": {
+        "label": "Sierra 3500",
+        "path_value": "sierra-3500",
+        "note": "CarMax model filters drop the HD suffix."
+      }
+    }
+  },
   "filters": [
     {
       "name": "Make & Model",

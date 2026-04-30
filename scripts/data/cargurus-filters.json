@@ -29,6 +29,25 @@
     "sortType": "Sort order (BEST_MATCH, PRICE_DESC, PRICE_ASC, MILEAGE_DESC, MILEAGE_ASC, YEAR_DESC)",
     "sortDirection": "Sort direction (ASC, DESC)"
   },
+  "model_examples": {
+    "Honda": {
+      "Passport": {
+        "label": "Passport",
+        "value": "m6/d593",
+        "make_value": "m6",
+        "model_value": "d593",
+        "listing_path": "/Cars/l-Used-Honda-Passport-d593"
+      }
+    },
+    "GMC": {
+      "Sierra 3500HD": {
+        "label": "Sierra 3500HD",
+        "value": "m26/d973",
+        "make_value": "m26",
+        "model_value": "d973"
+      }
+    }
+  },
   "filters": [
     {
       "name": "Make & Model",
@@ -176,7 +195,10 @@
       "url_param": "wheelSystems",
       "selector": "button[id^='FILTER.DRIVETRAIN.']",
       "options": [
+        { "label": "All-Wheel Drive", "value": "ALL_WHEEL_DRIVE", "id": "FILTER.DRIVETRAIN.ALL_WHEEL_DRIVE" },
         { "label": "Four-Wheel Drive", "value": "FOUR_WHEEL_DRIVE", "id": "FILTER.DRIVETRAIN.FOUR_WHEEL_DRIVE" },
+        { "label": "Front-Wheel Drive", "value": "FRONT_WHEEL_DRIVE", "id": "FILTER.DRIVETRAIN.FRONT_WHEEL_DRIVE" },
+        { "label": "Rear-Wheel Drive", "value": "REAR_WHEEL_DRIVE", "id": "FILTER.DRIVETRAIN.REAR_WHEEL_DRIVE" },
         { "label": "4X2 (2WD)", "value": "FOUR_BY_TWO", "id": "FILTER.DRIVETRAIN.FOUR_BY_TWO" }
       ]
     },

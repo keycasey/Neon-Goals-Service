@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 
 # Import model name mappings
 from model_mappings import normalize_models_for_site
+from vehicle_listing_details import extract_exterior_color
 
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
@@ -110,6 +111,8 @@ def adapt_structured_to_carmax(structured: dict) -> dict:
         params['min_price'] = structured['minPrice']
     if structured.get('maxPrice') is not None:
         params['max_price'] = structured['maxPrice']
+    if structured.get('mileageMax') is not None:
+        params['mileage_max'] = structured['mileageMax']
 
     # Year handling - CarMax doesn't have year filters in URL,
     # but we can note it for post-filtering results
@@ -179,6 +182,7 @@ def build_carmax_url(
     features: Optional[List[str]] = None,
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
+    mileage_max: Optional[int] = None,
     show_reserved: bool = False
 ) -> str:
     """
@@ -246,6 +250,8 @@ def build_carmax_url(
             params.append(f"price={max_str}")
         elif min_str:
             params.append(f"price={min_str}-")
+    if mileage_max:
+        params.append(f"mileageMax={mileage_max}")
 
     params.append(f"showreservedcars={'true' if show_reserved else 'false'}")
 
@@ -319,6 +325,7 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
             features = search_filters.get('features', [])
             min_price = search_filters.get('minPrice')
             max_price = search_filters.get('maxPrice')
+            mileage_max = search_filters.get('mileageMax')
 
             # Build URL with all applicable filters
             search_url = build_carmax_url(
@@ -336,6 +343,7 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
                 features=features if features else None,
                 min_price=min_price,
                 max_price=max_price,
+                mileage_max=mileage_max,
                 show_reserved=False
             )
             logging.error(f"[CarMax] Built URL from filters: {search_url}")
@@ -441,6 +449,7 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
                 # The link element has the full name with trim (e.g., "2024 GMC Sierra 3500 Denali Ultimate")
                 # But inner_text() might return split text, so we need to clean it up
                 all_text = await tile.inner_text()
+                exterior_color = extract_exterior_color(all_text)
 
                 # Try to extract the full vehicle name from all_text
                 # Look for pattern like "2024 GMC Sierra 3500 Denali Ultimate"
@@ -489,7 +498,8 @@ async def scrape_carmax(search_arg: str, max_results: int = 10, search_filters: 
                         'image': image,
                         'retailer': 'CarMax',
                         'url': url,
-                        'location': location.strip()
+                        'location': location.strip(),
+                        'exteriorColor': exterior_color
                     })
                     logging.error(f"[CarMax] {name[:30]} - ${price:,} - {mileage:,} mi")
 

@@ -28,6 +28,22 @@
       "priceDrop": "Recent price drop only (true/false)"
     }
   },
+  "model_examples": {
+    "Honda": {
+      "Passport": {
+        "label": "Passport",
+        "path_value": "passport",
+        "mmt_value": "honda_passport",
+        "example_path": "/used-cars-for-sale/listings/honda/passport/"
+      }
+    },
+    "GMC": {
+      "Sierra 3500HD": {
+        "label": "Sierra 3500HD",
+        "mmt_value": "gmc_sierra-3500hd"
+      }
+    }
+  },
   "filters": [
     {
       "name": "Popular Filters",

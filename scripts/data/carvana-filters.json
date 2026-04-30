@@ -94,6 +94,27 @@
     ],
     "trim_note": "Trims are dynamically loaded after model selection. They combine the trim name with bed length (e.g., 'Denali 6 1/2 ft'). The scraper uses fuzzy matching to find trims."
   },
+  "honda_models": {
+    "make": "Honda",
+    "models": [
+      { "label": "Accord" },
+      { "label": "Civic" },
+      { "label": "CR-V" },
+      { "label": "HR-V" },
+      { "label": "Odyssey" },
+      { "label": "Passport" },
+      { "label": "Pilot" },
+      { "label": "Ridgeline" }
+    ],
+    "passport_trims": [
+      { "label": "EX-L" },
+      { "label": "Elite" },
+      { "label": "Sport" },
+      { "label": "Touring" },
+      { "label": "TrailSport" }
+    ],
+    "trim_note": "Trims are dynamically loaded after model selection. Use visible labels and allow fuzzy matching."
+  },
   "drivetrain_options": [
     { "label": "4WD" },
     { "label": "AWD" },

@@ -18,6 +18,7 @@ import re
 import time
 from pathlib import Path
 from typing import Dict, Optional, List
+from vehicle_listing_details import extract_exterior_color
 
 logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=sys.stderr)
 
@@ -112,7 +113,7 @@ def adapt_structured_to_autotrader(structured: dict) -> str:
     trim = trims[0].lower().replace(' ', '-') if trims else ''
 
     # Get color (for path - comes before make)
-    color = structured.get('color', '')
+    color = structured.get('color') or structured.get('exteriorColor') or ''
     if isinstance(color, list):
         color = color[0].lower() if color else ''
     elif color:
@@ -173,8 +174,13 @@ def adapt_structured_to_autotrader(structured: dict) -> str:
         params.append(f"endYear={structured['yearMax']}")
 
     # Add max price if specified
+    if structured.get('minPrice'):
+        params.append(f"minPrice={structured['minPrice']}")
     if structured.get('maxPrice'):
         params.append(f"maxPrice={structured['maxPrice']}")
+    mileage_max = structured.get('maxMileage') or structured.get('mileageMax')
+    if mileage_max:
+        params.append(f"maxMileage={mileage_max}")
 
     # Build final URL
     query_string = '&'.join(params)
@@ -318,6 +324,7 @@ def scrape_with_playwright_cdp(query: str, max_results: int, cdp_url: str = "htt
 
                         mileage_match = re.search(r'(\d+)\s*mi\b', all_text, re.IGNORECASE)
                         mileage = int(mileage_match.group(1)) if mileage_match else 0
+                        exterior_color = extract_exterior_color(all_text)
 
                         # Get image from ancestor elements
                         image = ''
@@ -351,7 +358,8 @@ def scrape_with_playwright_cdp(query: str, max_results: int, cdp_url: str = "htt
                                 'image': image,
                                 'retailer': 'AutoTrader',
                                 'url': f"https://www.autotrader.com{clean_url}" if not clean_url.startswith('http') else clean_url,
-                                'location': 'AutoTrader'
+                                'location': 'AutoTrader',
+                                'exteriorColor': exterior_color
                             })
                             logging.error(f"[AutoTrader] {title[:30]} - ${price:,}")
 
@@ -553,6 +561,7 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
                     logging.error(f"[AutoTrader] Listing {idx}: NO URL FOUND - this should not happen")
                     # Still add the listing - user wants all listings
                     link = f"https://www.autotrader.com/error-no-url-{idx}"
+                exterior_color = extract_exterior_color(card.inner_text())
 
                 vehicle = {
                     "name": title,           # Changed from "title" to "name" for backend compatibility
@@ -562,7 +571,8 @@ def scrape_with_camoufox(query: str, max_results: int, os_choice: str = None):
                     "url": link,             # Changed from "link" to "url" for backend compatibility
                     "image": image,          # Extracted from img[data-cmp="inventoryImage"]
                     "retailer": "AutoTrader",  # Explicit retailer name
-                    "source": "autotrader"
+                    "source": "autotrader",
+                    "exteriorColor": exterior_color
                 }
 
                 results.append(vehicle)

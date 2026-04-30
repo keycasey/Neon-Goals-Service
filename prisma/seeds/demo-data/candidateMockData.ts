@@ -1,4 +1,4 @@
-import type { ProductCandidate } from '@/types/goals';
+import type { ProductCandidate } from './types';
 
 // Sony Headphones Candidates - Multiple retailers and variants
 export const sonyHeadphonesCandidates: ProductCandidate[] = [

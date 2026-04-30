@@ -8,6 +8,7 @@
  */
 
 import { PrismaClient, GoalType, GoalStatus, ItemStatusBadge, ItemCategory } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import {
   mockActionGoals,
   mockFinanceGoals,
@@ -40,11 +41,11 @@ interface ItemGoalSeed {
   retailerName: string;
   statusBadge: ItemStatusBadge;
   category: ItemCategory;
-  searchResults?: unknown;
-  candidates?: unknown;
+  searchResults?: Prisma.InputJsonValue;
+  candidates?: Prisma.InputJsonValue;
   selectedCandidateId?: string;
-  shortlistedCandidates?: unknown;
-  deniedCandidates?: unknown;
+  shortlistedCandidates?: Prisma.InputJsonValue;
+  deniedCandidates?: Prisma.InputJsonValue;
   stackId?: string;
   stackOrder?: number;
   createdAt: Date;

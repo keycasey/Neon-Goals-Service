@@ -15,6 +15,8 @@ from typing import Optional, Dict, Any
 
 logging.basicConfig(level=logging.ERROR, format='%(message)s', stream=sys.stderr)
 
+from vehicle_listing_details import extract_exterior_color
+
 def extract_number(text: str) -> int:
     if not text:
         return 0
@@ -53,10 +55,10 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
         path_components = structured.get('path_components', {})
         url_params = structured.get('url_params', {})
 
-        # Extract make/model/trim from path_components
-        make = path_components.get('make', '')
-        model = path_components.get('model', '')
-        trim = path_components.get('trim', '')
+        # Extract make/model/trim from path_components or url_params.
+        make = path_components.get('make') or url_params.get('make') or structured.get('make') or ''
+        model = path_components.get('model') or url_params.get('model') or structured.get('model') or ''
+        trim = path_components.get('trim') or url_params.get('trim') or ''
 
         if make:
             params['make'] = make
@@ -74,6 +76,16 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
         # Extract other params from url_params
         if url_params.get('maxPrice'):
             params['budget'] = url_params['maxPrice']
+        if url_params.get('mileageMax') is not None:
+            params['mileageMax'] = url_params['mileageMax']
+        if url_params.get('postalCode') or url_params.get('zip'):
+            params['postalCode'] = url_params.get('postalCode') or url_params.get('zip')
+        if url_params.get('searchRadius') is not None or url_params.get('distance') is not None:
+            params['searchRadius'] = url_params.get('searchRadius') or url_params.get('distance')
+        if url_params.get('drivetrain'):
+            params['drivetrain'] = url_params['drivetrain']
+        if url_params.get('exteriorColor'):
+            params['exteriorColor'] = url_params['exteriorColor']
 
         return params
 
@@ -81,10 +93,14 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
     # Make (take first if multiple - TrueCar only supports single make)
     if structured.get('makes'):
         params['make'] = structured['makes'][0]
+    elif structured.get('make'):
+        params['make'] = structured['make']
 
     # Model (take first if multiple)
     if structured.get('models'):
         params['model'] = structured['models'][0]
+    elif structured.get('model'):
+        params['model'] = structured['model']
 
     # Trims (TrueCar takes single trim as first value)
     if structured.get('trims'):
@@ -112,6 +128,16 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
     # Price - TrueCar uses budget for max price
     if structured.get('maxPrice'):
         params['budget'] = structured['maxPrice']
+    elif structured.get('budget'):
+        params['budget'] = structured['budget']
+    if structured.get('mileageMax') is not None:
+        params['mileageMax'] = structured['mileageMax']
+
+    location = structured.get('location', {})
+    if structured.get('postalCode') or structured.get('zip') or location.get('zip'):
+        params['postalCode'] = structured.get('postalCode') or structured.get('zip') or location.get('zip')
+    if structured.get('searchRadius') is not None or structured.get('distance') is not None or location.get('distance') is not None:
+        params['searchRadius'] = structured.get('searchRadius') or structured.get('distance') or location.get('distance')
 
     # Body type
     if structured.get('bodyType'):
@@ -124,8 +150,110 @@ def adapt_structured_to_truecar(structured: dict) -> dict:
     # Fuel type
     if structured.get('fuelType'):
         params['fuelType'] = structured['fuelType']
+    if structured.get('exteriorColor'):
+        params['exteriorColor'] = structured['exteriorColor']
 
     return params
+
+
+def build_truecar_url(search_filters: Dict[str, Any]) -> str:
+    make = search_filters.get('make', '').lower() if search_filters.get('make') else ''
+    model = search_filters.get('model', '') or ''
+    series = search_filters.get('series', '')
+
+    model_slug = model.lower().replace(' ', '-') if model else ''
+
+    if series and series.upper() not in model_slug.upper():
+        series_lower = series.lower()
+        model_slug = f'{model_slug}{series_lower}'
+
+    base_model = f'{make}_{model_slug}' if make and model_slug else ''
+    mmt_value = base_model
+
+    if search_filters.get('trims'):
+        trims = search_filters.get('trims', [])
+        if trims and len(trims) > 0:
+            trim = trims[0]
+            trim_clean = trim.lower().replace(' ', '-') if trim else ''
+            if trim_clean:
+                mmt_value = f'{mmt_value}_{trim_clean}'
+
+    params = []
+    if mmt_value:
+        params.append(f'mmt[]={mmt_value}')
+
+    postal_code = search_filters.get('postalCode') or search_filters.get('zip')
+    search_radius = search_filters.get('searchRadius') or search_filters.get('distance')
+    if postal_code:
+        params.append(f'postalCode={postal_code}')
+        params.append(f'searchRadius={search_radius or 500}')
+    params.append('state=ca')
+
+    start_year = search_filters.get('startYear')
+    end_year = search_filters.get('endYear')
+    single_year = search_filters.get('year')
+
+    if single_year:
+        params.append(f'yearHigh={single_year}')
+        params.append(f'yearLow={single_year}')
+    elif start_year and end_year:
+        params.append(f'yearHigh={end_year}')
+        params.append(f'yearLow={start_year}')
+    elif end_year:
+        params.append(f'yearHigh={end_year}')
+
+    budget = search_filters.get('budget')
+    if budget:
+        params.append(f'price_high={budget}')
+        params.append('price_low=2000')
+
+    mileage_max = search_filters.get('mileageMax')
+    if mileage_max:
+        params.append(f'mileageMax={mileage_max}')
+
+    exterior_color = search_filters.get('exteriorColor')
+    if exterior_color:
+        params.append(f'exteriorColor[]={str(exterior_color).lower()}')
+
+    body_style = search_filters.get('bodyStyle', '').lower()
+    if body_style:
+        if 'truck' in body_style or 'pickup' in body_style:
+            params.append('bodyStyles[]=truck')
+        elif 'suv' in body_style:
+            params.append('bodyStyles[]=suv')
+        elif 'sedan' in body_style:
+            params.append('bodyStyles[]=sedan')
+
+    drivetrain = search_filters.get('drivetrain', '').upper()
+    if drivetrain:
+        if '4WD' in drivetrain or 'AWD' in drivetrain:
+            params.append('driveTrain[]=4WD')
+        elif '2WD' in drivetrain or 'RWD' in drivetrain:
+            params.append('driveTrain[]=2WD')
+
+    fuel_type = search_filters.get('fuelType', '').lower()
+    if fuel_type:
+        if 'diesel' in fuel_type:
+            params.append('fuelType[]=Diesel')
+        elif 'electric' in fuel_type:
+            params.append('fuelType[]=Electric')
+        elif 'hybrid' in fuel_type:
+            params.append('fuelType[]=Hybrid')
+
+    if params:
+        return f"https://www.truecar.com/used-cars-for-sale/listings/inventory/?{'&'.join(params)}"
+
+    if make and model:
+        return f"https://www.truecar.com/used-cars-for-sale/listings/{make}/{model}/"
+
+    query_parts = filter(None, [
+        str(search_filters.get('year', '')),
+        search_filters.get('make', ''),
+        search_filters.get('model', ''),
+        search_filters.get('series', '')
+    ])
+    search_query = '+'.join(query_parts)
+    return f"https://www.truecar.com/used-cars-for-sale/listings/?searchQuery={search_query}"
 
 
 async def scrape_truecar_graphql(search_filters: Dict[str, Any], max_results: int = 10) -> list:
@@ -216,6 +344,11 @@ async def scrape_truecar_graphql(search_filters: Dict[str, Any], max_results: in
                     title = f"{vehicle.get('year', '')} {vehicle.get('make', {}).get('name', '')} {vehicle.get('model', {}).get('name', '')}"
                     price = node.get('pricing', {}).get('listPrice', 0) or 0
                     mileage = vehicle.get('mileage', 0) or 0
+                    exterior_color = (
+                        vehicle.get('exteriorColor')
+                        or vehicle.get('exterior_color')
+                        or vehicle.get('color')
+                    )
 
                     results.append({
                         'name': title.strip(),
@@ -224,7 +357,8 @@ async def scrape_truecar_graphql(search_filters: Dict[str, Any], max_results: in
                         'image': '',
                         'retailer': 'TrueCar',
                         'url': f"https://www.truecar.com",
-                        'location': 'TrueCar'
+                        'location': 'TrueCar',
+                        'exteriorColor': exterior_color
                     })
 
                 logging.error(f"[TrueCar] GraphQL returned {len(results)} results")
@@ -248,118 +382,7 @@ async def scrape_truecar_camoufox(search_filters: Dict[str, Any], max_results: i
 
     results = []
 
-    make = search_filters.get('make', '').lower() if search_filters.get('make') else ''
-    model = search_filters.get('model', '') or ''
-    series = search_filters.get('series', '')
-
-    # Build model_slug: make_model
-    # If series is provided (like "HD"), append it to model
-    # Example: "Sierra 3500" + series "HD" -> "sierra-3500hd"
-    import re
-    model_slug = model.lower().replace(' ', '-') if model else ''
-
-    # Append series if it's a suffix like "HD" and not already in model_slug
-    if series and series.upper() not in model_slug.upper():
-        series_lower = series.lower()
-        # For series like "HD", append directly to the last number
-        # sierra-3500 + HD = sierra-3500hd
-        model_slug = f'{model_slug}{series_lower}'
-
-    # Build mmt value - make_modelslug
-    base_model = f'{make}_{model_slug}' if make and model_slug else ''
-
-    mmt_value = base_model
-
-    # Add trim if specified (e.g., _denali-ultimate)
-    if search_filters.get('trims'):
-        trims = search_filters.get('trims', [])
-        if trims and len(trims) > 0:
-            trim = trims[0]
-            trim_clean = trim.lower().replace(' ', '-') if trim else ''
-            if trim_clean:
-                mmt_value = f'{mmt_value}_{trim_clean}'
-
-    # Build URL parameters
-    params = []
-    if mmt_value:
-        params.append(f'mmt[]={mmt_value}')
-
-    # Location filters - use postalCode + searchRadius if available, fallback to state
-    postal_code = search_filters.get('postalCode') or search_filters.get('zip')
-    search_radius = search_filters.get('searchRadius') or search_filters.get('distance')
-    if postal_code:
-        params.append(f'postalCode={postal_code}')
-        params.append(f'searchRadius={search_radius or 500}')
-    params.append('state=ca')
-
-    # Add year range - support startYear/endYear for "4 years or newer"
-    # If no year specified, use a broad range to get results
-    start_year = search_filters.get('startYear')
-    end_year = search_filters.get('endYear')
-    single_year = search_filters.get('year')
-
-    if single_year:
-        params.append(f'yearHigh={single_year}')
-        params.append(f'yearLow={single_year}')
-    elif start_year and end_year:
-        params.append(f'yearHigh={end_year}')
-        params.append(f'yearLow={start_year}')
-    elif end_year:
-        # Only endYear specified (e.g., "2024 or older")
-        params.append(f'yearHigh={end_year}')
-    # If no year info at all, don't add year filter to get broader results
-
-    # Add price range if budget specified
-    budget = search_filters.get('budget')
-    if budget:
-        params.append(f'price_high={budget}')
-        params.append('price_low=2000')
-
-    # Add body style
-    body_style = search_filters.get('bodyStyle', '').lower()
-    if body_style:
-        if 'truck' in body_style or 'pickup' in body_style:
-            params.append('bodyStyles[]=truck')
-        elif 'suv' in body_style:
-            params.append('bodyStyles[]=suv')
-        elif 'sedan' in body_style:
-            params.append('bodyStyles[]=sedan')
-
-    # Add drivetrain
-    drivetrain = search_filters.get('drivetrain', '').upper()
-    if drivetrain:
-        if '4WD' in drivetrain or 'AWD' in drivetrain:
-            params.append('driveTrain[]=4WD')
-        elif '2WD' in drivetrain or 'RWD' in drivetrain:
-            params.append('driveTrain[]=2WD')
-
-    # Add fuel type
-    fuel_type = search_filters.get('fuelType', '').lower()
-    if fuel_type:
-        if 'diesel' in fuel_type:
-            params.append('fuelType[]=Diesel')
-        elif 'electric' in fuel_type:
-            params.append('fuelType[]=Electric')
-        elif 'hybrid' in fuel_type:
-            params.append('fuelType[]=Hybrid')
-
-    # Build URL
-    if params:
-        search_url = f"https://www.truecar.com/used-cars-for-sale/listings/inventory/?{'&'.join(params)}"
-    else:
-        # Fallback to simple make/model URL
-        if make and model:
-            search_url = f"https://www.truecar.com/used-cars-for-sale/listings/{make}/{model}/"
-        else:
-            # Fallback to text search
-            query_parts = filter(None, [
-                str(search_filters.get('year', '')),
-                search_filters.get('make', ''),
-                search_filters.get('model', ''),
-                search_filters.get('series', '')
-            ])
-            search_query = '+'.join(query_parts)
-            search_url = f"https://www.truecar.com/used-cars-for-sale/listings/?searchQuery={search_query}"
+    search_url = build_truecar_url(search_filters)
 
     logging.error(f"[TrueCar] Camoufox: {search_url}")
 
@@ -402,6 +425,7 @@ async def scrape_truecar_camoufox(search_filters: Dict[str, Any], max_results: i
         for i, listing in enumerate(listings[:max_results]):
             try:
                 all_text = await listing.inner_text()
+                exterior_color = extract_exterior_color(all_text)
 
                 title_elem = await listing.query_selector('h3, h2')
                 if title_elem:
@@ -435,7 +459,8 @@ async def scrape_truecar_camoufox(search_filters: Dict[str, Any], max_results: i
                         'image': image,
                         'retailer': 'TrueCar',
                         'url': url,
-                        'location': 'TrueCar'
+                        'location': 'TrueCar',
+                        'exteriorColor': exterior_color
                     })
                     logging.error(f"[TrueCar] {title[:30]} - ${price:,}")
 

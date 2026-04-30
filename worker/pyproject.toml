@@ -12,6 +12,9 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
     "pydantic>=2.9.2",
+    "camoufox[geoip]>=0.4.11",
+    "browserforge>=1.2.4",
+    "playwright>=1.59.0",
 ]
 
 [project.scripts]

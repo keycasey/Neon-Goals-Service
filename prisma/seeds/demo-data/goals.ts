@@ -1,4 +1,4 @@
-import type { ItemGoal, FinanceGoal, ActionGoal, GroupGoal, ProductSearchResult } from '@/types/goals';
+import type { ItemGoal, FinanceGoal, ActionGoal, GroupGoal, ProductSearchResult } from './types';
 import {
   sonyHeadphonesCandidates,
   macbookCandidates,

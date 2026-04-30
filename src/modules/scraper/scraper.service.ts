@@ -26,6 +26,16 @@ interface ProductCandidate {
   estimatedDelivery?: string;
   features?: string[];
   savings?: number;
+  mileage?: number;
+  exteriorColor?: string;
+  color?: string;
+}
+
+interface VehiclePostFilters {
+  mileageMax?: number;
+  priceMax?: number;
+  includeExteriorColors: string[];
+  excludeExteriorColors: string[];
 }
 
 @Injectable()
@@ -386,6 +396,198 @@ export class ScraperService {
       this.logger.log(`🤖 Falling back to browser-use (cost: $1.60)`);
       return await this.scrapeWithBrowserUse(query);
     }
+  }
+
+  private normalizeVehicleColor(color: unknown): string {
+    if (typeof color !== 'string') return '';
+    return color.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  private normalizeVehicleColors(colors: unknown): string[] {
+    if (Array.isArray(colors)) {
+      return colors.map((color) => this.normalizeVehicleColor(color)).filter(Boolean);
+    }
+
+    const color = this.normalizeVehicleColor(colors);
+    return color ? [color] : [];
+  }
+
+  private colorMatches(actualColor: string, requestedColor: string): boolean {
+    return (
+      actualColor === requestedColor ||
+      actualColor.includes(requestedColor) ||
+      requestedColor.includes(actualColor)
+    );
+  }
+
+  private parseMileageValue(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 0 ? value : null;
+    }
+
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const match = value.match(/(\d[\d,]*(?:\.\d+)?)\s*(k)?/i);
+    if (!match) return null;
+
+    const numericValue = Number(match[1].replace(/,/g, ''));
+    if (!Number.isFinite(numericValue) || numericValue <= 0) return null;
+
+    return match[2] ? Math.round(numericValue * 1000) : Math.round(numericValue);
+  }
+
+  private parseCurrencyValue(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 0 ? value : null;
+    }
+
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const match = value.match(/(\d[\d,]*(?:\.\d+)?)/);
+    if (!match) return null;
+
+    const numericValue = Number(match[1].replace(/,/g, ''));
+    return Number.isFinite(numericValue) && numericValue > 0 ? Math.round(numericValue) : null;
+  }
+
+  private getListingMileage(item: any): number | null {
+    return (
+      this.parseMileageValue(item?.mileage) ??
+      this.parseMileageValue(item?.odometer) ??
+      this.parseMileageValue(item?.features?.find?.((feature: unknown) =>
+        typeof feature === 'string' && /\bmi(?:le|les)?\b/i.test(feature),
+      ))
+    );
+  }
+
+  private getListingPrice(item: any): number | null {
+    return this.parseCurrencyValue(item?.price) ?? this.parseCurrencyValue(item?.listPrice);
+  }
+
+  private getListingExteriorColor(item: any): string {
+    return this.normalizeVehicleColor(
+      item?.exteriorColor ??
+        item?.exterior_color ??
+        item?.exterior ??
+        item?.color ??
+        item?.vehicleColor,
+    );
+  }
+
+  private extractVehiclePostFilters(retailerFilters: any, searchFilters?: any): VehiclePostFilters {
+    const postFilters = retailerFilters?.postFilters || searchFilters?.postFilters || {};
+    const mileageCandidates = [
+      postFilters.mileageMax,
+      searchFilters?.mileageMax,
+      retailerFilters?.retailers?.autotrader?.filters?.url_params?.maxMileage,
+      retailerFilters?.retailers?.cargurus?.filters?.mileageMax,
+      retailerFilters?.retailers?.cargurus?.filters?.maxMileage,
+      retailerFilters?.retailers?.carmax?.filters?.mileageMax,
+      retailerFilters?.retailers?.carvana?.filters?.url_params?.mileageMax,
+      retailerFilters?.retailers?.truecar?.filters?.mileageMax,
+    ];
+
+    const mileageMax = mileageCandidates
+      .map((value) => this.parseMileageValue(value))
+      .find((value): value is number => typeof value === 'number');
+
+    const priceCandidates = [
+      postFilters.maxPrice,
+      postFilters.priceMax,
+      searchFilters?.maxPrice,
+      searchFilters?.priceMax,
+      retailerFilters?.retailers?.autotrader?.filters?.url_params?.maxPrice,
+      retailerFilters?.retailers?.cargurus?.filters?.maxPrice,
+      retailerFilters?.retailers?.carmax?.filters?.maxPrice,
+      retailerFilters?.retailers?.carmax?.filters?.priceMax,
+      retailerFilters?.retailers?.carvana?.filters?.maxPrice,
+      retailerFilters?.retailers?.carvana?.filters?.priceMax,
+      retailerFilters?.retailers?.carvana?.filters?.url_params?.maxPrice,
+      retailerFilters?.retailers?.carvana?.filters?.url_params?.priceMax,
+      retailerFilters?.retailers?.truecar?.filters?.budget,
+      retailerFilters?.retailers?.truecar?.filters?.maxPrice,
+      retailerFilters?.retailers?.truecar?.filters?.priceMax,
+    ];
+
+    const priceMax = priceCandidates
+      .map((value) => this.parseCurrencyValue(value))
+      .find((value): value is number => typeof value === 'number');
+
+    const excludeExteriorColors = Array.isArray(postFilters.excludeExteriorColors)
+      ? postFilters.excludeExteriorColors
+          .map((color: unknown) => this.normalizeVehicleColor(color))
+          .filter(Boolean)
+      : [];
+    const includeExteriorColors = [
+      ...this.normalizeVehicleColors(postFilters.includeExteriorColors),
+      ...this.normalizeVehicleColors(searchFilters?.exteriorColor),
+      ...this.normalizeVehicleColors(searchFilters?.colors),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.autotrader?.filters?.path_components?.color),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.cargurus?.filters?.exteriorColor),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.cargurus?.filters?.url_params?.exteriorColor),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.carmax?.filters?.exteriorColor),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.carmax?.filters?.colors),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.carvana?.filters?.exteriorColor),
+      ...this.normalizeVehicleColors(retailerFilters?.retailers?.truecar?.filters?.exteriorColor),
+    ];
+
+    return {
+      mileageMax,
+      priceMax,
+      includeExteriorColors: [...new Set(includeExteriorColors)],
+      excludeExteriorColors,
+    };
+  }
+
+  private passesVehiclePostFilters(item: any, filters: VehiclePostFilters): boolean {
+    if (filters.priceMax) {
+      const price = this.getListingPrice(item);
+      if (price !== null && price > filters.priceMax) {
+        return false;
+      }
+    }
+
+    if (filters.mileageMax) {
+      const mileage = this.getListingMileage(item);
+      if (mileage !== null && mileage > filters.mileageMax) {
+        return false;
+      }
+    }
+
+    if (filters.excludeExteriorColors.length > 0) {
+      const color = this.getListingExteriorColor(item);
+      if (color && filters.excludeExteriorColors.some((excludedColor) => this.colorMatches(color, excludedColor))) {
+        return false;
+      }
+    }
+
+    if (filters.includeExteriorColors.length > 0) {
+      const color = this.getListingExteriorColor(item);
+      if (color && !filters.includeExteriorColors.some((includedColor) => this.colorMatches(color, includedColor))) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private buildVehicleCandidateFeatures(item: any): string[] {
+    const features: string[] = [];
+    const mileage = this.getListingMileage(item);
+    const color = item?.exteriorColor || item?.exterior_color || item?.color;
+
+    if (mileage) {
+      features.push(`${mileage.toLocaleString()} mi`);
+    }
+    if (color) {
+      features.push(String(color));
+    }
+
+    return features;
   }
 
   /**
@@ -1297,6 +1499,10 @@ export class ScraperService {
     // Since candidates are fully replaced on each scrape (line ~1290), excluding existing URLs
     // would cause permanent loss of vehicles with stable URLs across scrapes.
     const excludedUrls = new Set([...deniedUrls, ...shortlistedUrls]);
+    const vehiclePostFilters = this.extractVehiclePostFilters(
+      job.goal.itemData?.retailerFilters,
+      job.goal.itemData?.searchFilters,
+    );
 
     this.logger.log(`Job ${jobId} filtering: ${deniedUrls.size} denied, ${shortlistedUrls.size} shortlisted`);
 
@@ -1322,6 +1528,7 @@ export class ScraperService {
     // Filter and convert data
     const candidates = data
       .filter((item: any) => item.url && !excludedUrls.has(item.url))
+      .filter((item: any) => this.passesVehiclePostFilters(item, vehiclePostFilters))
       .map((item: any, index: number) => ({
         id: `${item.retailer?.toLowerCase() || item.source?.toLowerCase() || 'scraper'}-${Date.now()}-${index}`,
         name: item.name,
@@ -1334,7 +1541,9 @@ export class ScraperService {
         reviewCount: item.reviewCount || 50,
         inStock: item.inStock !== false,
         estimatedDelivery: item.location || 'Contact seller',
-        features: item.mileage ? [`${item.mileage} mi`] : [],
+        features: this.buildVehicleCandidateFeatures(item),
+        mileage: this.getListingMileage(item) || undefined,
+        exteriorColor: item.exteriorColor || item.exterior_color || item.color || undefined,
       }));
 
     // DEBUG: Log final retailer breakdown

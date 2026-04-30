@@ -101,6 +101,7 @@ Each retailer's scraper expects a different input format. Generate the exact for
    - Make/model/trim should be lowercase with hyphens (e.g., sierra-3500, f-150, denali-ultimate)
    - CRITICAL: Strip "HD" suffix from model names for AutoTrader (sierra-3500hd → sierra-3500, silverado-3500hd → silverado-3500)
    - Color should be lowercase (black, white, gray, etc.) - omit if not specified
+   - Mileage max uses maxMileage query param (e.g., "under 80k miles" → maxMileage=80000)
 
 2. **cargurus** - Generate a dict with these exact keys:
    {{make, model, zip, distance, trim, yearMin, yearMax, minPrice, maxPrice, exteriorColor, interiorColor, drivetrain, fuelType, transmission, mileageMax}}
@@ -111,7 +112,7 @@ Each retailer's scraper expects a different input format. Generate the exact for
    - transmission values: "AUTOMATIC", "MANUAL"
 
 3. **carmax** - Generate a dict with these exact keys:
-   {{makes, models, trims, colors, bodyType, fuelType, drivetrain, transmission, minPrice, maxPrice, yearMin, yearMax, carSize, doors, cylinders, features}}
+   {{makes, models, trims, colors, bodyType, fuelType, drivetrain, transmission, minPrice, maxPrice, mileageMax, yearMin, yearMax, carSize, doors, cylinders, features}}
    - makes, models, trims, colors, features are arrays
    - Other values are strings
    - IMPORTANT MODEL NORMALIZATION: CarMax uses shorter model names without "HD" suffix:
@@ -132,7 +133,7 @@ Each retailer's scraper expects a different input format. Generate the exact for
    - IMPORTANT: The "HD" suffix appears in vehicle titles but is NOT in the filter model name
 
 5. **truecar** - Generate a dict with these exact keys:
-   {{make, model, trims, startYear, endYear, budget, postalCode, searchRadius, bodyStyle, drivetrain, fuelType}}
+   {{make, model, trims, startYear, endYear, budget, mileageMax, postalCode, searchRadius, bodyStyle, drivetrain, fuelType}}
    - make, model are strings - USE FULL MODEL NAME (e.g., "Sierra 3500HD" not "Sierra 3500")
    - trims is an array
    - budget = maxPrice
@@ -174,8 +175,16 @@ Return ONLY JSON:
 - If color is NOT mentioned → DO NOT include exteriorColor/colors filter
 - If drivetrain is NOT mentioned → DO NOT include drivetrain filter
 - If transmission is NOT mentioned → DO NOT include transmission filter
+- If mileage limit is mentioned → include the site-specific mileage maximum field
+- If the user asks for a specific exterior color (e.g., "gray", "black exterior") → use each retailer's direct color filter when supported AND add a top-level postFilters.includeExteriorColors array for downstream validation
+- If the user asks to EXCLUDE a color (e.g., "not white", "anything but white") → DO NOT add a positive color filter for that color; add a top-level postFilters.excludeExteriorColors array for downstream filtering
 - Omit ALL optional filters when not specified
 - NEVER make up or infer filter values from the example above
+
+**POST-FILTERS:**
+- If a user requests a constraint a retailer cannot express directly, include it under top-level "postFilters"
+- Use: {{"includeExteriorColors": ["Gray"], "excludeExteriorColors": ["White"], "mileageMax": 80000}}
+- Still include direct site filters when the retailer supports them
 
 **NOTES on model naming per retailer:**
 - CarMax: Drop "HD" suffix → "Sierra 3500" (NOT "Sierra 3500HD")

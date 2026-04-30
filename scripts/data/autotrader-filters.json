@@ -48,6 +48,22 @@
     "certified": "Certified pre-owned only (true/false)",
     "sellerType": "Seller type (dealer,private)"
   },
+  "model_examples": {
+    "Honda": {
+      "Passport": {
+        "label": "Passport",
+        "path_value": "passport",
+        "example_path": "honda/passport"
+      }
+    },
+    "GMC": {
+      "Sierra 3500HD": {
+        "label": "Sierra 3500HD",
+        "path_value": "sierra-3500",
+        "note": "AutoTrader paths drop the HD suffix for Sierra heavy-duty models."
+      }
+    }
+  },
   "filters": [
     {
       "name": "Location & Delivery",
