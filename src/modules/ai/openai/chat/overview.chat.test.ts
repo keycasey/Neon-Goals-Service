@@ -117,7 +117,7 @@ describe('OverviewChat item routing', () => {
     expect(response.specialist).toBe('items');
   });
 
-  it('streams a vehicle goal proposal when OpenAI quota is exhausted', async () => {
+  it('streams an unavailable error without fabricating a goal proposal when OpenAI quota is exhausted', async () => {
     const chat = createOverviewChat({
       agentRoutingService: {
         routeToSpecialist: async () => {
@@ -143,18 +143,10 @@ describe('OverviewChat item routing', () => {
     }
 
     const finalChunk = chunks.at(-1) as any;
-    expect(chunks.map((chunk: any) => chunk.content).join('')).toContain('I can set up a vehicle search goal');
+    expect(chunks.map((chunk: any) => chunk.content).join('')).toContain('Agent unavailable');
     expect(finalChunk.done).toBe(true);
-    expect(finalChunk.awaitingConfirmation).toBe(true);
-    expect(finalChunk.commands[0]).toMatchObject({
-      type: 'CREATE_GOAL',
-      data: {
-        type: 'item',
-        title: 'Honda Passport',
-        budget: 25000,
-        category: 'vehicle',
-      },
-    });
-    expect(finalChunk.commands[0].data.searchTerm).toContain('honda passport');
+    expect(finalChunk.error).toBe('agent_unavailable');
+    expect(finalChunk.awaitingConfirmation).toBeUndefined();
+    expect(finalChunk.commands).toBeUndefined();
   });
 });

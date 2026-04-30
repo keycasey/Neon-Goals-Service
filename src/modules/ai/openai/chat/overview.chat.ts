@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { BaseChatService, ChatResponse, StreamChunk } from './base-chat.service';
 import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
-import { ParsedCommand, ProposalType } from '../parsing/command-parser.types';
+import { ProposalType } from '../parsing/command-parser.types';
 import { PromptsService } from '../prompts/prompts.service';
 import { AgentRoutingService } from '../../agent-routing.service';
 import { AiModelsService } from '../../ai-models.service';
@@ -169,10 +169,7 @@ export class OverviewChat extends BaseChatService {
 
       return apiResponse;
     } catch (error) {
-      const fallbackResponse = await this.tryBuildQuotaFallbackResponse(userId, message, chatId, history, error);
-      if (fallbackResponse) {
-        return fallbackResponse;
-      }
+      await this.persistUnavailableResponseIfQuotaError(userId, message, chatId, history, error);
       this.logger.error('Overview chat error:', error);
       throw error;
     }
@@ -366,17 +363,10 @@ export class OverviewChat extends BaseChatService {
         yield { content: '', done: true };
         return;
       }
-      const fallbackResponse = await this.tryBuildQuotaFallbackResponse(userId, message, chatId, history, error);
-      if (fallbackResponse) {
-        yield { content: fallbackResponse.content, done: false };
-        yield {
-          content: '',
-          done: true,
-          commands: fallbackResponse.commands,
-          goalPreview: fallbackResponse.goalPreview,
-          awaitingConfirmation: fallbackResponse.awaitingConfirmation,
-          proposalType: fallbackResponse.proposalType,
-        };
+      const unavailableResponse = await this.persistUnavailableResponseIfQuotaError(userId, message, chatId, history, error);
+      if (unavailableResponse) {
+        yield { content: unavailableResponse.content, done: false };
+        yield { content: '', done: true, error: unavailableResponse.error };
         return;
       }
       this.logger.error('Overview chat stream error:', error);
@@ -391,35 +381,7 @@ export class OverviewChat extends BaseChatService {
     return error?.code === 'insufficient_quota' || error?.status === 429;
   }
 
-  private buildFallbackVehicleGoalCommand(message: string): ParsedCommand | null {
-    const normalized = message.toLowerCase();
-    if (!/\b(buy|purchase|find|track|test drive)\b/.test(normalized)) {
-      return null;
-    }
-    if (!/\b(car|truck|suv|honda|passport|forester|gmc|sierra|denali)\b/.test(normalized)) {
-      return null;
-    }
-
-    const title = normalized.includes('honda passport') ? 'Honda Passport' : 'Vehicle Search';
-    const priceMatch =
-      normalized.match(/\$+\s*([0-9][0-9,]*)/) ||
-      normalized.match(/(?:for less than|under|below)\s*\$?\s*([0-9][0-9,]*)\s*(?:dollars|usd|bucks)\b/);
-    const budget = priceMatch ? Number(priceMatch[1].replace(/,/g, '')) : undefined;
-
-    return {
-      type: 'CREATE_GOAL',
-      data: {
-        type: 'item',
-        title,
-        description: message,
-        ...(budget ? { budget } : {}),
-        category: 'vehicle',
-        searchTerm: message,
-      },
-    };
-  }
-
-  private async tryBuildQuotaFallbackResponse(
+  private async persistUnavailableResponseIfQuotaError(
     userId: string,
     message: string,
     chatId: string,
@@ -430,20 +392,10 @@ export class OverviewChat extends BaseChatService {
       return null;
     }
 
-    const command = this.buildFallbackVehicleGoalCommand(message);
-    if (!command) {
-      return null;
-    }
-
-    const commands = [command];
-    const goalPreview = this.commandParserService.generateGoalPreview(commands);
-    const proposalType = this.commandParserService.getProposalTypeForCommand(command.type);
-    const content = 'I can set up a vehicle search goal from that request while the AI provider is unavailable. Does this look good?';
+    const content = 'Agent unavailable. Please try again later.';
     const metadata = {
-      commands,
-      goalPreview,
-      awaitingConfirmation: true,
-      proposalType,
+      error: 'agent_unavailable',
+      reason: 'llm_provider_quota_exhausted',
     };
 
     const threadId = `overview_${userId}`;
@@ -455,10 +407,7 @@ export class OverviewChat extends BaseChatService {
 
     return {
       content,
-      commands,
-      goalPreview,
-      awaitingConfirmation: true,
-      proposalType,
+      error: 'agent_unavailable',
     };
   }
 

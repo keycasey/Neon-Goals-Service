@@ -45,6 +45,8 @@ export interface StreamChunk {
   specialist?: string;
   /** Extraction data for items specialist */
   extraction?: any;
+  /** Machine-readable stream error code */
+  error?: string;
 }
 
 /**
@@ -83,6 +85,8 @@ export interface ChatResponse {
   specialist?: string;
   /** Extraction data for items specialist */
   extraction?: any;
+  /** Machine-readable error code */
+  error?: string;
 }
 
 /**
