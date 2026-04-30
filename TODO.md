@@ -179,3 +179,11 @@
 ---
 
 ## General Improvements
+
+### High Priority
+
+- [ ] Set up transactional email service
+  - [ ] Send email verification links for new user registration.
+  - [ ] Add verified-email state to auth flow and block or limit unverified accounts where appropriate.
+  - [ ] Send admin alert emails when AI/API provider balance reaches zero or requests fail with quota errors.
+  - [ ] Investigate whether provider billing APIs or usage webhooks can warn before balance reaches zero; if unavailable, alert on repeated quota/insufficient-balance errors.
