@@ -39,6 +39,16 @@ export class SpecialistController {
     return matches.map(url => url.replace(/[.,;:!?\)\]]+$/, ''));
   }
 
+  private getCurrentUserMessageForExtraction(message: string): string {
+    const marker = "[User's Question]";
+    const markerIndex = message.lastIndexOf(marker);
+    if (markerIndex === -1) {
+      return message;
+    }
+
+    return message.slice(markerIndex + marker.length).trim();
+  }
+
   /**
    * Non-streaming chat with a category specialist
    * POST /ai/specialist/category/:categoryId/chat
@@ -69,7 +79,7 @@ export class SpecialistController {
 
     // Check for URLs in the message (only for items category)
     if (categoryId === 'items') {
-      const urls = this.extractUrls(body.message);
+      const urls = this.extractUrls(this.getCurrentUserMessageForExtraction(body.message));
       if (urls.length > 0) {
         // Save user message before extraction
         await this.chatsService.addMessage(chat.id, userId, 'user', body.message);
@@ -191,7 +201,7 @@ export class SpecialistController {
 
       // Check for URLs in the message (only for items category)
       if (categoryId === 'items') {
-        const urls = this.extractUrls(body.message);
+        const urls = this.extractUrls(this.getCurrentUserMessageForExtraction(body.message));
         if (urls.length > 0) {
           // Save user message before extraction
           await this.chatsService.addMessage(chat.id, userId, 'user', body.message);
