@@ -82,7 +82,10 @@ export class SpecialistController {
       const urls = this.extractUrls(this.getCurrentUserMessageForExtraction(body.message));
       if (urls.length > 0) {
         // Save user message before extraction
-        await this.chatsService.addMessage(chat.id, userId, 'user', body.message);
+        await this.chatsService.addMessageWithOptions(chat.id, userId, 'user', body.message, {
+          source: isAgent ? 'agent' : 'user',
+          visible: isAgent ? false : true,
+        });
 
         // Start extraction
         const groupId = await this.extractionService.extractFromUrls(urls, userId);
@@ -94,7 +97,10 @@ export class SpecialistController {
           urls,
           streamUrl: `/api/extraction/stream/${groupId}`,
         };
-        await this.chatsService.addMessage(chat.id, userId, 'assistant', assistantContent, { extraction: extractionMetadata });
+        await this.chatsService.addMessageWithOptions(chat.id, userId, 'assistant', assistantContent, {
+          metadata: { extraction: extractionMetadata },
+          source: 'agent',
+        });
 
         return {
           content: assistantContent,
@@ -204,7 +210,10 @@ export class SpecialistController {
         const urls = this.extractUrls(this.getCurrentUserMessageForExtraction(body.message));
         if (urls.length > 0) {
           // Save user message before extraction
-          await this.chatsService.addMessage(chat.id, userId, 'user', body.message);
+          await this.chatsService.addMessageWithOptions(chat.id, userId, 'user', body.message, {
+            source: 'user',
+            visible: true,
+          });
 
           // Start extraction
           const groupId = await this.extractionService.extractFromUrls(urls, userId);
@@ -218,7 +227,10 @@ export class SpecialistController {
               streamUrl: `/api/extraction/stream/${groupId}`,
             },
           };
-          await this.chatsService.addMessage(chat.id, userId, 'assistant', assistantContent, extractionMetadata);
+          await this.chatsService.addMessageWithOptions(chat.id, userId, 'assistant', assistantContent, {
+            metadata: extractionMetadata,
+            source: 'agent',
+          });
 
           // Send extraction info as a stream chunk
           res.write(`data: ${JSON.stringify({

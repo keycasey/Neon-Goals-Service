@@ -133,6 +133,11 @@ export class ProductExtractionService {
       return;
     }
 
+    if (job.status === 'completed' || job.status === 'failed') {
+      this.logger.warn(`Ignoring duplicate callback for terminal extraction job ${jobId}`);
+      return;
+    }
+
     // Update job with result
     await this.prisma.extractionJob.update({
       where: { id: jobId },
@@ -220,6 +225,11 @@ export class ProductExtractionService {
     const results = rawResults as ExtractionResultWithMeta[];
     const successful = results.filter((result) => result.success);
     const failedCount = results.length - successful.length;
+    if (successful.length === 0) {
+      this.logger.log(`Skipping extraction completion prompt for group ${groupId}; no products were extracted`);
+      return;
+    }
+
     const preview = successful.slice(0, 3);
 
     const previewLines = preview.map((result, idx) => {

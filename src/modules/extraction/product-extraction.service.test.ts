@@ -29,14 +29,14 @@ const createService = (itemsChat: { id: string } | null = { id: 'items_chat' }) 
       prisma as any,
       {} as any,
       configService as any,
-      {} as any,
+      { emit: mock(() => undefined) } as any,
     ),
     prisma,
   };
 };
 
 describe('ProductExtractionService extraction completion persistence', () => {
-  it('stores all-failed extraction completion as agent-owned assistant output with a visible group-mode result event', async () => {
+  it('does not persist a goal-creation prompt when all extraction jobs failed', async () => {
     const { service, prisma } = createService();
 
     await (service as any).sendGroupCompletionMessage('user_1', 'group_1', [
@@ -44,58 +44,12 @@ describe('ProductExtractionService extraction completion persistence', () => {
       { success: false, url: 'https://example.com/two' },
     ]);
 
-    expect(prisma.chatState.findFirst).toHaveBeenCalledWith({
-      where: {
-        userId: 'user_1',
-        type: 'category',
-        categoryId: 'items',
-      },
-      select: { id: true },
-    });
+    expect(prisma.chatState.findFirst).not.toHaveBeenCalled();
     expect(prisma.chatState.create).not.toHaveBeenCalled();
-    expect(prisma.$transaction).toHaveBeenCalled();
-
-    const messageData = prisma.message.create.mock.calls[0][0].data;
-    expect(messageData).toMatchObject({
-      userId: 'user_1',
-      chatId: 'items_chat',
-      role: 'assistant',
-      source: 'agent',
-      metadata: {
-        extraction: {
-          groupId: 'group_1',
-          successfulCount: 0,
-          failedCount: 2,
-        },
-        suggestion: {
-          action: 'create_group_item_goal',
-          groupId: 'group_1',
-        },
-      },
-    });
-    expect(messageData.content).toContain('I could not read any items from those links');
-    expect(messageData.source).not.toBe('user');
-
-    expect(prisma.agentRun.create).toHaveBeenCalledWith({
-      data: {
-        userId: 'user_1',
-        chatId: 'items_chat',
-        userMessageId: 'message_1',
-        status: 'completed',
-        completedAt: expect.any(Date),
-      },
-    });
-    expect(prisma.agentEvent.create).toHaveBeenCalledWith({
-      data: {
-        runId: 'run_1',
-        chatId: 'items_chat',
-        userId: 'user_1',
-        agent: 'items',
-        eventType: 'result',
-        content: messageData.content,
-        visibility: 'visible_in_group_mode',
-      },
-    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.agentRun.create).not.toHaveBeenCalled();
+    expect(prisma.agentEvent.create).not.toHaveBeenCalled();
   });
 
   it('creates the Items category chat when absent before persisting the agent output records', async () => {
@@ -138,5 +92,25 @@ describe('ProductExtractionService extraction completion persistence', () => {
       eventType: 'result',
       visibility: 'visible_in_group_mode',
     });
+  });
+
+  it('does not re-emit group completion when a terminal job receives a duplicate callback', async () => {
+    const { service, prisma } = createService();
+    prisma.extractionJob = {
+      findUnique: mock(async () => ({
+        id: 'job_1',
+        userId: 'user_1',
+        groupId: 'group_1',
+        status: 'failed',
+        url: 'https://example.com/failed',
+      })),
+      update: mock(async () => undefined),
+    };
+
+    await service.handleCallback('job_1', { success: false, error: 'duplicate failure' });
+
+    expect(prisma.extractionJob.update).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
   });
 });

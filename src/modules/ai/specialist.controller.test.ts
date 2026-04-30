@@ -12,6 +12,7 @@ const createController = async () => {
   }));
   const extractFromUrls = mock(async () => 'group-1');
   const addMessage = mock(async () => undefined);
+  const addMessageWithOptions = mock(async () => undefined);
 
   const controller = new SpecialistController(
     {
@@ -28,6 +29,7 @@ const createController = async () => {
     {
       getOrCreateCategoryChat: mock(async () => ({ id: 'chat-1' })),
       addMessage,
+      addMessageWithOptions,
     } as any,
     {
       extractFromUrls,
@@ -37,7 +39,7 @@ const createController = async () => {
     } as any,
   );
 
-  return { controller, categoryChat, extractFromUrls, addMessage };
+  return { controller, categoryChat, extractFromUrls, addMessage, addMessageWithOptions };
 };
 
 describe('SpecialistController URL extraction', () => {
@@ -95,5 +97,49 @@ describe('SpecialistController URL extraction', () => {
       urls: ['https://example.com/current-product'],
       streamUrl: '/api/extraction/stream/group-1',
     });
+  });
+
+  it('stores agent-routed extraction shortcut messages as agent-owned and hides the context wrapper', async () => {
+    const { controller, addMessageWithOptions } = await createController();
+    const message = [
+      '[Context from Overview Agent]',
+      'user: older context',
+      '',
+      "[User's Question]",
+      'Please track this product https://example.com/current-product',
+    ].join('\n');
+
+    await controller.chat(
+      'items',
+      { userId: 'user-1', isAgent: true, agentSource: 'overview' },
+      { message },
+    );
+
+    expect(addMessageWithOptions).toHaveBeenCalledWith(
+      'chat-1',
+      'user-1',
+      'user',
+      message,
+      {
+        source: 'agent',
+        visible: false,
+      },
+    );
+    expect(addMessageWithOptions).toHaveBeenCalledWith(
+      'chat-1',
+      'user-1',
+      'assistant',
+      "I found 1 product link! I'm extracting the product info now... 📦",
+      {
+        metadata: {
+          extraction: {
+            groupId: 'group-1',
+            urls: ['https://example.com/current-product'],
+            streamUrl: '/api/extraction/stream/group-1',
+          },
+        },
+        source: 'agent',
+      },
+    );
   });
 });
