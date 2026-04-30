@@ -116,4 +116,45 @@ describe('OverviewChat item routing', () => {
     expect(response.routed).toBe(true);
     expect(response.specialist).toBe('items');
   });
+
+  it('streams a vehicle goal proposal when OpenAI quota is exhausted', async () => {
+    const chat = createOverviewChat({
+      agentRoutingService: {
+        routeToSpecialist: async () => {
+          throw new Error('Request failed with status code 500');
+        },
+      },
+      openaiCreate: async () => {
+        const error = new Error('429 insufficient_quota') as any;
+        error.code = 'insufficient_quota';
+        error.status = 429;
+        throw error;
+      },
+    });
+
+    const chunks = [];
+    for await (const chunk of chat.overviewChatStream(
+      'user-1',
+      "I want to buy a honda passport that isnt white and has less than 80000 miles for less than 25000 dollars.",
+      [],
+      'chat-1',
+    )) {
+      chunks.push(chunk);
+    }
+
+    const finalChunk = chunks.at(-1) as any;
+    expect(chunks.map((chunk: any) => chunk.content).join('')).toContain('I can set up a vehicle search goal');
+    expect(finalChunk.done).toBe(true);
+    expect(finalChunk.awaitingConfirmation).toBe(true);
+    expect(finalChunk.commands[0]).toMatchObject({
+      type: 'CREATE_GOAL',
+      data: {
+        type: 'item',
+        title: 'Honda Passport',
+        budget: 25000,
+        category: 'vehicle',
+      },
+    });
+    expect(finalChunk.commands[0].data.searchTerm).toContain('honda passport');
+  });
 });

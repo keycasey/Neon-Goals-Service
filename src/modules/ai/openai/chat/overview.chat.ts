@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { BaseChatService, ChatResponse, StreamChunk } from './base-chat.service';
 import { ThreadService } from '../thread/thread.service';
 import { CommandParserService } from '../parsing/command-parser.service';
-import { ProposalType } from '../parsing/command-parser.types';
+import { ParsedCommand, ProposalType } from '../parsing/command-parser.types';
 import { PromptsService } from '../prompts/prompts.service';
 import { AgentRoutingService } from '../../agent-routing.service';
 import { AiModelsService } from '../../ai-models.service';
@@ -169,6 +169,10 @@ export class OverviewChat extends BaseChatService {
 
       return apiResponse;
     } catch (error) {
+      const fallbackResponse = await this.tryBuildQuotaFallbackResponse(userId, message, chatId, history, error);
+      if (fallbackResponse) {
+        return fallbackResponse;
+      }
       this.logger.error('Overview chat error:', error);
       throw error;
     }
@@ -362,12 +366,100 @@ export class OverviewChat extends BaseChatService {
         yield { content: '', done: true };
         return;
       }
+      const fallbackResponse = await this.tryBuildQuotaFallbackResponse(userId, message, chatId, history, error);
+      if (fallbackResponse) {
+        yield { content: fallbackResponse.content, done: false };
+        yield {
+          content: '',
+          done: true,
+          commands: fallbackResponse.commands,
+          goalPreview: fallbackResponse.goalPreview,
+          awaitingConfirmation: fallbackResponse.awaitingConfirmation,
+          proposalType: fallbackResponse.proposalType,
+        };
+        return;
+      }
       this.logger.error('Overview chat stream error:', error);
       throw error;
     } finally {
       // Clean up abort controller
       this.unregisterStream(streamKey);
     }
+  }
+
+  private isQuotaError(error: any): boolean {
+    return error?.code === 'insufficient_quota' || error?.status === 429;
+  }
+
+  private buildFallbackVehicleGoalCommand(message: string): ParsedCommand | null {
+    const normalized = message.toLowerCase();
+    if (!/\b(buy|purchase|find|track|test drive)\b/.test(normalized)) {
+      return null;
+    }
+    if (!/\b(car|truck|suv|honda|passport|forester|gmc|sierra|denali)\b/.test(normalized)) {
+      return null;
+    }
+
+    const title = normalized.includes('honda passport') ? 'Honda Passport' : 'Vehicle Search';
+    const priceMatch =
+      normalized.match(/\$+\s*([0-9][0-9,]*)/) ||
+      normalized.match(/(?:for less than|under|below)\s*\$?\s*([0-9][0-9,]*)\s*(?:dollars|usd|bucks)\b/);
+    const budget = priceMatch ? Number(priceMatch[1].replace(/,/g, '')) : undefined;
+
+    return {
+      type: 'CREATE_GOAL',
+      data: {
+        type: 'item',
+        title,
+        description: message,
+        ...(budget ? { budget } : {}),
+        category: 'vehicle',
+        searchTerm: message,
+      },
+    };
+  }
+
+  private async tryBuildQuotaFallbackResponse(
+    userId: string,
+    message: string,
+    chatId: string,
+    history: ThreadHistory,
+    error: any,
+  ): Promise<ChatResponse | null> {
+    if (!this.isQuotaError(error)) {
+      return null;
+    }
+
+    const command = this.buildFallbackVehicleGoalCommand(message);
+    if (!command) {
+      return null;
+    }
+
+    const commands = [command];
+    const goalPreview = this.commandParserService.generateGoalPreview(commands);
+    const proposalType = this.commandParserService.getProposalTypeForCommand(command.type);
+    const content = 'I can set up a vehicle search goal from that request while the AI provider is unavailable. Does this look good?';
+    const metadata = {
+      commands,
+      goalPreview,
+      awaitingConfirmation: true,
+      proposalType,
+    };
+
+    const threadId = `overview_${userId}`;
+    history.messages.push({ role: 'assistant', content });
+    await this.threadService.saveMessages(threadId, userId, [
+      { role: 'user', content: message },
+      { role: 'assistant', content, metadata },
+    ], chatId);
+
+    return {
+      content,
+      commands,
+      goalPreview,
+      awaitingConfirmation: true,
+      proposalType,
+    };
   }
 
   /**
