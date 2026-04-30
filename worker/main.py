@@ -183,8 +183,9 @@ def get_browser_launcher_prefix() -> list[str]:
     """
     Build the launcher prefix for browser-opening scrape jobs.
 
-    Auto mode prefers Prime Run when it is installed locally; otherwise it
-    falls back to plain xvfb-run so the worker still works on non-Nvidia hosts.
+    Auto mode uses plain xvfb-run because Prime Run can crash Xvfb on some
+    hosts even when it is installed. Use SCRAPER_BROWSER_LAUNCHER=prime-run to
+    opt in on machines where that path is known-good.
     The SCRAPER_BROWSER_LAUNCHER env var can force `prime-run` or `xvfb-run`.
     """
     launcher_mode = os.getenv("SCRAPER_BROWSER_LAUNCHER", "auto").strip().lower()
@@ -201,9 +202,6 @@ def get_browser_launcher_prefix() -> list[str]:
             "SCRAPER_BROWSER_LAUNCHER=prime-run was requested, but prime-run is not installed; falling back to xvfb-run"
         )
         return xvfb_args
-
-    if prime_run_available:
-        return ["prime-run", *xvfb_args]
 
     return xvfb_args
 

@@ -11,7 +11,7 @@ import main as worker_main
 
 
 class BrowserLauncherTests(unittest.TestCase):
-    def test_prefers_prime_run_when_available(self) -> None:
+    def test_defaults_to_xvfb_run_when_prime_run_is_available(self) -> None:
         with patch.dict(worker_main.os.environ, {}, clear=True), patch.object(
             worker_main.shutil,
             "which",
@@ -20,7 +20,6 @@ class BrowserLauncherTests(unittest.TestCase):
             self.assertEqual(
                 worker_main.get_browser_launcher_prefix(),
                 [
-                    "prime-run",
                     "xvfb-run",
                     "--auto-servernum",
                     "--server-args=-screen 0 1920x1080x24",
@@ -51,6 +50,22 @@ class BrowserLauncherTests(unittest.TestCase):
             self.assertEqual(
                 worker_main.get_browser_launcher_prefix(),
                 [
+                    "xvfb-run",
+                    "--auto-servernum",
+                    "--server-args=-screen 0 1920x1080x24",
+                ],
+            )
+
+    def test_can_force_prime_run_when_available(self) -> None:
+        with patch.dict(
+            worker_main.os.environ,
+            {"SCRAPER_BROWSER_LAUNCHER": "prime-run"},
+            clear=True,
+        ), patch.object(worker_main.shutil, "which", return_value="/usr/bin/prime-run"):
+            self.assertEqual(
+                worker_main.get_browser_launcher_prefix(),
+                [
+                    "prime-run",
                     "xvfb-run",
                     "--auto-servernum",
                     "--server-args=-screen 0 1920x1080x24",
