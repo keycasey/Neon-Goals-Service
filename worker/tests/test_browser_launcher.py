@@ -10,6 +10,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main as worker_main
 
 
+class ScraperOutputParsingTests(unittest.TestCase):
+    def test_parses_json_with_null_values(self) -> None:
+        data = worker_main.parse_scraper_output('[{"title":"Passport","price":null}]')
+
+        self.assertEqual(data, [{"title": "Passport", "price": None}])
+
+    def test_parses_legacy_python_literal_output(self) -> None:
+        data = worker_main.parse_scraper_output("[{'title': 'Passport', 'price': None}]")
+
+        self.assertEqual(data, [{"title": "Passport", "price": None}])
+
+
 class BrowserLauncherTests(unittest.TestCase):
     def test_defaults_to_xvfb_run_when_prime_run_is_available(self) -> None:
         with patch.dict(worker_main.os.environ, {}, clear=True), patch.object(

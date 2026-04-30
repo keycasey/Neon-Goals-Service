@@ -5,6 +5,7 @@ import logging
 import asyncio
 import time
 import shutil
+import ast
 import aiohttp
 import requests
 import json
@@ -28,6 +29,14 @@ BACKEND_API_URL = os.getenv("NEON_GOALS_API_URL", "https://goals.keycasey.com")
 # Polling state
 polling_task: Optional[asyncio.Task] = None
 should_poll = True
+
+
+def parse_scraper_output(listings: str) -> Any:
+    """Parse scraper output as JSON, with legacy Python literal fallback."""
+    try:
+        return json.loads(listings)
+    except json.JSONDecodeError:
+        return ast.literal_eval(listings)
 
 
 async def poll_for_jobs():
@@ -393,7 +402,7 @@ def run_scraper_and_callback(
             if not listings:
                 raise ValueError("Empty output from scraper")
 
-            data = eval(listings)  # Safe here as we control the scraper output
+            data = parse_scraper_output(listings)
 
             if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "error" in data[0]:
                 raise ValueError(data[0]["error"])
@@ -927,7 +936,7 @@ def run_single_scraper(
                 if not listings:
                     return []
 
-            data = eval(listings)  # Safe here as we control the scraper output
+            data = parse_scraper_output(listings)
 
             # Check for bot detection in scraper output
             if data is None:
