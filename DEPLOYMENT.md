@@ -13,15 +13,20 @@
 
 ### Correct Deployment Process
 
-#### For EC2 (Backend):
-```bash
-./scripts/deploy-ec2.sh
-```
+Production deploys are automatic when changes are pushed to `main`.
 
-Or manually:
-```bash
-ssh ec2 "cd /var/www/Neon-Goals-Service && git pull && npm run build && pm2 restart neon-goals-service"
-```
+The `.github/workflows/deploy.yml` workflow runs on the self-hosted EC2 runner and:
+
+1. Pulls `main` into `/var/www/Neon-Goals-Service`
+2. Runs `bun install --frozen-lockfile`
+3. Runs Prisma generate/migrate
+4. Builds with `bun run build:deploy`
+5. Restarts `pm2`
+6. Deploys the worker
+
+Verify deploys in the latest GitHub Actions `Deploy to EC2` run for the pushed commit.
+
+Do not use an ad hoc backend SSH deploy unless the user explicitly asks for emergency/manual intervention.
 
 #### For Gilbert (Worker):
 ```bash
@@ -38,7 +43,7 @@ ssh gilbert "cd /home/alpha/Development/Neon-Goals-Service && git pull && sudo s
 | Step | Purpose |
 |------|---------|
 | `git pull` | Downloads latest source code (`.ts` files) |
-| `npm run build` | Compiles TypeScript → JavaScript (updates `dist/`) |
+| `bun run build:deploy` | Compiles TypeScript → JavaScript (updates `dist/`) |
 | `pm2 restart` | Restarts service with fresh `dist/` files |
 
 ### Signs of Stale Dist Files
@@ -49,7 +54,7 @@ If you see errors like:
 - Hardcoded paths like `/home/trill/Development/` instead of dynamic paths
 - Python script not found errors (wrong path)
 
-**The fix is always: `npm run build`**
+**The fix is always to rerun the GitHub Actions deployment or rebuild with `bun run build:deploy` before restarting.**
 
 ### Quick Verification
 
@@ -62,4 +67,4 @@ The timestamp should match when you last deployed.
 
 ---
 
-**Rule of thumb:** After ANY `git pull`, ALWAYS run `npm run build` before restarting the service.
+**Rule of thumb:** Production should deploy through the `main` branch GitHub Actions workflow. After any manual `git pull`, always run `bun run build:deploy` before restarting the service.

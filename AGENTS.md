@@ -16,6 +16,13 @@ Agents working in this repo should:
 - Prefer `bun run <script>` over `npm run <script>` unless a task explicitly requires another tool.
 - Keep new repo instructions aligned with `CLAUDE.md` so agent docs do not drift.
 
+## Production Deployment
+
+- Production deploys happen automatically through `.github/workflows/deploy.yml` when changes are pushed to `main`.
+- Do not manually deploy the backend with SSH scripts unless the user explicitly asks for an emergency/manual intervention.
+- The GitHub Actions workflow runs on the self-hosted EC2 runner, adds Bun to `PATH`, pulls `main`, installs dependencies, runs Prisma generate/migrate, builds with `bun run build:deploy`, restarts `pm2`, and then deploys the worker.
+- To verify a deploy, check the latest `Deploy to EC2` GitHub Actions run for the pushed commit.
+
 This document explains how agents communicate with the Neon Goals Service — both internally (OpenClaw sessions) and externally (via API).
 
 ---
