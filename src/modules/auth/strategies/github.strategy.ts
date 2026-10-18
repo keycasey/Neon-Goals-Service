@@ -6,10 +6,15 @@ import { Strategy } from 'passport-github2';
 @Injectable()
 export class GithubStrategy extends PassportStrategy(Strategy, 'github') {
   constructor(private config: ConfigService) {
+    const clientID = config.get<string>('GITHUB_CLIENT_ID');
+    const clientSecret = config.get<string>('GITHUB_CLIENT_SECRET');
     super({
-      clientID: config.get<string>('GITHUB_CLIENT_ID'),
-      clientSecret: config.get<string>('GITHUB_CLIENT_SECRET'),
-      callbackURL: config.get<string>('GITHUB_CALLBACK_URL'),
+      // GitHub login is optional. Keep the API available for email login and
+      // OAuth/MCP when GitHub credentials are not installed on a host.
+      clientID: clientID || 'github-login-disabled',
+      clientSecret: clientSecret || 'github-login-disabled',
+      callbackURL: config.get<string>('GITHUB_CALLBACK_URL') ||
+        'http://localhost:3001/api/auth/github/callback',
       scope: ['read:user', 'user:email'],
     });
   }

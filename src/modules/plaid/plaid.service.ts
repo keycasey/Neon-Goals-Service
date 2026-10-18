@@ -40,7 +40,9 @@ export class PlaidService {
       'sandbox';
 
     if (!clientId || !secret) {
-      throw new Error(`${prefix}_CLIENT_ID and ${prefix}_SECRET must be set`);
+      this.logger.warn(
+        `${prefix} credentials are not configured; Plaid calls will remain unavailable`,
+      );
     }
 
     return new PlaidApi(
@@ -48,8 +50,8 @@ export class PlaidService {
         basePath: PlaidEnvironments[env],
         baseOptions: {
           headers: {
-            'PLAID-CLIENT-ID': clientId,
-            'PLAID-SECRET': secret,
+            'PLAID-CLIENT-ID': clientId || 'plaid-disabled',
+            'PLAID-SECRET': secret || 'plaid-disabled',
           },
         },
       }),
