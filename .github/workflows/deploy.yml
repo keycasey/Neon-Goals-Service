@@ -23,10 +23,7 @@ jobs:
           # Clean build artifacts to ensure fresh compilation (prevents stale incremental cache)
           rm -rf dist tsconfig.tsbuildinfo
           bun run build:deploy
-          export PM2_HOME=/home/ec2-user/.pm2-neon-goals
-          pm2 delete neon-goals-service || true
-          pm2 kill || true
-          pm2 flush || true
+          PM2_HOME=/home/ec2-user/.pm2-neon-goals pm2 kill || true
           env NODE_ENV=production \
             MCP_ENABLED=true \
             MCP_OAUTH_ENABLED=true \
@@ -51,31 +48,26 @@ jobs:
           fi
           kill "$service_probe_pid"
           wait "$service_probe_pid" || true
-          NODE_ENV=production \
-          MCP_ENABLED=true \
-          MCP_OAUTH_ENABLED=true \
-          MCP_PUBLIC_BASE_URL=https://goals.keycasey.com/api \
-          MCP_PERSONAL_GRANTS_ENABLED=false \
-            pm2 start /var/www/Neon-Goals-Service/dist/src/main.js \
-              --name neon-goals-service \
-              --cwd /var/www/Neon-Goals-Service \
-              --interpreter "$(command -v node)" \
-              --output /tmp/neon-goals-pm2-out.log \
-              --error /tmp/neon-goals-pm2-error.log \
-              --time
-          pm2 save
-          if command -v crontab >/dev/null; then
-            pm2_bin=$(command -v pm2)
-            { crontab -l 2>/dev/null | grep -v '/.pm2-neon-goals' || true; echo "@reboot PM2_HOME=/home/ec2-user/.pm2-neon-goals ${pm2_bin} resurrect"; } | crontab -
+          service_state_dir=/home/ec2-user/.neon-goals
+          mkdir -p "$service_state_dir"
+          if [ -f "$service_state_dir/service.pid" ]; then
+            service_pid=$(cat "$service_state_dir/service.pid")
+            if [[ "$service_pid" =~ ^[0-9]+$ ]]; then
+              kill "$service_pid" 2>/dev/null || true
+              for attempt in 1 2 3 4 5; do
+                kill -0 "$service_pid" 2>/dev/null || break
+                sleep 1
+              done
+            fi
           fi
-          pm2 list | grep neon-goals-service
+          RUNNER_TRACKING_ID="" nohup bash scripts/run-service-supervisor.sh >/tmp/neon-goals-supervisor.log 2>&1 &
+          if command -v crontab >/dev/null; then
+            { crontab -l 2>/dev/null | grep -v 'run-service-supervisor.sh' || true; echo '@reboot RUNNER_TRACKING_ID="" nohup bash /var/www/Neon-Goals-Service/scripts/run-service-supervisor.sh >/tmp/neon-goals-supervisor.log 2>&1 &'; } | crontab -
+          fi
           curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
-            pm2 logs neon-goals-service --nostream --lines 120 || true
-            startup_error=$(pm2 logs neon-goals-service --err --nostream --lines 80 2>&1 | grep -E 'ERROR|Error:|TypeError|Exception' | tail -n 5 | tr '\n' ';' | sed 's/::/:/g' || true)
-            startup_output=$(pm2 logs neon-goals-service --out --nostream --lines 20 2>&1 | tail -n 10 | tr '\n' ';' | sed 's/::/:/g' || true)
-            process_state=$(pm2 describe neon-goals-service 2>&1 | grep -E 'status|script path|error log path|unstable restarts' | tr '\n' ';' | sed 's/::/:/g' || true)
+            startup_output=$(tail -n 20 "$service_state_dir/service.log" 2>&1 | tr '\n' ';' | sed 's/::/:/g' || true)
             socket_state=$(ss -ltnp 2>&1 | grep -E '3001|node' | tr '\n' ';' | sed 's/::/:/g' || true)
-            echo "::error title=PM2 startup failure::${startup_error:-No filtered PM2 error was available}; ${startup_output:-No PM2 output was available}; ${process_state:-No PM2 process state was available}; ${socket_state:-No Node listener was available}"
+            echo "::error title=Service supervisor startup failure::${startup_output:-No service output was available}; ${socket_state:-No Node listener was available}"
             exit 1
           }
 
