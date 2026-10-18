@@ -27,6 +27,8 @@ jobs:
           pm2 list | grep neon-goals-service
           curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
             pm2 logs neon-goals-service --nostream --lines 120
+            startup_error=$(pm2 logs neon-goals-service --err --nostream --lines 80 2>&1 | grep -E 'ERROR|Error:|TypeError|Exception' | tail -n 5 | tr '\n' ';' | sed 's/::/:/g')
+            echo "::error title=PM2 startup failure::${startup_error:-No filtered PM2 error was available}"
             exit 1
           }
 
