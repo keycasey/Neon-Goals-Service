@@ -54,7 +54,13 @@ jobs:
           MCP_OAUTH_ENABLED=true \
           MCP_PUBLIC_BASE_URL=https://goals.keycasey.com/api \
           MCP_PERSONAL_GRANTS_ENABLED=false \
-            pm2 start dist/src/main.js --name neon-goals-service --cwd /var/www/Neon-Goals-Service --time
+            pm2 start /var/www/Neon-Goals-Service/dist/src/main.js \
+              --name neon-goals-service \
+              --cwd /var/www/Neon-Goals-Service \
+              --interpreter "$(command -v node)" \
+              --output /tmp/neon-goals-pm2-out.log \
+              --error /tmp/neon-goals-pm2-error.log \
+              --time
           pm2 save
           pm2 list | grep neon-goals-service
           curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
