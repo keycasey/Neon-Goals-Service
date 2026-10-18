@@ -24,11 +24,11 @@ jobs:
           rm -rf dist tsconfig.tsbuildinfo
           bun run build:deploy
           pm2 delete neon-goals-service || true
-          remaining_pm2_apps=$(pm2 jlist | bun -e 'const input = await Bun.stdin.text(); console.log(JSON.parse(input).length)')
+          remaining_pm2_apps=$(pm2 jlist 2>/dev/null | bun -e 'try { const input = await Bun.stdin.text(); console.log(JSON.parse(input).length) } catch { console.log("unknown") }' || echo unknown)
           if [ "$remaining_pm2_apps" = "0" ]; then
             pm2 kill || true
           else
-            echo "Refusing to reset PM2: ${remaining_pm2_apps} unrelated app(s) are still registered"
+            echo "::error title=PM2 reset refused::${remaining_pm2_apps} unrelated app(s) are still registered"
             exit 1
           fi
           pm2 flush || true
