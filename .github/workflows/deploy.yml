@@ -24,7 +24,12 @@ jobs:
           rm -rf dist tsconfig.tsbuildinfo
           bun run build:deploy
           pm2 delete neon-goals-service || true
-          pm2 start dist/src/main.js --name neon-goals-service --cwd /var/www/Neon-Goals-Service --time
+          NODE_ENV=production \
+          MCP_ENABLED=true \
+          MCP_OAUTH_ENABLED=true \
+          MCP_PUBLIC_BASE_URL=https://goals.keycasey.com/api \
+          MCP_PERSONAL_GRANTS_ENABLED=false \
+            pm2 start dist/src/main.js --name neon-goals-service --cwd /var/www/Neon-Goals-Service --time
           pm2 save
           pm2 list | grep neon-goals-service
           curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
