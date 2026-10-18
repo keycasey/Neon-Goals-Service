@@ -73,7 +73,29 @@ FINICITY_PARTNER_SECRET=your_finicity_partner_secret
 # Optional overrides
 # FINICITY_BASE_URL=https://api.finicity.com
 # FINICITY_REDIRECT_URI=https://www.finicity.com/connect/
+
+# Public goals MCP (OAuth 2.1 + S256 PKCE)
+MCP_ENABLED=true
+MCP_OAUTH_ENABLED=true
+MCP_PUBLIC_BASE_URL=https://goals.keycasey.com/api
+MCP_PERSONAL_GRANTS_ENABLED=false
 ```
+
+## ChatGPT and OpenClaw goals MCP
+
+The stateless Streamable HTTP endpoint is `https://goals.keycasey.com/api/mcp`.
+It exposes goal reads and idempotent goal/task mutations through user-scoped OAuth.
+
+```bash
+mcporter config add neon-goals https://goals.keycasey.com/api/mcp --auth oauth --scope home
+mcporter auth neon-goals
+mcporter list neon-goals --schema
+```
+
+Discovery is published under `/api/.well-known/`. Available scopes are
+`goals:read` and `goals:write`. OAuth access tokens, refresh tokens,
+authorization codes, and optional fallback grants are stored only as SHA-256
+hashes.
 
 ## Running Locally
 

@@ -12,6 +12,7 @@ import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { AgentAuthService } from './agent-auth.service';
 import { DemoResetService } from './demo-reset.service';
 import { PrismaModule } from '../../config/prisma.module';
+import { McpOAuthService } from '../mcp/mcp-oauth.service';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { PrismaModule } from '../../config/prisma.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GithubStrategy, LocalStrategy, JwtOrApiKeyGuard, AgentAuthService, DemoResetService],
-  exports: [AuthService, JwtOrApiKeyGuard, AgentAuthService, DemoResetService],
+  providers: [AuthService, JwtStrategy, GithubStrategy, LocalStrategy, JwtOrApiKeyGuard, AgentAuthService, DemoResetService, McpOAuthService],
+  exports: [AuthService, JwtOrApiKeyGuard, AgentAuthService, DemoResetService, McpOAuthService],
 })
 export class AuthModule {}

@@ -23,8 +23,9 @@ jobs:
           # Clean build artifacts to ensure fresh compilation (prevents stale incremental cache)
           rm -rf dist tsconfig.tsbuildinfo
           bun run build:deploy
-          pm2 restart neon-goals-service
+          pm2 restart ecosystem.config.js --only neon-goals-service --update-env
           pm2 list | grep neon-goals-service
+          curl --fail --retry 5 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource
 
       - name: Deploy Worker
         run: |

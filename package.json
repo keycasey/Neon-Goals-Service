@@ -26,9 +26,12 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "mcp:grant": "ts-node scripts/issue-mcp-grant.ts",
+    "mcp:revoke": "ts-node scripts/revoke-mcp-grant.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/common": "^11.1.12",
     "@nestjs/config": "^4.0.0",
@@ -55,7 +58,8 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",

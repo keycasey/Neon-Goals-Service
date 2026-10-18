@@ -5,12 +5,16 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GitHubAuthGuard } from './strategies/github-auth.guard';
 import { LocalAuthGuard } from './strategies/local-auth.guard';
+import { McpOAuthService } from '../mcp/mcp-oauth.service';
 
 @Controller('auth')
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
 
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private readonly mcpOAuth: McpOAuthService,
+  ) {}
 
   @Get('github')
   @UseGuards(GitHubAuthGuard)
@@ -25,6 +29,11 @@ export class AuthController {
       req.user.githubId,
       req.user.profile,
     );
+
+    if (typeof req.query.state === 'string' && req.query.state.startsWith('ngoauth_')) {
+      const redirect = await this.mcpOAuth.completeGithubAuthorization(req.query.state, user.id);
+      return res.redirect(303, redirect);
+    }
 
     // Redirect to frontend with token
     res.redirect(

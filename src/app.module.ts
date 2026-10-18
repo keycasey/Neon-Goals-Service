@@ -15,6 +15,7 @@ import { FinicityModule } from './modules/finicity/finicity.module';
 import { ExtractionModule } from './modules/extraction/extraction.module';
 import { ProjectionsModule } from './modules/projections/projections.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { McpModule } from './modules/mcp/mcp.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     FinicityModule,
     ExtractionModule,
     ProjectionsModule,
+    McpModule,
   ],
 })
 export class AppModule implements NestModule {
