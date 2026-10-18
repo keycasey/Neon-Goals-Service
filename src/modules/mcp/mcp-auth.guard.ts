@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 import { PrismaService } from '../../config/prisma.service';
-import { McpOAuthService } from './mcp-oauth.service';
+import { McpOAuthService, mcpFeatureEnabled } from './mcp-oauth.service';
 
 export type McpPrincipal = {
   userId: string;
@@ -32,13 +32,13 @@ export class McpAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (this.config.get('MCP_ENABLED') !== 'true') {
+    if (!mcpFeatureEnabled(this.config, 'MCP_ENABLED')) {
       throw new NotFoundException();
     }
     const request = context.switchToHttp().getRequest<McpRequest>();
     const response = context.switchToHttp().getResponse();
     const challenge = (details?: string) => {
-      const metadata = this.config.get('MCP_OAUTH_ENABLED') === 'true'
+      const metadata = mcpFeatureEnabled(this.config, 'MCP_OAUTH_ENABLED')
         ? ` resource_metadata="${this.oauth.issuer}/.well-known/oauth-protected-resource"`
         : '';
       response.setHeader(
@@ -54,7 +54,7 @@ export class McpAuthGuard implements CanActivate {
     const token = authorization.slice('Bearer '.length).trim();
     let principal: McpPrincipal | null = null;
 
-    if (this.config.get('MCP_OAUTH_ENABLED') === 'true' && token.startsWith('ngat_')) {
+    if (mcpFeatureEnabled(this.config, 'MCP_OAUTH_ENABLED') && token.startsWith('ngat_')) {
       principal = await this.oauth.resolveAccessToken(token);
     }
 

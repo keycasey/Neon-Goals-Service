@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { McpOAuthService } from './mcp-oauth.service';
+import { oauthPage } from './mcp-oauth.controller';
 
 function inMemoryPrisma() {
   const clients: any[] = [];
@@ -101,6 +102,26 @@ function serviceFixture() {
 }
 
 describe('McpOAuthService', () => {
+  it('defaults the public release on in production and keeps consent form posts under /api', () => {
+    const db = inMemoryPrisma();
+    const service = new McpOAuthService(
+      { get: (key: string) => key === 'NODE_ENV' ? 'production' : undefined } as any,
+      db.prisma,
+      {} as any,
+    );
+    expect(service.protectedResourceMetadata().resource).toBe(
+      'https://goals.keycasey.com/api/mcp',
+    );
+    const page = oauthPage({
+      issuer: service.issuer,
+      requestId: 'request-1',
+      clientName: 'OpenClaw',
+      scopes: ['goals:read', 'goals:write'],
+    });
+    expect(page).toContain('action="https://goals.keycasey.com/api/oauth/authorize"');
+    expect(page).toContain('action="https://goals.keycasey.com/api/oauth/deny"');
+  });
+
   it('publishes resource and authorization server metadata for PKCE clients', () => {
     const { service } = serviceFixture();
     expect(service.protectedResourceMetadata()).toMatchObject({

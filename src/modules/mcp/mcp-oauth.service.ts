@@ -10,6 +10,7 @@ import { PrismaService } from '../../config/prisma.service';
 import { AuthService } from '../auth/auth.service';
 
 export const MCP_SCOPES = ['goals:read', 'goals:write'] as const;
+const PRODUCTION_MCP_BASE_URL = 'https://goals.keycasey.com/api';
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000;
@@ -64,6 +65,12 @@ function validateRedirectUri(value: string) {
   return url.toString();
 }
 
+export function mcpFeatureEnabled(config: ConfigService, key: string) {
+  const configured = config.get<string>(key);
+  if (configured !== undefined) return configured === 'true';
+  return config.get<string>('NODE_ENV') === 'production';
+}
+
 @Injectable()
 export class McpOAuthService {
   constructor(
@@ -73,13 +80,15 @@ export class McpOAuthService {
   ) {}
 
   private requireEnabled() {
-    if (this.config.get('MCP_ENABLED') !== 'true' || this.config.get('MCP_OAUTH_ENABLED') !== 'true') {
+    if (!mcpFeatureEnabled(this.config, 'MCP_ENABLED') || !mcpFeatureEnabled(this.config, 'MCP_OAUTH_ENABLED')) {
       throw new NotFoundException();
     }
   }
 
   get issuer() {
-    const configured = this.config.get<string>('MCP_PUBLIC_BASE_URL') || this.config.get<string>('BACKEND_URL');
+    const configured = this.config.get<string>('MCP_PUBLIC_BASE_URL') ||
+      this.config.get<string>('BACKEND_URL') ||
+      (this.config.get<string>('NODE_ENV') === 'production' ? PRODUCTION_MCP_BASE_URL : undefined);
     if (!configured) {
       throw new ServiceUnavailableException('MCP_PUBLIC_BASE_URL is not configured');
     }
