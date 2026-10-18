@@ -23,14 +23,9 @@ jobs:
           # Clean build artifacts to ensure fresh compilation (prevents stale incremental cache)
           rm -rf dist tsconfig.tsbuildinfo
           bun run build:deploy
+          export PM2_HOME=/home/ec2-user/.pm2-neon-goals
           pm2 delete neon-goals-service || true
-          remaining_pm2_apps=$(pm2 jlist 2>/dev/null | bun -e 'try { const input = await Bun.stdin.text(); console.log(JSON.parse(input).length) } catch { console.log("unknown") }' || echo unknown)
-          if [ "$remaining_pm2_apps" = "0" ]; then
-            pm2 kill || true
-          else
-            echo "::error title=PM2 reset refused::${remaining_pm2_apps} unrelated app(s) are still registered"
-            exit 1
-          fi
+          pm2 kill || true
           pm2 flush || true
           env NODE_ENV=production \
             MCP_ENABLED=true \
@@ -69,6 +64,10 @@ jobs:
               --error /tmp/neon-goals-pm2-error.log \
               --time
           pm2 save
+          if command -v crontab >/dev/null; then
+            pm2_bin=$(command -v pm2)
+            { crontab -l 2>/dev/null | grep -v '/.pm2-neon-goals' || true; echo "@reboot PM2_HOME=/home/ec2-user/.pm2-neon-goals ${pm2_bin} resurrect"; } | crontab -
+          fi
           pm2 list | grep neon-goals-service
           curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
             pm2 logs neon-goals-service --nostream --lines 120 || true
