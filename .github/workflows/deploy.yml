@@ -63,9 +63,8 @@ jobs:
           RUNNER_TRACKING_ID="" nohup bash scripts/run-service-supervisor.sh >/tmp/neon-goals-supervisor.log 2>&1 &
           if command -v crontab >/dev/null; then
             {
-              crontab -l 2>/dev/null | grep -Ev 'run-service-supervisor.sh|configure-caddy-oauth-discovery.sh' || true
+              crontab -l 2>/dev/null | grep -v 'run-service-supervisor.sh' || true
               echo '@reboot RUNNER_TRACKING_ID="" nohup bash /var/www/Neon-Goals-Service/scripts/run-service-supervisor.sh >/tmp/neon-goals-supervisor.log 2>&1 &'
-              echo '@reboot bash /var/www/Neon-Goals-Service/scripts/configure-caddy-oauth-discovery.sh >/tmp/neon-goals-caddy.log 2>&1'
             } | crontab -
           fi
           curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
@@ -74,9 +73,6 @@ jobs:
             echo "::error title=Service supervisor startup failure::${startup_output:-No service output was available}; ${socket_state:-No Node listener was available}"
             exit 1
           }
-          bash scripts/configure-caddy-oauth-discovery.sh
-          curl --fail https://goals.keycasey.com/.well-known/oauth-protected-resource/api/mcp
-
       - name: Deploy Worker
         run: |
           cd /var/www/Neon-Goals-Service
