@@ -53,6 +53,25 @@ jobs:
           wait "$service_probe_pid" || true
           service_state_dir=/home/ec2-user/.neon-goals
           mkdir -p "$service_state_dir"
+          service_lock="$service_state_dir/service.lock"
+          if [ -e "$service_lock" ]; then
+            command -v fuser >/dev/null || {
+              echo "::error title=Service shutdown failure::The service lock exists and fuser is unavailable"
+              exit 1
+            }
+            mapfile -t lock_pids < <(fuser "$service_lock" 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+$' || true)
+            for lock_pid in "${lock_pids[@]}"; do
+              lock_command=$(tr '\0' ' ' < "/proc/$lock_pid/cmdline")
+              lock_cwd=$(readlink -f "/proc/$lock_pid/cwd")
+              if [ "$lock_cwd" != "/var/www/Neon-Goals-Service" ] || { [[ "$lock_command" != *"run-service-supervisor.sh"* ]] && [[ "$lock_command" != *"node dist/src/main.js"* ]]; }; then
+                echo "::error title=Service shutdown refused::The Neon Goals service lock belongs to an unexpected process"
+                exit 1
+              fi
+            done
+            if [ "${#lock_pids[@]}" -gt 0 ]; then
+              kill "${lock_pids[@]}"
+            fi
+          fi
           if [ -f "$service_state_dir/service.pid" ]; then
             service_pid=$(cat "$service_state_dir/service.pid")
             if [[ "$service_pid" =~ ^[0-9]+$ ]]; then
