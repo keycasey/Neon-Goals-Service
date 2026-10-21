@@ -71,6 +71,16 @@ jobs:
             if [ "${#lock_pids[@]}" -gt 0 ]; then
               kill "${lock_pids[@]}"
             fi
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              remaining_lock_pids=$(fuser "$service_lock" 2>/dev/null | tr -d '[:space:]' || true)
+              [ -z "$remaining_lock_pids" ] && break
+              sleep 1
+            done
+            remaining_lock_pids=$(fuser "$service_lock" 2>/dev/null | tr -d '[:space:]' || true)
+            if [ -n "$remaining_lock_pids" ]; then
+              echo "::error title=Service shutdown failure::The previous release retained the service lock after termination"
+              exit 1
+            fi
           fi
           if [ -f "$service_state_dir/service.pid" ]; then
             service_pid=$(cat "$service_state_dir/service.pid")
