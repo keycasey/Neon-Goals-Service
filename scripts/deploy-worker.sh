@@ -5,14 +5,17 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/.." && pwd)
 cd "$repo_root"
 
-if [ -f .env ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
-fi
-
 worker_api_key=${WORKER_API_KEY:-}
+if [ -z "$worker_api_key" ] && [ -f .env ]; then
+  worker_api_key=$(
+    awk -F= '$1 == "WORKER_API_KEY" {
+      sub(/^[^=]*=/, "");
+      sub(/\r$/, "");
+      print;
+      exit;
+    }' .env
+  )
+fi
 if [ "${#worker_api_key}" -lt 24 ]; then
   echo "::error title=Worker deploy blocked::WORKER_API_KEY is missing or too short"
   exit 1
