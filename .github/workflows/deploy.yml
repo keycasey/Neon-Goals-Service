@@ -139,7 +139,8 @@ jobs:
               echo '@reboot RUNNER_TRACKING_ID="" nohup bash /var/www/Neon-Goals-Service/scripts/run-service-supervisor.sh >/tmp/neon-goals-supervisor.log 2>&1 &'
             } | crontab -
           fi
-          curl --fail --retry 15 --retry-delay 2 http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
+          curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 \
+            http://127.0.0.1:3001/api/.well-known/oauth-protected-resource || {
             startup_output=$(tail -n 20 "$service_state_dir/service.log" 2>&1 | tr '\n' ';' | sed 's/::/:/g' || true)
             socket_state=$(ss -ltnp 2>&1 | grep -E '3001|node' | tr '\n' ';' | sed 's/::/:/g' || true)
             echo "::error title=Service supervisor startup failure::${startup_output:-No service output was available}; ${socket_state:-No Node listener was available}"
