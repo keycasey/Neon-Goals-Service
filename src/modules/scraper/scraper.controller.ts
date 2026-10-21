@@ -1,15 +1,35 @@
-import { Controller, Post, Body, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Logger, UseGuards } from '@nestjs/common';
 import { ScraperService } from './scraper.service';
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
+import { SkipThrottle } from '@nestjs/throttler';
+import { Type } from 'class-transformer';
+import { IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
 
-interface CallbackData {
+class CallbackData {
+  @Type(() => Number)
+  @IsInt()
   jobId: number;
+
+  @IsString()
+  @MaxLength(100)
   scraper: string;
+
+  @IsIn(['success', 'error'])
   status: 'success' | 'error';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
   error?: string;
-  data: any;
+
+  @IsOptional()
+  @IsArray()
+  data?: unknown[];
 }
 
 @Controller('scrapers')
+@UseGuards(WorkerAuthGuard)
+@SkipThrottle()
 export class ScraperController {
   private readonly logger = new Logger(ScraperController.name);
 

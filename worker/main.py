@@ -6,9 +6,11 @@ import asyncio
 import time
 import shutil
 import ast
+import hmac
 import aiohttp
 import requests
 import json
+from pathlib import Path
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
@@ -25,6 +27,11 @@ logger = logging.getLogger(__name__)
 # Backend API URL (worker polls this for jobs)
 # Use environment variable or default to EC2 public URL
 BACKEND_API_URL = os.getenv("NEON_GOALS_API_URL", "https://goals.keycasey.com")
+WORKER_API_KEY = os.getenv("WORKER_API_KEY", "")
+
+
+def worker_headers() -> dict[str, str]:
+    return {"X-Worker-Key": WORKER_API_KEY} if WORKER_API_KEY else {}
 
 # Polling state
 polling_task: Optional[asyncio.Task] = None
@@ -59,6 +66,7 @@ async def poll_for_jobs():
                 # 1. Poll for scraper jobs
                 async with session.post(
                     f"{BACKEND_API_URL}/api/scrapers/poll",
+                    headers=worker_headers(),
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as response:
                     if response.status in (200, 201):
@@ -105,6 +113,7 @@ async def poll_for_jobs():
             try:
                 async with session.post(
                     f"{BACKEND_API_URL}/api/extraction/poll",
+                    headers=worker_headers(),
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as response:
                     if response.status in (200, 201):
@@ -115,6 +124,7 @@ async def poll_for_jobs():
                             job_id = job.get("id")
                             url = job.get("url")
                             callback_url = job.get("callbackUrl")
+                            progress_url = job.get("progressUrl")
 
                             logger.info(f"📦 Pulled extraction job {job_id} for URL: {url}")
 
@@ -124,7 +134,8 @@ async def poll_for_jobs():
                                     run_extraction,
                                     job_id=job_id,
                                     url=url,
-                                    callback_url=callback_url
+                                    callback_url=callback_url,
+                                    progress_url=progress_url,
                                 )
                             )
                     else:
@@ -165,9 +176,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Scraper Worker", version="0.1.0", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def require_worker_auth(request: Request, call_next):
+    if request.url.path in {"/", "/health"}:
+        return await call_next(request)
+    if not WORKER_API_KEY:
+        return JSONResponse(status_code=503, content={"detail": "Worker authentication is not configured"})
+    supplied = request.headers.get("x-worker-key", "")
+    if not hmac.compare_digest(supplied, WORKER_API_KEY):
+        return JSONResponse(status_code=401, content={"detail": "Invalid worker key"})
+    return await call_next(request)
+
 # Base directory for scrapers (relative to worker dir)
-SCRAPER_BASE_DIR = "/home/alpha/Development/Neon-Goals-Service"
+SCRAPER_BASE_DIR = os.getenv(
+    "SCRAPER_BASE_DIR",
+    str(Path(__file__).resolve().parent.parent),
+)
 SCRIPTS_BASE_DIR = os.path.join(SCRAPER_BASE_DIR, "scripts")
+SCRAPER_PYTHON_BIN = os.getenv("SCRAPER_PYTHON_BIN", sys.executable)
+CHROME_DEBUG_URL = os.getenv("CHROME_DEBUG_URL", "http://127.0.0.1:9222")
 
 # VPN setup
 try:
@@ -269,6 +297,7 @@ def send_callback_with_retry(callback_url: str, data: dict, max_retries: int = 3
             response = requests.post(
                 callback_url,
                 json=data,
+                headers=worker_headers(),
                 timeout=timeout
             )
             if response.status_code >= 400:
@@ -315,7 +344,7 @@ def run_scraper_and_callback(
         if not os.path.exists(script_path):
             raise FileNotFoundError(f"Script not found: {script_path}")
 
-        python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
+        python_bin = SCRAPER_PYTHON_BIN
         browser_launcher = get_browser_launcher_prefix()
 
         # Different scrapers expect different parameter formats
@@ -358,7 +387,7 @@ def run_scraper_and_callback(
             timeout=300,  # 5 minute timeout (60s wait + scraping)
             env={
                 **os.environ,
-                "XAUTHORITY": os.environ.get("XAUTHORITY", "/home/alpha/.Xauthority"),
+                "XAUTHORITY": os.environ.get("XAUTHORITY", str(Path.home() / ".Xauthority")),
             }
         )
 
@@ -848,7 +877,7 @@ def run_single_scraper(
             if not os.path.exists(script_path):
                 raise FileNotFoundError(f"Script not found: {script_path}")
 
-            python_bin = "/home/alpha/.pyenv/versions/3.12.0/bin/python3.12"
+            python_bin = SCRAPER_PYTHON_BIN
             browser_launcher = get_browser_launcher_prefix()
 
             # Different scrapers expect different parameter formats
@@ -892,7 +921,7 @@ def run_single_scraper(
                 env={
                     **os.environ,
                     "DISPLAY": os.environ.get("DISPLAY", ":0"),
-                    "XAUTHORITY": os.environ.get("XAUTHORITY", "/home/alpha/.Xauthority"),
+                    "XAUTHORITY": os.environ.get("XAUTHORITY", str(Path.home() / ".Xauthority")),
                 }
             )
 
@@ -983,9 +1012,23 @@ class ExtractRequest(BaseModel):
     jobId: str
     url: str
     callbackUrl: str
+    progressUrl: Optional[str] = None
 
 
-def run_extraction(job_id: str, url: str, callback_url: str) -> None:
+def resolve_progress_url(callback_url: str, progress_url: Optional[str] = None) -> str:
+    if progress_url:
+        return progress_url
+    if callback_url.endswith("/callback"):
+        return f"{callback_url[:-len('/callback')]}/progress"
+    raise ValueError("progressUrl is required when callbackUrl has no /callback suffix")
+
+
+def run_extraction(
+    job_id: str,
+    url: str,
+    callback_url: str,
+    progress_url: Optional[str] = None,
+) -> None:
     """
     Run Claude CLI to extract product data from a URL.
 
@@ -995,9 +1038,10 @@ def run_extraction(job_id: str, url: str, callback_url: str) -> None:
     3. Take a screenshot
     4. Extract product info (name, price, image)
 
-    Sends progress updates to {callbackUrl}/progress and final result to {callbackUrl}.
+    Sends progress updates to progressUrl and the final result to callbackUrl.
     """
     logger.info(f"Starting extraction for job {job_id}: {url}")
+    resolved_progress_url = resolve_progress_url(callback_url, progress_url)
 
     extraction_prompt = f"""You are a product data extractor. Extract product info from this URL.
 
@@ -1018,8 +1062,9 @@ Or on error: {{"success": false, "error": "..."}}"""
     # Send initial progress
     try:
         requests.post(
-            f"{callback_url}/progress",
+            resolved_progress_url,
             json={"jobId": job_id, "status": "started", "message": "Starting extraction..."},
+            headers=worker_headers(),
             timeout=5
         )
     except Exception as e:
@@ -1032,7 +1077,7 @@ Or on error: {{"success": false, "error": "..."}}"""
                 "chrome-devtools": {
                     "type": "stdio",
                     "command": "npx",
-                    "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", "http://10.0.0.237:9222"],
+                    "args": ["-y", "chrome-devtools-mcp@latest", "--browserUrl", CHROME_DEBUG_URL],
                     "env": {}
                 }
             }
@@ -1060,7 +1105,10 @@ Or on error: {{"success": false, "error": "..."}}"""
         # Set environment for Claude config
         env = {
             **os.environ,
-            "CLAUDE_CONFIG_DIR": "/home/alpha/.claude-zhipu",
+            "CLAUDE_CONFIG_DIR": os.getenv(
+                "CLAUDE_CONFIG_DIR",
+                str(Path.home() / ".claude"),
+            ),
         }
 
         # Run Claude CLI and stream output, passing prompt via stdin
@@ -1097,12 +1145,13 @@ Or on error: {{"success": false, "error": "..."}}"""
                         if time.time() - last_progress_time > 2:
                             try:
                                 requests.post(
-                                    f"{callback_url}/progress",
+                                    resolved_progress_url,
                                     json={
                                         "jobId": job_id,
                                         "status": "in_progress",
                                         "message": content[:200]  # Truncate long messages
                                     },
+                                    headers=worker_headers(),
                                     timeout=5
                                 )
                                 last_progress_time = time.time()
@@ -1209,6 +1258,7 @@ async def extract_product(
     job_id = request.jobId
     url = request.url
     callback_url = request.callbackUrl
+    progress_url = request.progressUrl
 
     logger.info(f"Dispatching extraction for job {job_id}: {url}")
     logger.info(f"Callback URL: {callback_url}")
@@ -1218,7 +1268,8 @@ async def extract_product(
         run_extraction,
         job_id,
         url,
-        callback_url
+        callback_url,
+        progress_url,
     )
 
     return {

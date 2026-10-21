@@ -6,11 +6,12 @@ import { VehicleQueryService } from './vehicle-query.service';
 import { VehicleQueryController } from './vehicle-query.controller';
 import { VehicleFilterService } from './vehicle-filter.service';
 import { PrismaService } from '../../config/prisma.service';
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
 
 @Module({
   imports: [HttpModule],
   controllers: [ScraperController, VehicleQueryController],
-  providers: [ScraperService, VehicleQueryService, VehicleFilterService, PrismaService],
+  providers: [ScraperService, VehicleQueryService, VehicleFilterService, PrismaService, WorkerAuthGuard],
   exports: [ScraperService, VehicleQueryService, VehicleFilterService],
 })
 export class ScraperModule {}

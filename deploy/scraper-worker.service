@@ -1,0 +1,18 @@
+[Unit]
+Description=Neon Goals scraper worker
+After=network.target tailscaled.service
+Wants=sys-subsystem-net-devices-tailscale0.device
+
+[Service]
+Type=simple
+User=alpha
+Group=alpha
+WorkingDirectory=/home/alpha/.local/share/neon-goals/current/worker
+EnvironmentFile=/home/alpha/.config/neon-goals/worker.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/alpha/.local/share/neon-goals/current/worker/.venv/bin/python -m uvicorn main:app --host 100.91.29.119 --port 5000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

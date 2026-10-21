@@ -98,34 +98,20 @@ export class ScraperService {
    * Returns job with goal data and marks it as 'running'
    */
   async getNextPendingJob() {
-    const job = await this.prisma.scrapeJob.findFirst({
-      where: {
-        status: 'pending',
-        attempts: { lt: 3 },
-      },
-      include: {
-        goal: {
-          include: {
-            itemData: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const job = await tx.scrapeJob.findFirst({
+        where: { status: 'pending', attempts: { lt: 3 } },
+        include: { goal: { include: { itemData: true } } },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!job) return null;
+
+      const claimed = await tx.scrapeJob.updateMany({
+        where: { id: job.id, status: 'pending' },
+        data: { status: 'running' },
+      });
+      return claimed.count === 1 ? { ...job, status: 'running' } : null;
     });
-
-    if (!job) {
-      return null;
-    }
-
-    // Mark as running to prevent double-processing
-    await this.prisma.scrapeJob.update({
-      where: { id: job.id },
-      data: { status: 'running' },
-    });
-
-    return job;
   }
 
   /**
@@ -1429,6 +1415,8 @@ export class ScraperService {
           query,
           vehicleFilters: filtersToSend,
           useRetailerFilters: !!retailerFilters, // Flag to tell worker which format we're using
+        }, {
+          headers: { 'X-Worker-Key': process.env.WORKER_API_KEY || '' },
         })
       );
 

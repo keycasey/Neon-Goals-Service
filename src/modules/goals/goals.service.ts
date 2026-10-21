@@ -105,9 +105,14 @@ export class GoalsService {
             searchResults: data.searchResults || null,
             candidates: data.candidates || null,
             deniedCandidates: data.deniedCandidates || null,
+            shortlistedCandidates: data.shortlistedCandidates || null,
             selectedCandidateId: data.selectedCandidateId || null,
             stackId: data.stackId || null,
             stackOrder: data.stackOrder ?? null,
+            searchTerm: data.searchTerm || null,
+            category: data.category || null,
+            searchFilters: data.searchFilters || null,
+            retailerFilters: data.retailerFilters || null,
           },
         },
       },
@@ -160,6 +165,7 @@ export class GoalsService {
         actionData: {
           create: {
             completionPercentage: data.completionPercentage || 0,
+            motivation: data.motivation,
             tasks: {
               create: data.tasks || [],
             },
@@ -253,27 +259,38 @@ export class GoalsService {
       }
     }
 
-    await this.prisma.itemGoalData.update({
-      where: { goalId: id },
-      data: {
-        productImage: data.productImage,
-        bestPrice: data.bestPrice,
-        retailerUrl: data.retailerUrl,
-        retailerName: data.retailerName,
-        statusBadge: data.statusBadge,
-        searchResults: data.searchResults,
-        searchTerm: data.searchTerm,
-        category: data.category,
-        searchFilters: data.searchFilters,
-        retailerFilters: retailerFilters,
-        candidates: data.candidates !== undefined ? data.candidates : undefined,
-        selectedCandidateId: data.selectedCandidateId !== undefined ? data.selectedCandidateId : undefined,
-        shortlistedCandidates: data.shortlistedCandidates !== undefined ? data.shortlistedCandidates : undefined,
-        deniedCandidates: data.deniedCandidates !== undefined ? data.deniedCandidates : undefined,
-        stackId: data.stackId !== undefined ? data.stackId : undefined,
-        stackOrder: data.stackOrder !== undefined ? data.stackOrder : undefined,
-      },
-    });
+    await this.prisma.$transaction([
+      this.prisma.goal.update({
+        where: { id },
+        data: {
+          title: data.title,
+          description: data.description,
+          status: data.status,
+        },
+      }),
+      this.prisma.itemGoalData.update({
+        where: { goalId: id },
+        data: {
+          productImage: data.productImage,
+          bestPrice: data.bestPrice ?? data.targetAmount,
+          currency: data.currency,
+          retailerUrl: data.retailerUrl,
+          retailerName: data.retailerName,
+          statusBadge: data.statusBadge,
+          searchResults: data.searchResults,
+          searchTerm: data.searchTerm,
+          category: data.category,
+          searchFilters: data.searchFilters,
+          retailerFilters,
+          candidates: data.candidates !== undefined ? data.candidates : undefined,
+          selectedCandidateId: data.selectedCandidateId !== undefined ? data.selectedCandidateId : undefined,
+          shortlistedCandidates: data.shortlistedCandidates !== undefined ? data.shortlistedCandidates : undefined,
+          deniedCandidates: data.deniedCandidates !== undefined ? data.deniedCandidates : undefined,
+          stackId: data.stackId !== undefined ? data.stackId : undefined,
+          stackOrder: data.stackOrder !== undefined ? data.stackOrder : undefined,
+        },
+      }),
+    ]);
 
     return this.findOne(id, userId);
   }
@@ -281,15 +298,24 @@ export class GoalsService {
   async updateFinanceGoal(id: string, userId: string, data: any) {
     await this.findOne(id, userId);
 
-    await this.prisma.financeGoalData.update({
-      where: { goalId: id },
-      data: {
-        currentBalance: data.currentBalance,
-        targetBalance: data.targetBalance,
-        progressHistory: data.progressHistory,
-        lastSync: data.lastSync ? new Date(data.lastSync) : undefined,
-      },
-    });
+    await this.prisma.$transaction([
+      this.prisma.goal.update({
+        where: { id },
+        data: { title: data.title, description: data.description, status: data.status },
+      }),
+      this.prisma.financeGoalData.update({
+        where: { goalId: id },
+        data: {
+          institutionIcon: data.institutionIcon,
+          accountName: data.accountName,
+          currentBalance: data.currentBalance,
+          targetBalance: data.targetBalance,
+          currency: data.currency,
+          progressHistory: data.progressHistory,
+          lastSync: data.lastSync ? new Date(data.lastSync) : undefined,
+        },
+      }),
+    ]);
 
     return this.findOne(id, userId);
   }
@@ -297,14 +323,19 @@ export class GoalsService {
   async updateActionGoal(id: string, userId: string, data: any) {
     await this.findOne(id, userId);
 
-    if (data.completionPercentage !== undefined) {
-      await this.prisma.actionGoalData.update({
+    await this.prisma.$transaction([
+      this.prisma.goal.update({
+        where: { id },
+        data: { title: data.title, description: data.description, status: data.status },
+      }),
+      this.prisma.actionGoalData.update({
         where: { goalId: id },
         data: {
           completionPercentage: data.completionPercentage,
+          motivation: data.motivation,
         },
-      });
-    }
+      }),
+    ]);
 
     return this.findOne(id, userId);
   }
@@ -320,12 +351,16 @@ export class GoalsService {
     if (data.progressType !== undefined) updateData.progressType = data.progressType;
     if (data.progress !== undefined) updateData.progress = data.progress;
 
-    if (Object.keys(updateData).length > 0) {
-      await this.prisma.groupGoalData.update({
+    await this.prisma.$transaction([
+      this.prisma.goal.update({
+        where: { id },
+        data: { title: data.title, description: data.description, status: data.status },
+      }),
+      this.prisma.groupGoalData.update({
         where: { goalId: id },
         data: updateData,
-      });
-    }
+      }),
+    ]);
 
     return this.findOne(id, userId);
   }
@@ -411,6 +446,38 @@ export class GoalsService {
     });
 
     return updated;
+  }
+
+  async updateTask(
+    goalId: string,
+    taskId: string,
+    userId: string,
+    data: { title?: string; completed?: boolean },
+  ) {
+    const goal = await this.findOne(goalId, userId);
+    if (goal.type !== GoalType.action) {
+      throw new BadRequestException('Goal is not an action goal');
+    }
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, actionGoalId: goal.actionData?.id },
+    });
+    if (!task) throw new NotFoundException('Task not found');
+    if (data.title === undefined && data.completed === undefined) {
+      throw new BadRequestException('No task changes supplied');
+    }
+
+    await this.prisma.task.update({ where: { id: taskId }, data });
+    const allTasks = await this.prisma.task.findMany({
+      where: { actionGoalId: goal.actionData?.id },
+    });
+    const percentage = allTasks.length
+      ? Math.round((allTasks.filter((candidate) => candidate.completed).length / allTasks.length) * 100)
+      : 0;
+    await this.prisma.actionGoalData.update({
+      where: { id: goal.actionData?.id },
+      data: { completionPercentage: percentage },
+    });
+    return this.findOne(goalId, userId);
   }
 
   async deleteTask(goalId: string, taskId: string, userId: string) {

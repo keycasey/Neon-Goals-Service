@@ -1,6 +1,15 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
+import { timingSafeEqual } from 'crypto';
+
+function keysMatch(supplied: unknown, expected: string): boolean {
+  if (typeof supplied !== 'string') return false;
+  const suppliedBuffer = Buffer.from(supplied);
+  const expectedBuffer = Buffer.from(expected);
+  return suppliedBuffer.length === expectedBuffer.length
+    && timingSafeEqual(suppliedBuffer, expectedBuffer);
+}
 
 /**
  * JWT OR API Key Authentication Guard
@@ -27,7 +36,7 @@ export class JwtOrApiKeyGuard implements CanActivate {
         throw new UnauthorizedException('API key authentication not configured');
       }
 
-      if (apiKey === expectedApiKey) {
+      if (keysMatch(apiKey, expectedApiKey)) {
         request.user = {
           id: 'agent',
           userId: 'agent',

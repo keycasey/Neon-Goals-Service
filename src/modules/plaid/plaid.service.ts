@@ -1,17 +1,13 @@
-import { Injectable, Logger, BadRequestException, ConflictException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../config/prisma.service';
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
-import {
-  LinkTokenResponse,
-  ExchangeTokenResponse,
-  BalanceResponse,
-  TransactionsResponse,
-} from './plaid.interface';
+import { LinkTokenResponse } from './plaid.interface';
 import { DemoPlaidService } from './demo-plaid.service';
+import { PlaidTokenCipherService } from './plaid-token-cipher.service';
 
 @Injectable()
-export class PlaidService {
+export class PlaidService implements OnModuleInit {
   private readonly logger = new Logger(PlaidService.name);
   private plaidClient: PlaidApi;
   private demoPlaidClient: PlaidApi;
@@ -21,10 +17,33 @@ export class PlaidService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => DemoPlaidService))
     private demoPlaidService: DemoPlaidService,
+    private tokenCipher: PlaidTokenCipherService,
   ) {
     this.plaidClient = this.buildPlaidClient('PLAID');
     this.demoPlaidClient = this.buildPlaidClient('DEMO_PLAID', 'PLAID');
     this.logger.log('Plaid clients initialized');
+  }
+
+  async onModuleInit(): Promise<void> {
+    const legacyItems = await this.prisma.plaidItem.findMany({
+      where: { tokenVersion: 0 },
+      select: { id: true, encryptedAccessToken: true },
+    });
+
+    for (const item of legacyItems) {
+      await this.prisma.plaidItem.update({
+        where: { id: item.id },
+        data: {
+          encryptedAccessToken: this.tokenCipher.encrypt(item.encryptedAccessToken),
+          tokenVersion: 1,
+        },
+        select: { id: true },
+      });
+    }
+
+    if (legacyItems.length > 0) {
+      this.logger.log(`Encrypted ${legacyItems.length} migrated Plaid item credential(s)`);
+    }
   }
 
   private buildPlaidClient(prefix: string, fallbackPrefix?: string): PlaidApi {
@@ -64,6 +83,27 @@ export class PlaidService {
 
   private getPlaidClientForAccount(account: { isDemo?: boolean | null }): PlaidApi {
     return account.isDemo ? this.demoPlaidClient : this.plaidClient;
+  }
+
+  private async getAccessToken(item: {
+    id: string;
+    encryptedAccessToken: string;
+    tokenVersion: number;
+  }): Promise<string> {
+    if (item.tokenVersion === 0) {
+      const plaintext = item.encryptedAccessToken;
+      await this.prisma.plaidItem.update({
+        where: { id: item.id },
+        data: {
+          encryptedAccessToken: this.tokenCipher.encrypt(plaintext),
+          tokenVersion: 1,
+        },
+        select: { id: true },
+      });
+      return plaintext;
+    }
+
+    return this.tokenCipher.decrypt(item.encryptedAccessToken);
   }
 
   private shouldRetryWithoutMinUpdatedDatetime(error: any): boolean {
@@ -141,8 +181,14 @@ export class PlaidService {
         userId,
       },
       select: {
-        accessToken: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
 
@@ -151,6 +197,7 @@ export class PlaidService {
     }
 
     const client = this.getPlaidClientForAccount(account);
+    const accessToken = await this.getAccessToken(account.plaidItem);
     const response = await client.linkTokenCreate({
       user: {
         client_user_id: userId,
@@ -159,7 +206,7 @@ export class PlaidService {
       country_codes: ['US'] as any,
       language: 'en',
       redirect_uri: this.configService.get<string>('PLAID_REDIRECT_URI'),
-      access_token: account.accessToken,
+      access_token: accessToken,
       additional_consented_products: [product] as any[],
     });
 
@@ -215,6 +262,35 @@ export class PlaidService {
 
       this.logger.log(`Institution: ${institution.name}`);
 
+      const existingItem = await this.prisma.plaidItem.findUnique({
+        where: { itemId: item_id },
+        select: { userId: true },
+      });
+      if (existingItem && existingItem.userId !== userId) {
+        throw new ConflictException('This Plaid item is already linked to another user');
+      }
+
+      const plaidItem = await this.prisma.plaidItem.upsert({
+        where: { itemId: item_id },
+        update: {
+          encryptedAccessToken: this.tokenCipher.encrypt(access_token),
+          tokenVersion: 1,
+          institutionName: institution.name,
+          institutionId: itemResponse.data.item.institution_id || 'unknown',
+          isDemo: isDemoUser,
+        },
+        create: {
+          userId,
+          itemId: item_id,
+          encryptedAccessToken: this.tokenCipher.encrypt(access_token),
+          tokenVersion: 1,
+          institutionName: institution.name,
+          institutionId: itemResponse.data.item.institution_id || 'unknown',
+          isDemo: isDemoUser,
+        },
+        select: { id: true },
+      });
+
       // Get accounts with balances
       this.logger.log('Fetching accounts with balances...');
       // Use 24 hours ago - Plaid balances typically update daily
@@ -246,14 +322,21 @@ export class PlaidService {
         this.logger.log(`Saving ${account.type} account: ${account.name} (${account.mask})`);
 
         try {
+          const existingAccount = await this.prisma.plaidAccount.findUnique({
+            where: { plaidAccountId: account.account_id },
+            select: { userId: true },
+          });
+          if (existingAccount && existingAccount.userId !== userId) {
+            throw new ConflictException('This Plaid account is already linked to another user');
+          }
+
           // Upsert to prevent duplicates - use plaidAccountId as unique identifier
           const plaidAccount = await this.prisma.plaidAccount.upsert({
             where: {
               plaidAccountId: account.account_id,
             },
             update: {
-              accessToken: access_token,
-              itemId: item_id,
+              plaidItemId: plaidItem.id,
               institutionName: institution.name,
               institutionId: itemResponse.data.item.institution_id || 'unknown',
               accountName: account.name,
@@ -268,8 +351,7 @@ export class PlaidService {
             },
             create: {
               userId,
-              accessToken: access_token,
-              itemId: item_id,
+              plaidItemId: plaidItem.id,
               plaidAccountId: account.account_id,
               institutionName: institution.name,
               institutionId: itemResponse.data.item.institution_id || 'unknown',
@@ -320,12 +402,12 @@ export class PlaidService {
       const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       for (const savedAccount of savedAccounts) {
         const syncPromise = savedAccount.accountType === 'investment'
-          ? this.fetchAndStoreInvestmentData(savedAccount.id, startDate, endDate).then((result) =>
+          ? this.fetchAndStoreInvestmentData(userId, savedAccount.id, startDate, endDate).then((result) =>
               this.logger.log(
                 `Fetched ${result.holdings} holdings and ${result.transactions} investment transactions for ${savedAccount.accountName}`,
               ),
             )
-          : this.fetchAndStoreTransactions(savedAccount.id, startDate, endDate).then((result) =>
+          : this.fetchAndStoreTransactions(userId, savedAccount.id, startDate, endDate).then((result) =>
               this.logger.log(`Fetched ${result.stored} transactions for ${savedAccount.accountName}`),
             );
 
@@ -426,19 +508,48 @@ export class PlaidService {
     // Verify account belongs to user
     const account = await this.prisma.plaidAccount.findFirst({
       where: { id: accountId, userId },
+      select: {
+        id: true,
+        plaidItemId: true,
+        isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
+      },
     });
 
     if (!account) {
       throw new BadRequestException('Account not found');
     }
 
-    // Hard delete - remove account and associated transactions
-    await this.prisma.plaidTransaction.deleteMany({
-      where: { plaidAccountId: accountId },
+    const linkedAccountCount = await this.prisma.plaidAccount.count({
+      where: { plaidItemId: account.plaidItemId },
     });
 
-    await this.prisma.plaidAccount.delete({
-      where: { id: accountId },
+    if (linkedAccountCount === 1) {
+      const client = this.getPlaidClientForAccount(account);
+      const accessToken = await this.getAccessToken(account.plaidItem);
+      try {
+        await client.itemRemove({ access_token: accessToken });
+      } catch (error: any) {
+        throw new BadRequestException(
+          `Plaid rejected the unlink request: ${error?.response?.data?.error_message ?? error?.message ?? 'unknown error'}`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.plaidTransaction.deleteMany({
+        where: { plaidAccountId: accountId },
+      });
+      await tx.plaidAccount.delete({ where: { id: accountId } });
+      if (linkedAccountCount === 1) {
+        await tx.plaidItem.delete({ where: { id: account.plaidItemId } });
+      }
     });
 
     this.logger.log(`Deleted account ${accountId} for user ${userId}`);
@@ -449,16 +560,22 @@ export class PlaidService {
   /**
    * Sync balances for a linked Plaid account
    */
-  async syncAccountBalance(plaidAccountId: string) {
-    const account = await this.prisma.plaidAccount.findUnique({
-      where: { id: plaidAccountId },
+  async syncAccountBalance(userId: string, plaidAccountId: string) {
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         lastSync: true,
         financeGoalId: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
 
@@ -470,8 +587,9 @@ export class PlaidService {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const minUpdateTime = account.lastSync > oneDayAgo ? account.lastSync : oneDayAgo;
 
+    const accessToken = await this.getAccessToken(account.plaidItem);
     const response = await this.getPlaidClientForAccount(account).accountsBalanceGet({
-      access_token: account.accessToken,
+      access_token: accessToken,
       options: {
         min_last_updated_datetime: minUpdateTime.toISOString(),
       },
@@ -518,17 +636,17 @@ export class PlaidService {
   /**
    * Link a Plaid account to a finance goal
    */
-  async linkToFinanceGoal(plaidAccountId: string, financeGoalId: string) {
-    const plaidAccount = await this.prisma.plaidAccount.findUnique({
-      where: { id: plaidAccountId },
+  async linkToFinanceGoal(userId: string, plaidAccountId: string, financeGoalId: string) {
+    const plaidAccount = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
     });
 
     if (!plaidAccount) {
       throw new BadRequestException('Plaid account not found');
     }
 
-    const financeGoal = await this.prisma.financeGoalData.findUnique({
-      where: { id: financeGoalId },
+    const financeGoal = await this.prisma.financeGoalData.findFirst({
+      where: { id: financeGoalId, goal: { userId } },
       include: { goal: true },
     });
 
@@ -558,81 +676,6 @@ export class PlaidService {
     this.logger.log(`Linked Plaid account ${plaidAccountId} to finance goal ${financeGoalId}`);
 
     return updated;
-  }
-
-  /**
-   * Exchange public token for access token (deprecated - use linkPlaidAccount instead)
-   * @deprecated Use linkPlaidAccount instead
-   */
-  async exchangePublicToken(publicToken: string): Promise<ExchangeTokenResponse> {
-    this.logger.log('Exchanging public token for access token');
-
-    const request = {
-      public_token: publicToken,
-    };
-
-    try {
-      const response = await this.plaidClient.itemPublicTokenExchange(request);
-      this.logger.log(`Public token exchanged, item_id: ${response.data.item_id}`);
-      return response.data;
-    } catch (error) {
-      this.logger.error('Error exchanging public token:', error);
-      throw new BadRequestException('Failed to exchange public token');
-    }
-  }
-
-  /**
-   * Get account balances
-   */
-  async getBalances(accessToken: string): Promise<BalanceResponse> {
-    this.logger.log('Fetching account balances');
-
-    const request = {
-      access_token: accessToken,
-    };
-
-    try {
-      const response = await this.plaidClient.accountsBalanceGet(request);
-      this.logger.log(`Balances fetched for ${response.data.accounts.length} accounts`);
-      return response.data;
-    } catch (error) {
-      this.logger.error('Error fetching balances:', error);
-      throw new BadRequestException('Failed to fetch balances');
-    }
-  }
-
-  /**
-   * Get transactions
-   */
-  async getTransactions(
-    accessToken: string,
-    startDate: string,
-    endDate: string,
-    count = 100,
-    offset = 0,
-  ): Promise<TransactionsResponse> {
-    this.logger.log(`Fetching transactions from ${startDate} to ${endDate}`);
-
-    const request = {
-      access_token: accessToken,
-      start_date: startDate,
-      end_date: endDate,
-      options: {
-        count,
-        offset,
-      },
-    };
-
-    try {
-      const response = await this.plaidClient.transactionsGet(request);
-      this.logger.log(
-        `Fetched ${response.data.transactions.length} transactions (total: ${response.data.total_transactions})`,
-      );
-      return response.data;
-    } catch (error) {
-      this.logger.error('Error fetching transactions:', error);
-      throw new BadRequestException('Failed to fetch transactions');
-    }
   }
 
   /**
@@ -672,15 +715,21 @@ export class PlaidService {
       };
     }
 
-    const account = await this.prisma.plaidAccount.findUnique({
-      where: { id: plaidAccountId },
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         lastSync: true,
         accountName: true,
         institutionName: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
 
@@ -693,7 +742,7 @@ export class PlaidService {
     const minUpdateTime = account.lastSync > oneDayAgo ? account.lastSync : oneDayAgo;
 
     const response = await this.plaidClient.accountsBalanceGet({
-      access_token: account.accessToken,
+      access_token: await this.getAccessToken(account.plaidItem),
       options: {
         min_last_updated_datetime: minUpdateTime.toISOString(),
       },
@@ -763,14 +812,20 @@ export class PlaidService {
       };
     }
 
-    const account = await this.prisma.plaidAccount.findUnique({
-      where: { id: plaidAccountId },
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         accountName: true,
         institutionName: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
 
@@ -785,7 +840,7 @@ export class PlaidService {
       new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const response = await this.plaidClient.transactionsGet({
-      access_token: account.accessToken,
+      access_token: await this.getAccessToken(account.plaidItem),
       start_date: start,
       end_date: end,
     });
@@ -878,19 +933,26 @@ export class PlaidService {
   }
 
   async fetchAndStoreInvestmentData(
+    userId: string,
     plaidAccountId: string,
     startDate: string,
     endDate: string,
   ): Promise<{ holdings: number; transactions: number }> {
-    const account = await this.prisma.plaidAccount.findUnique({
-      where: { id: plaidAccountId },
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         accountName: true,
         accountType: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
 
@@ -899,16 +961,17 @@ export class PlaidService {
     }
 
     const client = this.getPlaidClientForAccount(account);
+    const accessToken = await this.getAccessToken(account.plaidItem);
 
     let holdingsResponse;
     let transactionsResponse;
     try {
       [holdingsResponse, transactionsResponse] = await Promise.all([
         client.investmentsHoldingsGet({
-          access_token: account.accessToken,
+          access_token: accessToken,
         }),
         client.investmentsTransactionsGet({
-          access_token: account.accessToken,
+          access_token: accessToken,
           start_date: startDate,
           end_date: endDate,
         }),
@@ -1067,18 +1130,25 @@ export class PlaidService {
    * Returns count of stored and skipped transactions
    */
   async fetchAndStoreTransactions(
+    userId: string,
     plaidAccountId: string,
     startDate: string,
     endDate: string,
   ): Promise<{ stored: number; skipped: number }> {
-    const account = await this.prisma.plaidAccount.findUnique({
-      where: { id: plaidAccountId },
+    const account = await this.prisma.plaidAccount.findFirst({
+      where: { id: plaidAccountId, userId },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         accountName: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
 
@@ -1087,7 +1157,7 @@ export class PlaidService {
     }
 
     const response = await this.getPlaidClientForAccount(account).transactionsGet({
-      access_token: account.accessToken,
+      access_token: await this.getAccessToken(account.plaidItem),
       start_date: startDate,
       end_date: endDate,
     });

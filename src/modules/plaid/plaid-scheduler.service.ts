@@ -30,7 +30,7 @@ export class PlaidSchedulerService {
     // Get all active Plaid accounts
     const accounts = await this.prisma.plaidAccount.findMany({
       where: { isActive: true },
-      select: { id: true },
+      select: { id: true, userId: true },
     });
 
     this.logger.log(`Found ${accounts.length} accounts to sync`);
@@ -40,7 +40,7 @@ export class PlaidSchedulerService {
 
     for (const account of accounts) {
       try {
-        const result = await this.syncAccountTransactions(account.id);
+        const result = await this.syncAccountTransactions(account.userId, account.id);
         totalSynced += result.stored;
         this.logger.log(
           `Synced ${result.stored} transactions for account ${account.id} (${result.skipped} skipped)`,
@@ -63,6 +63,7 @@ export class PlaidSchedulerService {
    * Gets last transaction date and syncs from 1 week prior
    */
   private async syncAccountTransactions(
+    userId: string,
     plaidAccountId: string,
   ): Promise<{ stored: number; skipped: number }> {
     // Get last sync date for this account
@@ -85,6 +86,7 @@ export class PlaidSchedulerService {
 
     // Fetch and store transactions from Plaid
     return await this.plaidService.fetchAndStoreTransactions(
+      userId,
       plaidAccountId,
       startDate.toISOString().split('T')[0],
       endDate.toISOString().split('T')[0],

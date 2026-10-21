@@ -17,14 +17,17 @@ jobs:
           git reset --hard HEAD
           git clean -fd
           git pull origin main
+          bash scripts/ensure-production-secrets.sh .env
           bun install --frozen-lockfile
           bun run prisma:generate
-          bun run prisma:migrate
-          # Clean build artifacts to ensure fresh compilation (prevents stale incremental cache)
+          bun test
+          # Remove stale output before compiling the release artifact.
           rm -rf dist tsconfig.tsbuildinfo
           bun run build:deploy
+          bun run prisma:migrate
           PM2_HOME=/home/ec2-user/.pm2-neon-goals pm2 kill || true
-          env NODE_ENV=production \
+          env PORT=3002 \
+            NODE_ENV=production \
             MCP_ENABLED=true \
             MCP_OAUTH_ENABLED=true \
             MCP_PUBLIC_BASE_URL=https://goals.keycasey.com/api \
@@ -33,7 +36,7 @@ jobs:
           service_probe_pid=$!
           service_probe_ready=false
           for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if curl --fail --silent http://127.0.0.1:3001/api/.well-known/oauth-protected-resource >/dev/null; then
+            if curl --fail --silent http://127.0.0.1:3002/api/.well-known/oauth-protected-resource >/dev/null; then
               service_probe_ready=true
               break
             fi
@@ -53,12 +56,23 @@ jobs:
           if [ -f "$service_state_dir/service.pid" ]; then
             service_pid=$(cat "$service_state_dir/service.pid")
             if [[ "$service_pid" =~ ^[0-9]+$ ]]; then
+              while read -r child_pid; do
+                kill "$child_pid" 2>/dev/null || true
+              done < <(pgrep -P "$service_pid" || true)
               kill "$service_pid" 2>/dev/null || true
               for attempt in 1 2 3 4 5; do
                 kill -0 "$service_pid" 2>/dev/null || break
                 sleep 1
               done
+              if kill -0 "$service_pid" 2>/dev/null; then
+                echo "::error title=Service supervisor shutdown failure::The previous supervisor did not stop"
+                exit 1
+              fi
             fi
+          fi
+          if ss -ltn '( sport = :3001 )' | grep -q LISTEN; then
+            echo "::error title=Service shutdown failure::Port 3001 is still occupied after stopping the previous release"
+            exit 1
           fi
           RUNNER_TRACKING_ID="" nohup bash scripts/run-service-supervisor.sh >/tmp/neon-goals-supervisor.log 2>&1 &
           if command -v crontab >/dev/null; then
@@ -73,6 +87,7 @@ jobs:
             echo "::error title=Service supervisor startup failure::${startup_output:-No service output was available}; ${socket_state:-No Node listener was available}"
             exit 1
           }
+          bun run plaid:clear-legacy-credentials
       - name: Deploy Worker
         run: |
           cd /var/www/Neon-Goals-Service

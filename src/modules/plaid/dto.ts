@@ -1,22 +1,44 @@
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+
 export class CreateLinkTokenDto {
+  @IsString()
   userId: string;
 }
 
 export class ExchangePublicTokenDto {
+  @IsString()
   publicToken: string;
+  @IsString()
   userId: string;
 }
 
-export class GetBalanceDto {
-  accessToken: string;
+export class LinkPlaidAccountDto {
+  @IsString()
+  publicToken: string;
 }
 
-export class GetTransactionsDto {
-  accessToken: string;
-  startDate?: string; // ISO date string
-  endDate?: string; // ISO date string
-  count?: number;
-  offset?: number;
+export class ReconnectPlaidAccountDto {
+  @IsOptional()
+  @IsIn(['investments'])
+  product?: 'investments';
+}
+
+export class LinkPlaidGoalDto {
+  @IsString()
+  plaidAccountId: string;
+
+  @IsString()
+  financeGoalId: string;
+}
+
+export class StoredRecordsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit = 100;
 }
 
 export class AccountBalance {

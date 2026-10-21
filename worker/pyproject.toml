@@ -17,6 +17,11 @@ dependencies = [
     "playwright>=1.59.0",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]
+
 [project.scripts]
 start = "uvicorn main:app --host 0.0.0.0 --port 5000"
 dspy-pipeline = "dspy_pipeline.cli:main"

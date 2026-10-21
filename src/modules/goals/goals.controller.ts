@@ -13,6 +13,20 @@ import { GoalsService } from './goals.service';
 import { ScraperService } from '../scraper/scraper.service';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import {
+  CandidateUrlDto,
+  CreateActionGoalDto,
+  CreateFinanceGoalDto,
+  CreateGroupGoalDto,
+  CreateItemGoalDto,
+  TaskDto,
+  UpdateTaskDto,
+  UpdateActionGoalDto,
+  UpdateFinanceGoalDto,
+  UpdateGoalDto,
+  UpdateGroupGoalDto,
+  UpdateItemGoalDto,
+} from './dto';
 
 @Controller('goals')
 @UseGuards(JwtOrApiKeyGuard)  // Allow either JWT or API key auth
@@ -46,7 +60,7 @@ export class GoalsController {
   @Post('item')
   async createItemGoal(
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: CreateItemGoalDto,
   ) {
     return this.goalsService.createItemGoal(userId, data);
   }
@@ -54,7 +68,7 @@ export class GoalsController {
   @Post('finance')
   async createFinanceGoal(
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: CreateFinanceGoalDto,
   ) {
     return this.goalsService.createFinanceGoal(userId, data);
   }
@@ -62,7 +76,7 @@ export class GoalsController {
   @Post('action')
   async createActionGoal(
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: CreateActionGoalDto,
   ) {
     return this.goalsService.createActionGoal(userId, data);
   }
@@ -70,7 +84,7 @@ export class GoalsController {
   @Post('group')
   async createGroupGoal(
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: CreateGroupGoalDto,
   ) {
     return this.goalsService.createGroupGoal(userId, data);
   }
@@ -79,7 +93,7 @@ export class GoalsController {
   async update(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: UpdateGoalDto,
   ) {
     return this.goalsService.update(id, userId, data);
   }
@@ -88,7 +102,7 @@ export class GoalsController {
   async updateItemGoal(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: UpdateItemGoalDto,
   ) {
     return this.goalsService.updateItemGoal(id, userId, data);
   }
@@ -97,7 +111,7 @@ export class GoalsController {
   async updateFinanceGoal(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: UpdateFinanceGoalDto,
   ) {
     return this.goalsService.updateFinanceGoal(id, userId, data);
   }
@@ -106,7 +120,7 @@ export class GoalsController {
   async updateActionGoal(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: UpdateActionGoalDto,
   ) {
     return this.goalsService.updateActionGoal(id, userId, data);
   }
@@ -115,7 +129,7 @@ export class GoalsController {
   async updateGroupGoal(
     @Param('id') id: string,
     @CurrentUser('userId') userId: string,
-    @Body() data: any,
+    @Body() data: UpdateGroupGoalDto,
   ) {
     return this.goalsService.updateGroupGoal(id, userId, data);
   }
@@ -135,7 +149,7 @@ export class GoalsController {
   async createTask(
     @Param('id') goalId: string,
     @CurrentUser('userId') userId: string,
-    @Body() data: { title: string },
+    @Body() data: TaskDto,
   ) {
     return this.goalsService.createTask(goalId, userId, data);
   }
@@ -147,6 +161,16 @@ export class GoalsController {
     @CurrentUser('userId') userId: string,
   ) {
     return this.goalsService.toggleTask(goalId, taskId, userId);
+  }
+
+  @Patch(':id/tasks/:taskId')
+  async updateTask(
+    @Param('id') goalId: string,
+    @Param('taskId') taskId: string,
+    @CurrentUser('userId') userId: string,
+    @Body() data: UpdateTaskDto,
+  ) {
+    return this.goalsService.updateTask(goalId, taskId, userId, data);
   }
 
   @Delete(':id/tasks/:taskId')
@@ -162,19 +186,19 @@ export class GoalsController {
   @Post(':id/deny-candidate')
   async denyCandidate(
     @Param('id') goalId: string,
-    @Body('candidateUrl') candidateUrl: string,
+    @Body() body: CandidateUrlDto,
     @CurrentUser('userId') userId: string,
   ) {
-    return this.goalsService.denyCandidate(goalId, userId, candidateUrl);
+    return this.goalsService.denyCandidate(goalId, userId, body.candidateUrl);
   }
 
   @Post(':id/restore-candidate')
   async restoreCandidate(
     @Param('id') goalId: string,
-    @Body('candidateUrl') candidateUrl: string,
+    @Body() body: CandidateUrlDto,
     @CurrentUser('userId') userId: string,
   ) {
-    return this.goalsService.restoreCandidate(goalId, userId, candidateUrl);
+    return this.goalsService.restoreCandidate(goalId, userId, body.candidateUrl);
   }
 
   @Get(':id/denied-candidates')

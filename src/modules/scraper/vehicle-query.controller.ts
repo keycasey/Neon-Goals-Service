@@ -2,10 +2,19 @@ import { Controller, Post, Body, Logger, UseGuards } from '@nestjs/common';
 import { VehicleQueryService } from './vehicle-query.service';
 import { JwtOrApiKeyGuard } from '../../common/guards/jwt-or-api-key.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
-interface ParseQueryDto {
+class ParseQueryDto {
+  @IsString()
+  @MaxLength(1000)
   query: string;
+
+  @IsOptional()
+  @IsBoolean()
   useLlm?: boolean;
+
+  @IsOptional()
+  @IsIn(['carmax', 'cargurus', 'autotrader', 'truecar', 'carvana'])
   scraper?: 'carmax' | 'cargurus' | 'autotrader' | 'truecar' | 'carvana';
 }
 
@@ -86,7 +95,7 @@ export class VehicleQueryController {
    */
   @Post('parse-all')
   async parseForAllScrapers(
-    @Body() dto: { query: string; useLlm?: boolean },
+    @Body() dto: ParseQueryDto,
     @CurrentUser('userId') userId: string,
   ) {
     this.logger.log(`User ${userId} parsing for all scrapers: "${dto.query}"`);

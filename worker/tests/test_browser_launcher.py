@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+import asyncio
 from unittest.mock import patch
+from types import SimpleNamespace
 from pathlib import Path
 import sys
 
@@ -15,6 +17,49 @@ class ScraperOutputParsingTests(unittest.TestCase):
         data = worker_main.parse_scraper_output('[{"title":"Passport","price":null}]')
 
         self.assertEqual(data, [{"title": "Passport", "price": None}])
+
+    def test_uses_explicit_extraction_progress_url(self) -> None:
+        self.assertEqual(
+            worker_main.resolve_progress_url(
+                "https://api.example/api/extraction/callback",
+                "https://api.example/api/extraction/progress",
+            ),
+            "https://api.example/api/extraction/progress",
+        )
+
+    def test_rejects_ambiguous_progress_url_fallback(self) -> None:
+        with self.assertRaises(ValueError):
+            worker_main.resolve_progress_url("https://api.example/custom-result")
+
+
+class WorkerAuthenticationTests(unittest.TestCase):
+    def test_rejects_worker_route_without_key(self) -> None:
+        request = SimpleNamespace(
+            url=SimpleNamespace(path="/extract"),
+            headers={},
+        )
+
+        async def call_next(_request):
+            raise AssertionError("unauthenticated request reached handler")
+
+        with patch.object(worker_main, "WORKER_API_KEY", "expected-key"):
+            response = asyncio.run(worker_main.require_worker_auth(request, call_next))
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_accepts_matching_worker_key(self) -> None:
+        request = SimpleNamespace(
+            url=SimpleNamespace(path="/extract"),
+            headers={"x-worker-key": "expected-key"},
+        )
+
+        async def call_next(_request):
+            return "accepted"
+
+        with patch.object(worker_main, "WORKER_API_KEY", "expected-key"):
+            response = asyncio.run(worker_main.require_worker_auth(request, call_next))
+
+        self.assertEqual(response, "accepted")
 
     def test_parses_legacy_python_literal_output(self) -> None:
         data = worker_main.parse_scraper_output("[{'title': 'Passport', 'price': None}]")

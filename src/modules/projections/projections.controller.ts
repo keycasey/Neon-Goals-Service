@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ProjectionsService } from './projections.service';
+import { ForecastDto, HorizonQueryDto, RecurringMergeDto, ScenarioDto } from './dto';
 
 @Controller('projections')
 @UseGuards(JwtAuthGuard)
@@ -8,8 +9,8 @@ export class ProjectionsController {
   constructor(private readonly projectionsService: ProjectionsService) {}
 
   @Get('overview')
-  getOverview(@Req() req: any, @Query('horizon') horizon?: string) {
-    return this.projectionsService.getOverview(req.user.userId, Number(horizon) || 12);
+  getOverview(@Req() req: any, @Query() query: HorizonQueryDto) {
+    return this.projectionsService.getOverview(req.user.userId, query.horizon);
   }
 
   @Get('cashflow')
@@ -18,21 +19,15 @@ export class ProjectionsController {
   }
 
   @Post('forecast')
-  getForecast(@Req() req: any, @Body() body: { horizon?: number }) {
-    return this.projectionsService.getForecast(req.user.userId, body?.horizon ?? 12);
+  getForecast(@Req() req: any, @Body() body: ForecastDto) {
+    return this.projectionsService.getForecast(req.user.userId, body.horizon);
   }
 
   @Post('scenario')
   runScenario(
     @Req() req: any,
     @Body()
-    body: {
-      horizon?: number;
-      monthlySavingsIncrease?: number;
-      diningReduction?: number;
-      subscriptionReduction?: number;
-      incomeAdjustment?: number;
-    },
+    body: ScenarioDto,
   ) {
     return this.projectionsService.runScenario(req.user.userId, body?.horizon ?? 12, body ?? {});
   }
@@ -40,7 +35,7 @@ export class ProjectionsController {
   @Post('cashflow/merge')
   mergeRecurringItems(
     @Req() req: any,
-    @Body() body: { targetItemId: string; sourceItemId: string; direction: 'income' | 'expense' },
+    @Body() body: RecurringMergeDto,
   ) {
     return this.projectionsService.mergeRecurringItems(
       req.user.userId,
@@ -53,7 +48,7 @@ export class ProjectionsController {
   @Post('cashflow/unmerge')
   unmergeRecurringItems(
     @Req() req: any,
-    @Body() body: { targetItemId: string; sourceItemId: string; direction: 'income' | 'expense' },
+    @Body() body: RecurringMergeDto,
   ) {
     return this.projectionsService.unmergeRecurringItems(
       req.user.userId,

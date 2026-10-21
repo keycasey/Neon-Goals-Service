@@ -16,11 +16,17 @@ function createService({
     currentBalance: 100,
   }),
   updateImpl = async () => ({ currentBalance: 0, lastSync: new Date(), id: 'acct_1' }),
+  plaidItemUpsertImpl = async () => ({ id: 'item_row_1' }),
+  plaidItemFindManyImpl = async () => [],
+  plaidItemUpdateImpl = async () => ({ id: 'item_row_1' }),
 }: {
   findFirstImpl?: (args: any) => Promise<any>;
   findUniqueImpl?: (args: any) => Promise<any>;
   upsertImpl?: (args: any) => Promise<any>;
   updateImpl?: (args: any) => Promise<any>;
+  plaidItemUpsertImpl?: (args: any) => Promise<any>;
+  plaidItemFindManyImpl?: (args: any) => Promise<any[]>;
+  plaidItemUpdateImpl?: (args: any) => Promise<any>;
 } = {}) {
   const prisma = {
     plaidAccount: {
@@ -28,6 +34,13 @@ function createService({
       findUnique: findUniqueImpl,
       upsert: upsertImpl,
       update: updateImpl,
+    },
+    plaidItem: {
+      findMany: plaidItemFindManyImpl,
+      findUnique: async () => null,
+      upsert: plaidItemUpsertImpl,
+      update: plaidItemUpdateImpl,
+      delete: async () => ({ id: 'item_row_1' }),
     },
     plaidTransaction: {
       findMany: async () => [],
@@ -52,10 +65,44 @@ function createService({
     assertNotDemoUser: async () => undefined,
   } as any;
 
-  return new PlaidService(configService, prisma, demoPlaidService);
+  const tokenCipher = {
+    encrypt: (token: string) => `encrypted:${token}`,
+    decrypt: (token: string) => token.replace(/^encrypted:/, ''),
+  } as any;
+
+  return new PlaidService(configService, prisma, demoPlaidService, tokenCipher);
 }
 
 describe('PlaidService', () => {
+  it('encrypts plaintext credentials migrated from legacy account rows', async () => {
+    const updates: any[] = [];
+    const service = createService({
+      plaidItemFindManyImpl: async () => [
+        {
+          id: 'legacy_item_1',
+          encryptedAccessToken: 'legacy-plaintext-token',
+        },
+      ],
+      plaidItemUpdateImpl: async (args) => {
+        updates.push(args);
+        return { id: args.where.id };
+      },
+    });
+
+    await service.onModuleInit();
+
+    expect(updates).toEqual([
+      {
+        where: { id: 'legacy_item_1' },
+        data: {
+          encryptedAccessToken: 'encrypted:legacy-plaintext-token',
+          tokenVersion: 1,
+        },
+        select: { id: true },
+      },
+    ]);
+  });
+
   it('selects only the plaid account fields needed after account link upsert', async () => {
     const calls: any[] = [];
     const service = createService({
@@ -171,9 +218,12 @@ describe('PlaidService', () => {
         return {
           id: 'acct_1',
           userId: 'user_1',
-          accessToken: 'access-token',
-          itemId: 'item_1',
           isDemo: false,
+          plaidItem: {
+            id: 'item_row_1',
+            encryptedAccessToken: 'encrypted:access-token',
+            tokenVersion: 1,
+          },
         };
       },
     });
@@ -200,8 +250,14 @@ describe('PlaidService', () => {
         userId: 'user_1',
       },
       select: {
-        accessToken: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
     expect(calls[1]).toMatchObject({
@@ -370,15 +426,19 @@ describe('PlaidService', () => {
   it('queries only the plaid account fields needed for fresh balance reads', async () => {
     const calls: any[] = [];
     const service = createService({
-      findUniqueImpl: async (args) => {
+      findFirstImpl: async (args) => {
         calls.push(args);
         return {
           id: 'acct_1',
-          accessToken: 'token',
           plaidAccountId: 'plaid_1',
           lastSync: new Date('2026-03-01T00:00:00.000Z'),
           accountName: 'Brokerage',
           institutionName: 'Robinhood',
+          plaidItem: {
+            id: 'item_row_1',
+            encryptedAccessToken: 'encrypted:token',
+            tokenVersion: 1,
+          },
         };
       },
     });
@@ -403,14 +463,20 @@ describe('PlaidService', () => {
     await service.getAccountBalance('user_1', 'acct_1');
 
     expect(calls[0]).toEqual({
-      where: { id: 'acct_1' },
+      where: { id: 'acct_1', userId: 'user_1' },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         lastSync: true,
         accountName: true,
         institutionName: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
   });
@@ -418,14 +484,18 @@ describe('PlaidService', () => {
   it('queries only the plaid account fields needed for fresh transaction reads', async () => {
     const calls: any[] = [];
     const service = createService({
-      findUniqueImpl: async (args) => {
+      findFirstImpl: async (args) => {
         calls.push(args);
         return {
           id: 'acct_1',
-          accessToken: 'token',
           plaidAccountId: 'plaid_1',
           accountName: 'Brokerage',
           institutionName: 'Robinhood',
+          plaidItem: {
+            id: 'item_row_1',
+            encryptedAccessToken: 'encrypted:token',
+            tokenVersion: 1,
+          },
         };
       },
     });
@@ -441,13 +511,19 @@ describe('PlaidService', () => {
     await service.getAccountTransactions('user_1', 'acct_1');
 
     expect(calls[0]).toEqual({
-      where: { id: 'acct_1' },
+      where: { id: 'acct_1', userId: 'user_1' },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         accountName: true,
         institutionName: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
   });
@@ -569,14 +645,19 @@ describe('PlaidService', () => {
   it('queries only the plaid account fields needed for balance sync', async () => {
     const calls: any[] = [];
     const service = createService({
-      findUniqueImpl: async (args) => {
+      findFirstImpl: async (args) => {
         calls.push(args);
         return {
           id: 'acct_1',
-          accessToken: 'token',
           plaidAccountId: 'plaid_1',
           lastSync: new Date('2026-03-01T00:00:00.000Z'),
           financeGoalId: null,
+          isDemo: false,
+          plaidItem: {
+            id: 'item_row_1',
+            encryptedAccessToken: 'encrypted:token',
+            tokenVersion: 1,
+          },
         };
       },
       updateImpl: async (args) => {
@@ -601,17 +682,23 @@ describe('PlaidService', () => {
       }),
     };
 
-    await service.syncAccountBalance('acct_1');
+    await service.syncAccountBalance('user_1', 'acct_1');
 
     expect(calls[0]).toEqual({
-      where: { id: 'acct_1' },
+      where: { id: 'acct_1', userId: 'user_1' },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         lastSync: true,
         financeGoalId: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
     expect(calls[1]).toEqual({
@@ -631,13 +718,18 @@ describe('PlaidService', () => {
   it('queries only the plaid account fields needed for transaction sync', async () => {
     const calls: any[] = [];
     const service = createService({
-      findUniqueImpl: async (args) => {
+      findFirstImpl: async (args) => {
         calls.push(args);
         return {
           id: 'acct_1',
-          accessToken: 'token',
           plaidAccountId: 'plaid_1',
           accountName: 'Checking',
+          isDemo: false,
+          plaidItem: {
+            id: 'item_row_1',
+            encryptedAccessToken: 'encrypted:token',
+            tokenVersion: 1,
+          },
         };
       },
       updateImpl: async (args) => {
@@ -654,16 +746,22 @@ describe('PlaidService', () => {
       }),
     };
 
-    await service.fetchAndStoreTransactions('acct_1', '2026-01-01', '2026-03-01');
+    await service.fetchAndStoreTransactions('user_1', 'acct_1', '2026-01-01', '2026-03-01');
 
     expect(calls[0]).toEqual({
-      where: { id: 'acct_1' },
+      where: { id: 'acct_1', userId: 'user_1' },
       select: {
         id: true,
-        accessToken: true,
         plaidAccountId: true,
         accountName: true,
         isDemo: true,
+        plaidItem: {
+          select: {
+            id: true,
+            encryptedAccessToken: true,
+            tokenVersion: true,
+          },
+        },
       },
     });
     expect(calls[1]).toEqual({
@@ -675,13 +773,17 @@ describe('PlaidService', () => {
 
   it('maps additional investment consent errors to a reconnect-required response', async () => {
     const service = createService({
-      findUniqueImpl: async () => ({
+      findFirstImpl: async () => ({
         id: 'acct_1',
-        accessToken: 'access-token',
         plaidAccountId: 'plaid_1',
         accountName: 'Robinhood individual',
         accountType: 'investment',
         isDemo: false,
+        plaidItem: {
+          id: 'item_row_1',
+          encryptedAccessToken: 'encrypted:access-token',
+          tokenVersion: 1,
+        },
       }),
     });
 
@@ -705,7 +807,7 @@ describe('PlaidService', () => {
     };
 
     try {
-      await service.fetchAndStoreInvestmentData('acct_1', '2026-01-01', '2026-03-01');
+      await service.fetchAndStoreInvestmentData('user_1', 'acct_1', '2026-01-01', '2026-03-01');
       throw new Error('expected fetchAndStoreInvestmentData to throw');
     } catch (error: any) {
       expect(error.getStatus()).toBe(409);

@@ -11,16 +11,20 @@ import { AiModule } from './modules/ai/ai.module';
 import { BrowserUseModule } from './modules/browser-use/browser-use.module';
 import { ScraperModule } from './modules/scraper/scraper.module';
 import { PlaidModule } from './modules/plaid/plaid.module';
-import { FinicityModule } from './modules/finicity/finicity.module';
 import { ExtractionModule } from './modules/extraction/extraction.module';
 import { ProjectionsModule } from './modules/projections/projections.module';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { validateEnvironment } from './config/env.validation';
+import { HealthController } from './health.controller';
 import { McpModule } from './modules/mcp/mcp.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateEnvironment,
     }),
     ThrottlerModule.forRoot([{
       ttl: 60000, // Time-to-live in milliseconds (1 minute)
@@ -36,10 +40,16 @@ import { McpModule } from './modules/mcp/mcp.module';
     BrowserUseModule,
     ScraperModule,
     PlaidModule,
-    FinicityModule,
     ExtractionModule,
     ProjectionsModule,
     McpModule,
+  ],
+  controllers: [HealthController],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {

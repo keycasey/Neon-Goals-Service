@@ -36,6 +36,24 @@ const createService = (itemsChat: { id: string } | null = { id: 'items_chat' }) 
 };
 
 describe('ProductExtractionService extraction completion persistence', () => {
+  it('returns no job when another worker wins the conditional claim', async () => {
+    const { service, prisma } = createService();
+    prisma.extractionJob = {
+      findFirst: mock(async () => ({
+        id: 'job_1',
+        status: 'pending',
+        createdAt: new Date(),
+      })),
+      updateMany: mock(async () => ({ count: 0 })),
+    };
+
+    expect(await service.getNextPendingJob()).toBeNull();
+    expect(prisma.extractionJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 'job_1', status: 'pending' },
+      data: { status: 'running' },
+    });
+  });
+
   it('does not persist a goal-creation prompt when all extraction jobs failed', async () => {
     const { service, prisma } = createService();
 

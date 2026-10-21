@@ -1,7 +1,7 @@
 # ChatGPT Goals MCP Design
 
 **Date:** 2026-10-16
-**Status:** Phases 1–2 implemented for private proof; OAuth release work remains
+**Status:** Phases 1–3 implemented and live through OpenClaw; optional read-only finance tools remain
 
 ## Decision
 

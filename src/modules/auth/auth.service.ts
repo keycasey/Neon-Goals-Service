@@ -5,6 +5,7 @@ import { PrismaService } from '../../config/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { seedDemoUser } from '../../../prisma/seeds/demo-seed';
 import { DEFAULT_AI_MODEL_ID } from '../../config/ai-models';
+import { createHash, randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -13,6 +14,15 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
   ) {}
+
+  private createOneTimeToken(): { token: string; hash: string } {
+    const token = randomBytes(32).toString('hex');
+    return { token, hash: createHash('sha256').update(token).digest('hex') };
+  }
+
+  private hashOneTimeToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
 
   async validateGitHubUser(githubId: string, profile: any) {
     let user = await this.prisma.user.findUnique({
@@ -249,29 +259,32 @@ export class AuthService {
     const passwordHash = await this.hashPassword(password);
 
     // Generate email verification token
-    const verificationToken = Math.random().toString(36).substring(2, 15) +
-                              Math.random().toString(36).substring(2, 15);
+    const { token: verificationToken, hash: verificationTokenHash } = this.createOneTimeToken();
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-    // Create user (email not verified yet)
-    const user = await this.prisma.user.create({
-      data: {
-        email,
-        name,
-        passwordHash,
-        resetPasswordToken: verificationToken, // Using resetPasswordToken for email verification
-        resetPasswordExpires: verificationExpires,
-      },
-    });
+    const user = await this.prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          email,
+          name,
+          passwordHash,
+          emailVerificationToken: verificationTokenHash,
+          emailVerificationExpires: verificationExpires,
+          resetPasswordToken: null,
+          resetPasswordExpires: null,
+        },
+      });
 
-    // Create default settings
-    await this.prisma.settings.create({
-      data: {
-        userId: user.id,
-        theme: 'miami-vice',
-        chatModel: DEFAULT_AI_MODEL_ID,
-        displayName: name,
-      },
+      await tx.settings.create({
+        data: {
+          userId: createdUser.id,
+          theme: 'miami-vice',
+          chatModel: DEFAULT_AI_MODEL_ID,
+          displayName: name,
+        },
+      });
+
+      return createdUser;
     });
 
     // TODO: Send verification email via Mailgun
@@ -403,14 +416,13 @@ export class AuthService {
     }
 
     // Generate reset token (in production, send email with token)
-    const resetToken = Math.random().toString(36).substring(2, 15) +
-                      Math.random().toString(36).substring(2, 15);
+    const { token: resetToken, hash: resetTokenHash } = this.createOneTimeToken();
     const resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await this.prisma.user.update({
       where: { email },
       data: {
-        resetPasswordToken: resetToken,
+        resetPasswordToken: resetTokenHash,
         resetPasswordExpires,
       },
     });
@@ -431,9 +443,10 @@ export class AuthService {
    * Complete password reset
    */
   async resetPassword(token: string, newPassword: string) {
+    const tokenHash = this.hashOneTimeToken(token);
     const user = await this.prisma.user.findFirst({
       where: {
-        resetPasswordToken: token,
+        resetPasswordToken: { in: [tokenHash, token] },
         resetPasswordExpires: {
           gte: new Date(),
         },
@@ -475,12 +488,11 @@ export class AuthService {
    * Verify email with token
    */
   async verifyEmail(token: string) {
+    const tokenHash = this.hashOneTimeToken(token);
     const user = await this.prisma.user.findFirst({
       where: {
-        resetPasswordToken: token, // Using resetPasswordToken for email verification
-        resetPasswordExpires: {
-          gte: new Date(),
-        },
+        emailVerificationToken: tokenHash,
+        emailVerificationExpires: { gte: new Date() },
       },
     });
 
@@ -493,6 +505,8 @@ export class AuthService {
       where: { id: user.id },
       data: {
         emailVerified: new Date(),
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
         resetPasswordToken: null,
         resetPasswordExpires: null,
       },
@@ -521,15 +535,16 @@ export class AuthService {
     }
 
     // Generate new verification token
-    const verificationToken = Math.random().toString(36).substring(2, 15) +
-                              Math.random().toString(36).substring(2, 15);
+    const { token: verificationToken, hash: verificationTokenHash } = this.createOneTimeToken();
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     await this.prisma.user.update({
       where: { email },
       data: {
-        resetPasswordToken: verificationToken,
-        resetPasswordExpires: verificationExpires,
+        emailVerificationToken: verificationTokenHash,
+        emailVerificationExpires: verificationExpires,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
       },
     });
 

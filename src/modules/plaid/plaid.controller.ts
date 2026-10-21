@@ -1,7 +1,12 @@
 import { Controller, Post, Get, Delete, Body, UseGuards, Logger, Param, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PlaidService } from './plaid.service';
-import { CreateLinkTokenDto, ExchangePublicTokenDto } from './dto';
+import {
+  LinkPlaidAccountDto,
+  LinkPlaidGoalDto,
+  ReconnectPlaidAccountDto,
+  StoredRecordsQueryDto,
+} from './dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { User } from '@prisma/client';
 
@@ -26,7 +31,7 @@ export class PlaidController {
   async createReconnectLinkToken(
     @CurrentUser() user: User,
     @Param('accountId') accountId: string,
-    @Body() body?: { product?: 'investments' },
+    @Body() body?: ReconnectPlaidAccountDto,
   ) {
     this.logger.log(`Create reconnect link token request from user: ${user.id} for account: ${accountId}`);
     return this.plaidService.createReconnectLinkToken(user.id, accountId, body?.product ?? 'investments');
@@ -37,7 +42,7 @@ export class PlaidController {
    * POST /plaid/link-account
    */
   @Post('link-account')
-  async linkAccount(@CurrentUser() user: User, @Body() body: { publicToken: string }) {
+  async linkAccount(@CurrentUser() user: User, @Body() body: LinkPlaidAccountDto) {
     this.logger.log(`Link account request from user: ${user.id}`);
     return this.plaidService.linkPlaidAccount(user.id, body.publicToken);
   }
@@ -69,7 +74,7 @@ export class PlaidController {
   @Post('sync/:accountId')
   async syncBalance(@CurrentUser() user: User, @Param('accountId') accountId: string) {
     this.logger.log(`Sync balance request from user: ${user.id} for account: ${accountId}`);
-    return this.plaidService.syncAccountBalance(accountId);
+    return this.plaidService.syncAccountBalance(user.id, accountId);
   }
 
   /**
@@ -82,7 +87,7 @@ export class PlaidController {
     // Sync last 90 days
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    return this.plaidService.fetchAndStoreTransactions(accountId, startDate, endDate);
+    return this.plaidService.fetchAndStoreTransactions(user.id, accountId, startDate, endDate);
   }
 
   /**
@@ -94,7 +99,7 @@ export class PlaidController {
     this.logger.log(`Sync investments request from user: ${user.id} for account: ${accountId}`);
     const endDate = new Date().toISOString().split('T')[0];
     const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    return this.plaidService.fetchAndStoreInvestmentData(accountId, startDate, endDate);
+    return this.plaidService.fetchAndStoreInvestmentData(user.id, accountId, startDate, endDate);
   }
 
   /**
@@ -104,12 +109,12 @@ export class PlaidController {
   @Post('link-to-goal')
   async linkToGoal(
     @CurrentUser() user: User,
-    @Body() body: { plaidAccountId: string; financeGoalId: string },
+    @Body() body: LinkPlaidGoalDto,
   ) {
     this.logger.log(
       `Link to goal request from user: ${user.id}, account: ${body.plaidAccountId}, goal: ${body.financeGoalId}`,
     );
-    return this.plaidService.linkToFinanceGoal(body.plaidAccountId, body.financeGoalId);
+    return this.plaidService.linkToFinanceGoal(user.id, body.plaidAccountId, body.financeGoalId);
   }
 
   /**
@@ -145,12 +150,12 @@ export class PlaidController {
   async getStoredTransactions(
     @CurrentUser() user: User,
     @Param('accountId') accountId: string,
-    @Query('limit') limit?: number,
+    @Query() query: StoredRecordsQueryDto,
   ) {
     this.logger.log(
       `Get stored transactions request from user: ${user.id} for account: ${accountId}`,
     );
-    return this.plaidService.getStoredTransactions(user.id, accountId, limit || 100);
+    return this.plaidService.getStoredTransactions(user.id, accountId, query.limit);
   }
 
   /**
@@ -161,12 +166,12 @@ export class PlaidController {
   async getStoredInvestments(
     @CurrentUser() user: User,
     @Param('accountId') accountId: string,
-    @Query('limit') limit?: number,
+    @Query() query: StoredRecordsQueryDto,
   ) {
     this.logger.log(
       `Get stored investments request from user: ${user.id} for account: ${accountId}`,
     );
-    return this.plaidService.getStoredInvestments(user.id, accountId, limit || 100);
+    return this.plaidService.getStoredInvestments(user.id, accountId, query.limit);
   }
 
   /**

@@ -10,32 +10,51 @@ import {
   Req,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Observable, fromEvent, map, merge, of, interval } from 'rxjs';
+import { Observable, fromEvent, map, merge, interval, filter } from 'rxjs';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ProductExtractionService, ProgressData } from './product-extraction.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Request } from 'express';
+import { WorkerAuthGuard } from '../../common/guards/worker-auth.guard';
+import { SkipThrottle } from '@nestjs/throttler';
+import { IsBoolean, IsNumber, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
-interface CallbackDto {
-  jobId: string;
-  result: {
-    success: boolean;
-    name?: string;
-    price?: number;
-    imageUrl?: string;
-    currency?: string;
-    error?: string;
-  };
+class ExtractionResultDto {
+  @IsBoolean()
+  success: boolean;
+
+  @IsOptional() @IsString() @MaxLength(1000) name?: string;
+  @IsOptional() @IsNumber() price?: number;
+  @IsOptional() @IsString() @MaxLength(5000) imageUrl?: string;
+  @IsOptional() @IsString() @MaxLength(10) currency?: string;
+  @IsOptional() @IsString() @MaxLength(5000) error?: string;
 }
 
-interface ProgressDto {
+class CallbackDto {
+  @IsString()
   jobId: string;
+
+  @ValidateNested()
+  @Type(() => ExtractionResultDto)
+  result: ExtractionResultDto;
+}
+
+class ProgressDto {
+  @IsString()
+  jobId: string;
+  @IsString()
   status: string;
+  @IsString()
+  @MaxLength(1000)
   message: string;
 }
 
-interface CreateGoalsDto {
+class CreateGoalsDto {
+  @IsString()
   groupId: string;
+  @IsString()
+  @MaxLength(200)
   groupName: string;
 }
 
@@ -57,6 +76,8 @@ export class ExtractionController {
    * Worker polls this endpoint instead of backend pushing to worker
    */
   @Post('poll')
+  @UseGuards(WorkerAuthGuard)
+  @SkipThrottle()
   async pollPendingJobs() {
     this.logger.log('Worker polling for pending extraction jobs...');
     const job = await this.extractionService.getNextPendingJob();
@@ -79,6 +100,8 @@ export class ExtractionController {
    * Called by the worker when extraction completes
    */
   @Post('callback')
+  @UseGuards(WorkerAuthGuard)
+  @SkipThrottle()
   async handleCallback(@Body() data: CallbackDto) {
     this.logger.log(`Received callback for job ${data.jobId}`);
 
@@ -96,6 +119,8 @@ export class ExtractionController {
    * Called by the worker during extraction
    */
   @Post('progress')
+  @UseGuards(WorkerAuthGuard)
+  @SkipThrottle()
   async handleProgress(@Body() data: ProgressDto) {
     this.logger.log(`Received progress for job ${data.jobId}: ${data.status}`);
 
@@ -116,9 +141,13 @@ export class ExtractionController {
    * Clients subscribe to updates for a specific groupId
    */
   @Sse('stream/:groupId')
+  @UseGuards(JwtAuthGuard)
   streamExtractions(
     @Param('groupId') groupId: string,
+    @Req() req: Request,
   ): Observable<MessageEvent> {
+    const user = req.user as any;
+    const userId = user.userId || user.id || user.sub;
     this.logger.log(`SSE client connected for group ${groupId}`);
 
     // Create observables for all event types
@@ -126,6 +155,7 @@ export class ExtractionController {
       this.eventEmitter,
       'extraction:progress',
     ).pipe(
+      filter((data: any) => data.groupId === groupId && data.userId === userId),
       map((data: ProgressData) => ({
         data: JSON.stringify({
           type: 'progress',
@@ -138,6 +168,7 @@ export class ExtractionController {
       this.eventEmitter,
       'extraction:complete',
     ).pipe(
+      filter((data: any) => data.groupId === groupId && data.userId === userId),
       map((data: any) => ({
         data: JSON.stringify({
           type: 'complete',
@@ -150,6 +181,7 @@ export class ExtractionController {
       this.eventEmitter,
       'extraction:group_complete',
     ).pipe(
+      filter((data: any) => data.groupId === groupId && data.userId === userId),
       map((data: any) => ({
         data: JSON.stringify({
           type: 'group_complete',
@@ -179,7 +211,8 @@ export class ExtractionController {
   @Get('jobs/:groupId')
   @UseGuards(JwtAuthGuard)
   async getGroupJobs(@Param('groupId') groupId: string, @Req() req: Request) {
-    const jobs = await this.extractionService.getGroupJobs(groupId);
+    const user = req.user as any;
+    const jobs = await this.extractionService.getGroupJobs(groupId, user.userId || user.id || user.sub);
     return { groupId, jobs };
   }
 
@@ -188,8 +221,9 @@ export class ExtractionController {
    */
   @Get('job/:jobId')
   @UseGuards(JwtAuthGuard)
-  async getJobStatus(@Param('jobId') jobId: string) {
-    const job = await this.extractionService.getJobStatus(jobId);
+  async getJobStatus(@Param('jobId') jobId: string, @Req() req: Request) {
+    const user = req.user as any;
+    const job = await this.extractionService.getJobStatus(jobId, user.userId || user.id || user.sub);
     if (!job) {
       return { error: 'Job not found' };
     }
@@ -201,8 +235,9 @@ export class ExtractionController {
    */
   @Get('complete/:groupId')
   @UseGuards(JwtAuthGuard)
-  async isGroupComplete(@Param('groupId') groupId: string) {
-    const isComplete = await this.extractionService.isGroupComplete(groupId);
+  async isGroupComplete(@Param('groupId') groupId: string, @Req() req: Request) {
+    const user = req.user as any;
+    const isComplete = await this.extractionService.isGroupComplete(groupId, user.userId || user.id || user.sub);
     return { groupId, isComplete };
   }
 
@@ -211,8 +246,9 @@ export class ExtractionController {
    */
   @Get('results/:groupId')
   @UseGuards(JwtAuthGuard)
-  async getGroupResults(@Param('groupId') groupId: string) {
-    const results = await this.extractionService.getGroupResults(groupId);
+  async getGroupResults(@Param('groupId') groupId: string, @Req() req: Request) {
+    const user = req.user as any;
+    const results = await this.extractionService.getGroupResults(groupId, user.userId || user.id || user.sub);
     return { groupId, results };
   }
 
@@ -226,7 +262,7 @@ export class ExtractionController {
     @Req() req: Request,
   ) {
     const user = req.user as any;
-    const userId = user.id || user.sub;
+    const userId = user.userId || user.id || user.sub;
 
     this.logger.log(`Creating goals for group ${data.groupId} (user: ${userId})`);
 

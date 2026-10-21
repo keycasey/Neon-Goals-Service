@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { GitHubAuthGuard } from './strategies/github-auth.guard';
 import { LocalAuthGuard } from './strategies/local-auth.guard';
+import { EmailDto, RegisterDto, ResetPasswordDto, TokenDto } from './dto';
 import { McpOAuthService } from '../mcp/mcp-oauth.service';
 
 @Controller('auth')
@@ -42,6 +43,7 @@ export class AuthController {
   }
 
   @Post('demo')
+  @Throttle({ default: { limit: 5, ttl: 900000 } })
   async demoLogin() {
     // Create or get demo user and return JWT token
     const { access_token, user } = await this.authService.createDemoUser();
@@ -87,13 +89,9 @@ export class AuthController {
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 requests per 15 minutes
   async register(
-    @Body() body: { email: string; password: string; name: string }
+    @Body() body: RegisterDto
   ) {
     const { email, password, name } = body;
-
-    if (!email || !password || !name) {
-      return { message: 'Email, password, and name are required' };
-    }
 
     const result = await this.authService.register(email, password, name);
     return result;
@@ -105,7 +103,7 @@ export class AuthController {
    */
   @Post('verify-email')
   @Throttle({ default: { limit: 10, ttl: 3600000 } }) // 10 requests per hour
-  async verifyEmail(@Body() body: { token: string }) {
+  async verifyEmail(@Body() body: TokenDto) {
     const result = await this.authService.verifyEmail(body.token);
     return {
       access_token: result.access_token,
@@ -124,7 +122,7 @@ export class AuthController {
    */
   @Post('resend-verification')
   @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 requests per hour
-  async resendVerification(@Body() body: { email: string }) {
+  async resendVerification(@Body() body: EmailDto) {
     return this.authService.resendVerificationEmail(body.email);
   }
 
@@ -175,7 +173,7 @@ Headers: ${JSON.stringify({
    */
   @Post('forgot-password')
   @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 requests per hour
-  async forgotPassword(@Body() body: { email: string }) {
+  async forgotPassword(@Body() body: EmailDto) {
     return this.authService.forgotPassword(body.email);
   }
 
@@ -185,7 +183,7 @@ Headers: ${JSON.stringify({
    */
   @Post('reset-password')
   @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 requests per hour
-  async resetPassword(@Body() body: { token: string; newPassword: string }) {
+  async resetPassword(@Body() body: ResetPasswordDto) {
     return this.authService.resetPassword(body.token, body.newPassword);
   }
 }

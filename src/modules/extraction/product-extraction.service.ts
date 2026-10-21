@@ -74,26 +74,19 @@ export class ProductExtractionService {
    * Returns job with URL and callback info, marks it as 'running'
    */
   async getNextPendingJob() {
-    const job = await this.prisma.extractionJob.findFirst({
-      where: {
-        status: 'pending',
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const job = await tx.extractionJob.findFirst({
+        where: { status: 'pending' },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (!job) return null;
+
+      const claimed = await tx.extractionJob.updateMany({
+        where: { id: job.id, status: 'pending' },
+        data: { status: 'running' },
+      });
+      return claimed.count === 1 ? { ...job, status: 'running' } : null;
     });
-
-    if (!job) {
-      return null;
-    }
-
-    // Mark as running so no other worker picks it up
-    await this.prisma.extractionJob.update({
-      where: { id: job.id },
-      data: { status: 'running' },
-    });
-
-    return job;
   }
 
   /**
@@ -111,6 +104,8 @@ export class ProductExtractionService {
     // Emit progress event for SSE subscribers
     this.eventEmitter.emit('extraction:progress', {
       jobId,
+      groupId: job?.groupId,
+      userId: job?.userId,
       ...data,
       url: job?.url,
     } as ProgressData);
@@ -151,14 +146,16 @@ export class ProductExtractionService {
     // Emit individual job completion event
     this.eventEmitter.emit('extraction:complete', {
       jobId,
+      groupId: job.groupId,
+      userId: job.userId,
       result,
       url: job.url,
     });
 
     // Check if all jobs in group are complete
-    const isComplete = await this.isGroupComplete(job.groupId);
+    const isComplete = await this.isGroupComplete(job.groupId, job.userId);
     if (isComplete) {
-      const results = await this.getGroupResults(job.groupId);
+      const results = await this.getGroupResults(job.groupId, job.userId);
       this.logger.log(`Group ${job.groupId} complete with ${results.length} results`);
 
       // Emit group completion event with all results
@@ -176,10 +173,13 @@ export class ProductExtractionService {
   /**
    * Check if all jobs in a group are complete
    */
-  async isGroupComplete(groupId: string): Promise<boolean> {
+  async isGroupComplete(groupId: string, userId: string): Promise<boolean> {
+    const totalCount = await this.prisma.extractionJob.count({ where: { groupId, userId } });
+    if (totalCount === 0) return false;
     const pendingCount = await this.prisma.extractionJob.count({
       where: {
         groupId,
+        userId,
         status: { in: ['pending', 'running'] },
       },
     });
@@ -189,9 +189,9 @@ export class ProductExtractionService {
   /**
    * Get all results for a group
    */
-  async getGroupResults(groupId: string): Promise<ExtractionResult[]> {
+  async getGroupResults(groupId: string, userId: string): Promise<ExtractionResult[]> {
     const jobs = await this.prisma.extractionJob.findMany({
-      where: { groupId },
+      where: { groupId, userId },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -328,7 +328,7 @@ export class ProductExtractionService {
     userId: string,
   ): Promise<any> {
     const jobs = await this.prisma.extractionJob.findMany({
-      where: { groupId },
+      where: { groupId, userId },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -417,12 +417,12 @@ export class ProductExtractionService {
   /**
    * Get job status by ID
    */
-  async getJobStatus(jobId: string): Promise<any> {
+  async getJobStatus(jobId: string, userId: string): Promise<any> {
     const job = await this.prisma.extractionJob.findUnique({
       where: { id: jobId },
     });
 
-    if (!job) {
+    if (!job || job.userId !== userId) {
       return null;
     }
 
@@ -441,9 +441,9 @@ export class ProductExtractionService {
   /**
    * Get all jobs for a group
    */
-  async getGroupJobs(groupId: string): Promise<any[]> {
+  async getGroupJobs(groupId: string, userId: string): Promise<any[]> {
     const jobs = await this.prisma.extractionJob.findMany({
-      where: { groupId },
+      where: { groupId, userId },
       orderBy: { createdAt: 'asc' },
     });
 

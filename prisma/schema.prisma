@@ -12,25 +12,27 @@ datasource db {
 
 // User model
 model User {
-  id                   String    @id @default(cuid())
-  githubId             String?   @unique
-  name                 String
-  email                String    @unique
-  avatar               String?
-  githubLogin          String?
-  githubBio            String?
-  githubLocation       String?
-  githubBlog           String?
+  id                       String    @id @default(cuid())
+  githubId                 String?   @unique
+  name                     String
+  email                    String    @unique
+  avatar                   String?
+  githubLogin              String?
+  githubBio                String?
+  githubLocation           String?
+  githubBlog               String?
   // Email/password authentication fields
-  passwordHash         String? // Nullable for OAuth-only users
-  emailVerified        DateTime? // When email was verified
-  resetPasswordToken   String?   @unique // Password reset token
-  resetPasswordExpires DateTime? // Reset token expiration
-  failedLoginAttempts  Int       @default(0) // Track failed login attempts
-  lockUntil            DateTime? // Account lockout after failed attempts
-  isDemo               Boolean   @default(false) // Demo user flag
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  passwordHash             String? // Nullable for OAuth-only users
+  emailVerified            DateTime? // When email was verified
+  emailVerificationToken   String?   @unique // SHA-256 hash of verification token
+  emailVerificationExpires DateTime?
+  resetPasswordToken       String?   @unique // SHA-256 hash of password reset token
+  resetPasswordExpires     DateTime? // Reset token expiration
+  failedLoginAttempts      Int       @default(0) // Track failed login attempts
+  lockUntil                DateTime? // Account lockout after failed attempts
+  isDemo                   Boolean   @default(false) // Demo user flag
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
   // Relations
   goals                   Goal[]
@@ -38,6 +40,7 @@ model User {
   messages                Message[]
   chats                   ChatState[]
   plaidAccounts           PlaidAccount[]
+  plaidItems              PlaidItem[]
   extractionJobs          ExtractionJob[]
   usage                   UserUsage?
   recurringMergeOverrides RecurringMergeOverride[]
@@ -52,6 +55,7 @@ model User {
   mcpOAuthTokens          McpOAuthToken[]
 }
 
+// Revocable private-proof credentials. Public ChatGPT access will use OAuth 2.1.
 model McpPersonalGrant {
   id         String    @id @default(cuid())
   userId     String
@@ -70,6 +74,7 @@ model McpPersonalGrant {
   @@index([expiresAt])
 }
 
+// Durable user-scoped retry record for MCP mutations.
 model McpMutation {
   id              String            @id @default(cuid())
   userId          String
@@ -88,6 +93,7 @@ model McpMutation {
   @@index([userId, createdAt])
 }
 
+// Public OAuth clients registered through RFC 7591 dynamic client registration.
 model McpOAuthClient {
   id                      String    @id @default(cuid())
   clientId                String    @unique
@@ -105,19 +111,20 @@ model McpOAuthClient {
   tokens                McpOAuthToken[]
 }
 
+// Short-lived server-side copy of an authorization request used by login/consent.
 model McpOAuthAuthorizationRequest {
-  id             String    @id
-  clientId       String
-  redirectUri    String
-  state          String?
-  scopes         String[]
-  resource       String
-  codeChallenge  String
-  oauthStateHash String
-  expiresAt      DateTime
-  consumedAt     DateTime?
-  userId         String?
-  createdAt      DateTime  @default(now())
+  id                String    @id
+  clientId          String
+  redirectUri       String
+  state             String?
+  scopes            String[]
+  resource          String
+  codeChallenge     String
+  oauthStateHash    String
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  userId            String?
+  createdAt         DateTime  @default(now())
 
   client McpOAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
   user   User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -126,6 +133,7 @@ model McpOAuthAuthorizationRequest {
   @@index([clientId, consumedAt])
 }
 
+// Single-use authorization codes. Only a SHA-256 hash of the code is stored.
 model McpOAuthAuthorizationCode {
   id            String    @id @default(cuid())
   codeHash      String    @unique
@@ -146,6 +154,7 @@ model McpOAuthAuthorizationCode {
   @@index([clientId, userId])
 }
 
+// Revocable OAuth token family. Access and refresh token plaintext is never stored.
 model McpOAuthToken {
   id               String    @id @default(cuid())
   clientId         String
@@ -439,16 +448,41 @@ model ChatState {
   @@index([userId, type])
 }
 
+// A Plaid Item represents one institution login and owns its credential.
+// Account rows reference the Item so the access token is stored once rather
+// than duplicated across every account returned by Plaid.
+model PlaidItem {
+  id                   String         @id @default(cuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId               String         @unique
+  encryptedAccessToken String         @db.Text
+  tokenVersion         Int            @default(1)
+  institutionName      String
+  institutionId        String
+  isDemo               Boolean        @default(false)
+  accounts             PlaidAccount[]
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([userId])
+}
+
 // Plaid linked accounts
 model PlaidAccount {
   id     String @id @default(cuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Plaid credentials (encrypted in production)
-  accessToken    String @db.Text // Store securely - encrypt in production
-  itemId         String // Plaid item ID
+  // The parent Item owns the encrypted Plaid access token.
+  plaidItemId    String
+  plaidItem      PlaidItem @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
   plaidAccountId String // Plaid account ID (for this specific account)
+
+  // Backward-compatible rollout columns. New code never reads these; the deploy
+  // clears them after the encrypted PlaidItem migration is proven healthy.
+  legacyAccessToken String? @map("accessToken") @db.Text
+  legacyItemId      String? @map("itemId")
 
   // Account info from Plaid
   institutionName String
@@ -482,7 +516,8 @@ model PlaidAccount {
 
   @@unique([plaidAccountId])
   @@index([userId])
-  @@index([itemId])
+  @@index([plaidItemId])
+  @@index([legacyItemId], map: "PlaidAccount_itemId_idx")
   @@index([plaidAccountId])
   @@index([financeGoalId])
 }

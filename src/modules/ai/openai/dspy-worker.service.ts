@@ -31,6 +31,7 @@ export class DspyWorkerService {
   private readonly logger = new Logger(DspyWorkerService.name);
   private readonly workerUrl: string;
   private readonly timeoutMs: number;
+  private readonly workerApiKey: string;
 
   constructor(private configService: ConfigService) {
     this.workerUrl =
@@ -38,6 +39,7 @@ export class DspyWorkerService {
       this.configService.get<string>('WORKER_URL') ||
       '';
     this.timeoutMs = this.configService.get<number>('DSPY_WORKER_TIMEOUT_MS', 30000);
+    this.workerApiKey = this.configService.get<string>('WORKER_API_KEY', '');
   }
 
   isAvailable(): boolean {
@@ -57,6 +59,7 @@ export class DspyWorkerService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Worker-Key': this.workerApiKey,
         },
         body: JSON.stringify(request),
         signal: controller.signal,
@@ -102,6 +105,7 @@ export class DspyWorkerService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-Worker-Key': this.workerApiKey,
       },
       body: JSON.stringify(request),
       signal,

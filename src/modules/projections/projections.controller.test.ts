@@ -11,7 +11,7 @@ describe('ProjectionsController', () => {
 
     const result = await controller.getOverview(
       { user: { userId: 'user_1' } } as any,
-      '6' as any,
+      { horizon: 6 },
     );
 
     expect(getOverview).toHaveBeenCalledWith('user_1', 6);

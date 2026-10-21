@@ -9,6 +9,7 @@
 
 import { PrismaClient, GoalType, GoalStatus, ItemStatusBadge, ItemCategory } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
+import { createCipheriv, createHash, randomBytes } from 'crypto';
 import {
   mockActionGoals,
   mockFinanceGoals,
@@ -17,6 +18,20 @@ import {
 } from './demo-data/goals';
 
 const prisma = new PrismaClient();
+
+function encryptDemoPlaidToken(token: string): string {
+  const keyMaterial = process.env.PLAID_TOKEN_ENCRYPTION_KEY ?? 'neon-goals-development-plaid-key';
+  const key = createHash('sha256').update(keyMaterial).digest();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
+  return [
+    'v1',
+    iv.toString('base64'),
+    cipher.getAuthTag().toString('base64'),
+    encrypted.toString('base64'),
+  ].join(':');
+}
 
 // Demo user email (must match DEMO_USER_EMAIL env var)
 export const DEMO_USER_EMAIL = 'demo@goals-af.com';
@@ -691,11 +706,21 @@ export async function seedDemoUser(userId: string): Promise<void> {
   const createdAccounts = new Map<string, string>();
 
   for (const seed of demoPlaidAccountSeeds) {
+    const item = await prisma.plaidItem.create({
+      data: {
+        userId,
+        itemId: `demo-item-${seed.plaidAccountId}`,
+        encryptedAccessToken: encryptDemoPlaidToken('demo-sandbox-token'),
+        tokenVersion: 1,
+        institutionName: seed.institutionName,
+        institutionId: seed.institutionId,
+        isDemo: true,
+      },
+    });
     const account = await prisma.plaidAccount.create({
       data: {
         userId,
-        accessToken: 'demo-sandbox-token',
-        itemId: `demo-item-${seed.plaidAccountId}`,
+        plaidItemId: item.id,
         plaidAccountId: seed.plaidAccountId,
         institutionName: seed.institutionName,
         institutionId: seed.institutionId,

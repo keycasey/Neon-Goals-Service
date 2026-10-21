@@ -1,5 +1,14 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { timingSafeEqual } from 'crypto';
+
+function keysMatch(supplied: unknown, expected: string): boolean {
+  if (typeof supplied !== 'string') return false;
+  const suppliedBuffer = Buffer.from(supplied);
+  const expectedBuffer = Buffer.from(expected);
+  return suppliedBuffer.length === expectedBuffer.length
+    && timingSafeEqual(suppliedBuffer, expectedBuffer);
+}
 
 /**
  * API Key Authentication Guard
@@ -37,7 +46,7 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     // Validate API key
-    if (apiKey !== this.apiKey) {
+    if (!keysMatch(apiKey, this.apiKey)) {
       throw new UnauthorizedException('Invalid API key');
     }
 
@@ -69,7 +78,7 @@ export class ApiKeyOnlyGuard extends ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('API key required (not JWT accepted)');
     }
 
-    if (apiKey !== this.apiKey) {
+    if (!keysMatch(apiKey, this.apiKey)) {
       throw new UnauthorizedException('Invalid API key');
     }
 

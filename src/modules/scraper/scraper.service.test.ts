@@ -1,10 +1,27 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
 import { ScraperService } from './scraper.service';
 
 const createService = () =>
   new ScraperService({} as any, {} as any, {} as any) as any;
 
 describe('ScraperService vehicle post filters', () => {
+  it('returns no job when another worker wins the conditional claim', async () => {
+    const prisma: any = {
+      scrapeJob: {
+        findFirst: mock(async () => ({ id: 10, status: 'pending' })),
+        updateMany: mock(async () => ({ count: 0 })),
+      },
+    };
+    prisma.$transaction = async (callback: any) => callback(prisma);
+    const service = new ScraperService(prisma, {} as any, {} as any);
+
+    expect(await service.getNextPendingJob()).toBeNull();
+    expect(prisma.scrapeJob.updateMany).toHaveBeenCalledWith({
+      where: { id: 10, status: 'pending' },
+      data: { status: 'running' },
+    });
+  });
+
   it('extracts mileage, price, and excluded exterior colors from retailer filters', () => {
     const service = createService();
 
