@@ -93,6 +93,7 @@ export class GoalsService {
         title: data.title,
         description: data.description || `Looking for: ${data.title}`,
         status: data.status || GoalStatus.active,
+        deadline: data.deadline ? new Date(data.deadline) : null,
         userId,
         itemData: {
           create: {
@@ -134,6 +135,7 @@ export class GoalsService {
         title: data.title,
         description: data.description,
         status: data.status || GoalStatus.active,
+        deadline: data.deadline ? new Date(data.deadline) : null,
         userId,
         financeData: {
           create: {
@@ -161,13 +163,17 @@ export class GoalsService {
         title: data.title,
         description: data.description,
         status: data.status || GoalStatus.active,
+        deadline: data.deadline ? new Date(data.deadline) : null,
         userId,
         actionData: {
           create: {
             completionPercentage: data.completionPercentage || 0,
             motivation: data.motivation,
             tasks: {
-              create: data.tasks || [],
+              create: (data.tasks || []).map((task: any) => ({
+                ...task,
+                scheduledFor: task.scheduledFor ? new Date(task.scheduledFor) : null,
+              })),
             },
           },
         },
@@ -191,6 +197,7 @@ export class GoalsService {
         title: data.title,
         description: data.description,
         status: data.status || GoalStatus.active,
+        deadline: data.deadline ? new Date(data.deadline) : null,
         userId,
         parentGoalId: data.parentGoalId,
         groupData: {
@@ -233,6 +240,7 @@ export class GoalsService {
         title: data.title,
         description: data.description,
         status: data.status,
+        deadline: data.deadline === undefined ? undefined : data.deadline ? new Date(data.deadline) : null,
       },
     });
 
@@ -266,6 +274,7 @@ export class GoalsService {
           title: data.title,
           description: data.description,
           status: data.status,
+          deadline: data.deadline === undefined ? undefined : data.deadline ? new Date(data.deadline) : null,
         },
       }),
       this.prisma.itemGoalData.update({
@@ -301,7 +310,12 @@ export class GoalsService {
     await this.prisma.$transaction([
       this.prisma.goal.update({
         where: { id },
-        data: { title: data.title, description: data.description, status: data.status },
+        data: {
+          title: data.title,
+          description: data.description,
+          status: data.status,
+          deadline: data.deadline === undefined ? undefined : data.deadline ? new Date(data.deadline) : null,
+        },
       }),
       this.prisma.financeGoalData.update({
         where: { goalId: id },
@@ -326,7 +340,12 @@ export class GoalsService {
     await this.prisma.$transaction([
       this.prisma.goal.update({
         where: { id },
-        data: { title: data.title, description: data.description, status: data.status },
+        data: {
+          title: data.title,
+          description: data.description,
+          status: data.status,
+          deadline: data.deadline === undefined ? undefined : data.deadline ? new Date(data.deadline) : null,
+        },
       }),
       this.prisma.actionGoalData.update({
         where: { goalId: id },
@@ -354,7 +373,12 @@ export class GoalsService {
     await this.prisma.$transaction([
       this.prisma.goal.update({
         where: { id },
-        data: { title: data.title, description: data.description, status: data.status },
+        data: {
+          title: data.title,
+          description: data.description,
+          status: data.status,
+          deadline: data.deadline === undefined ? undefined : data.deadline ? new Date(data.deadline) : null,
+        },
       }),
       this.prisma.groupGoalData.update({
         where: { goalId: id },
@@ -387,7 +411,7 @@ export class GoalsService {
   }
 
   // Task operations for action goals
-  async createTask(goalId: string, userId: string, data: { title: string }) {
+  async createTask(goalId: string, userId: string, data: { title: string; scheduledFor?: string }) {
     const goal = await this.findOne(goalId, userId);
     if (goal.type !== GoalType.action) {
       throw new NotFoundException('Goal is not an action goal');
@@ -396,6 +420,7 @@ export class GoalsService {
     const task = await this.prisma.task.create({
       data: {
         title: data.title,
+        scheduledFor: data.scheduledFor ? new Date(data.scheduledFor) : null,
         actionGoalId: goal.actionData?.id || '',
       },
     });
@@ -452,7 +477,7 @@ export class GoalsService {
     goalId: string,
     taskId: string,
     userId: string,
-    data: { title?: string; completed?: boolean },
+    data: { title?: string; completed?: boolean; scheduledFor?: string | null },
   ) {
     const goal = await this.findOne(goalId, userId);
     if (goal.type !== GoalType.action) {
@@ -462,11 +487,23 @@ export class GoalsService {
       where: { id: taskId, actionGoalId: goal.actionData?.id },
     });
     if (!task) throw new NotFoundException('Task not found');
-    if (data.title === undefined && data.completed === undefined) {
+    if (data.title === undefined && data.completed === undefined && data.scheduledFor === undefined) {
       throw new BadRequestException('No task changes supplied');
     }
 
-    await this.prisma.task.update({ where: { id: taskId }, data });
+    await this.prisma.task.update({
+      where: { id: taskId },
+      data: {
+        title: data.title,
+        completed: data.completed,
+        scheduledFor:
+          data.scheduledFor === undefined
+            ? undefined
+            : data.scheduledFor
+              ? new Date(data.scheduledFor)
+              : null,
+      },
+    });
     const allTasks = await this.prisma.task.findMany({
       where: { actionGoalId: goal.actionData?.id },
     });

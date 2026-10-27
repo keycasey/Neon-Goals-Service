@@ -19,6 +19,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { validateEnvironment } from './config/env.validation';
 import { HealthController } from './health.controller';
 import { McpModule } from './modules/mcp/mcp.module';
+import { WishlistModule } from './modules/wishlist/wishlist.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { McpModule } from './modules/mcp/mcp.module';
     ExtractionModule,
     ProjectionsModule,
     McpModule,
+    WishlistModule,
   ],
   controllers: [HealthController],
   providers: [

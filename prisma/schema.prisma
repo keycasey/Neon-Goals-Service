@@ -53,6 +53,7 @@ model User {
   mcpOAuthAuthorizationRequests McpOAuthAuthorizationRequest[]
   mcpOAuthAuthorizationCodes McpOAuthAuthorizationCode[]
   mcpOAuthTokens          McpOAuthToken[]
+  wishlistItems           WishlistItem[]
 }
 
 // Revocable private-proof credentials. Public ChatGPT access will use OAuth 2.1.
@@ -241,6 +242,44 @@ model Goal {
   @@index([deadline])
 }
 
+// Low-commitment purchase ideas. These remain separate from ItemGoal so a quick
+// capture never starts product research or scraping until the user asks for it.
+model WishlistItem {
+  id                   String           @id @default(cuid())
+  userId               String
+  title                String
+  notes                String?          @db.Text
+  targetBudget         Float?
+  currency             String           @default("USD")
+  priority             WishlistPriority @default(interested)
+  stage                WishlistStage    @default(idea)
+  earliestPurchaseDate DateTime?
+  linkedGoalId         String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, stage])
+  @@index([userId, priority])
+  @@index([userId, updatedAt])
+}
+
+enum WishlistPriority {
+  someday
+  interested
+  soon
+}
+
+enum WishlistStage {
+  idea
+  researching
+  saving
+  ready
+  purchased
+  dropped
+}
+
 // ItemGoal specific fields (using one-to-one relation)
 model ItemGoalData {
   id     String @id @default(cuid())
@@ -336,12 +375,14 @@ model Task {
   completed Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  scheduledFor DateTime?
 
   // Relations
   actionGoal   ActionGoalData @relation(fields: [actionGoalId], references: [id], onDelete: Cascade)
   actionGoalId String
 
   @@index([actionGoalId, completed])
+  @@index([scheduledFor, completed])
 }
 
 // Group Goal Data

@@ -37,6 +37,10 @@ class CreateTaskInputDto {
   @IsOptional()
   @IsBoolean()
   completed?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledFor?: string;
 }
 
 export class GoalFieldsDto {
@@ -53,6 +57,10 @@ export class GoalFieldsDto {
   @IsOptional()
   @IsIn(statuses)
   status?: 'active' | 'completed' | 'archived';
+
+  @IsOptional()
+  @IsDateString()
+  deadline?: string;
 }
 
 export class CreateItemGoalDto extends GoalFieldsDto {
@@ -133,6 +141,10 @@ export class TaskDto {
   @IsString()
   @MaxLength(500)
   title: string;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledFor?: string;
 }
 
 export class UpdateTaskDto {
@@ -144,6 +156,10 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsBoolean()
   completed?: boolean;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledFor?: string | null;
 }
 
 export class CandidateUrlDto {
