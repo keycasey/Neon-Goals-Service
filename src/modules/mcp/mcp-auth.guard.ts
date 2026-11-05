@@ -85,9 +85,12 @@ export class McpAuthGuard implements CanActivate {
       'add_goal_task',
       'update_goal_task',
       'remove_goal_task',
+      'create_wishlist_item',
     ]);
     const requiredScope = writeTools.has(toolName) ? 'goals:write' :
-      toolName === 'list_goals' || toolName === 'get_goal' ? 'goals:read' : null;
+      toolName === 'list_goals' || toolName === 'get_goal' || toolName === 'list_wishlist_items'
+        ? 'goals:read'
+        : null;
     const hasRequiredScope = requiredScope === 'goals:read'
       ? principal.scopes.includes('goals:read') || principal.scopes.includes('goals:write')
       : requiredScope ? principal.scopes.includes(requiredScope) : true;

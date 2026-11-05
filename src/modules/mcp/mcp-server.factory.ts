@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { GoalApplicationService } from '../goals/application/goal-application.service';
 import { McpPrincipal } from './mcp-auth.guard';
+import { WishlistService } from '../wishlist/wishlist.service';
 
 const id = z.string().min(1).max(200);
 const dateTime = z.string().datetime({ offset: true });
@@ -103,7 +104,10 @@ function toolResult(value: unknown) {
 
 @Injectable()
 export class McpServerFactory {
-  constructor(private readonly goals: GoalApplicationService) {}
+  constructor(
+    private readonly goals: GoalApplicationService,
+    private readonly wishlist: WishlistService,
+  ) {}
 
   create(principal: McpPrincipal) {
     const server = new McpServer(
@@ -133,6 +137,16 @@ export class McpServerFactory {
         inputSchema: z.object({ goalId: id }).strict(),
         annotations: { readOnlyHint: true, openWorldHint: false },
       }, async ({ goalId }) => toolResult(await this.goals.getGoal(principal.userId, goalId)));
+
+      server.registerTool('list_wishlist_items', {
+        title: 'List wishlist items',
+        description: 'List the authenticated Neon Goals user’s to-buy ideas and purchase status.',
+        inputSchema: z.object({}).strict(),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      }, async () => toolResult({
+        schemaVersion: '1',
+        items: await this.wishlist.findAll(principal.userId),
+      }));
     }
 
     if (canWrite) {
@@ -142,6 +156,23 @@ export class McpServerFactory {
         inputSchema: createGoalSchema,
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       }, async (input) => toolResult(await this.goals.createGoal(principal.userId, input as any)));
+
+      server.registerTool('create_wishlist_item', {
+        title: 'Create wishlist item',
+        description: 'Immediately capture a low-commitment to-buy item without starting product research. The client handles conversational confirmation; clientRequestId makes retries safe.',
+        inputSchema: z.object({
+          title: z.string().trim().min(1).max(200),
+          notes: z.string().trim().max(5000).optional(),
+          targetBudget: z.number().nonnegative().optional(),
+          currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+          priority: z.enum(['someday', 'interested', 'soon']).optional(),
+          earliestPurchaseDate: z.string().date().optional(),
+          clientRequestId: id,
+        }).strict(),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      }, async ({ clientRequestId, ...input }) => toolResult(
+        await this.wishlist.createFromMcp(principal.userId, input, clientRequestId),
+      ));
 
       server.registerTool('update_goal', {
         title: 'Update goal',

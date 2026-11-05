@@ -15,31 +15,37 @@ async function connectedFactory(scopes: string[], overrides: Record<string, unkn
     removeGoalTask: mock(async () => ({})),
     ...overrides,
   } as any;
-  const server = new McpServerFactory(goals).create({ userId: 'user-1', grantId: 'grant-1', scopes });
+  const wishlist = {
+    findAll: mock(async () => []),
+    createFromMcp: mock(async () => ({ schemaVersion: '1', item: { id: 'wish-1' }, applied: true })),
+  } as any;
+  const server = new McpServerFactory(goals, wishlist).create({ userId: 'user-1', grantId: 'grant-1', scopes });
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-  return { client, server, goals };
+  return { client, server, goals, wishlist };
 }
 
 describe('McpServerFactory', () => {
   it('only exposes read tools to a read-only grant', async () => {
     const { client, server } = await connectedFactory(['goals:read']);
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['get_goal', 'list_goals']);
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['get_goal', 'list_goals', 'list_wishlist_items']);
     await client.close();
     await server.close();
   });
 
-  it('exposes all eight v1 tools to a write grant', async () => {
+  it('exposes goal and wishlist tools to a write grant', async () => {
     const { client, server } = await connectedFactory(['goals:write']);
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
       'add_goal_task',
       'create_goal',
+      'create_wishlist_item',
       'get_goal',
       'list_goals',
+      'list_wishlist_items',
       'remove_goal_task',
       'set_goal_status',
       'update_goal',
@@ -51,6 +57,21 @@ describe('McpServerFactory', () => {
     expect(createGoal?.inputSchema.properties).toHaveProperty('title');
     expect(createGoal?.inputSchema.properties).toHaveProperty('details');
     expect(createGoal?.inputSchema.properties).toHaveProperty('clientRequestId');
+    await client.close();
+    await server.close();
+  });
+
+  it('passes the authenticated user boundary to wishlist handlers', async () => {
+    const { client, server, wishlist } = await connectedFactory(['goals:write']);
+    await client.callTool({
+      name: 'create_wishlist_item',
+      arguments: { title: 'Bidet', clientRequestId: 'sticky-note-1' },
+    });
+    expect(wishlist.createFromMcp).toHaveBeenCalledWith(
+      'user-1',
+      { title: 'Bidet' },
+      'sticky-note-1',
+    );
     await client.close();
     await server.close();
   });
