@@ -54,6 +54,7 @@ model User {
   mcpOAuthAuthorizationCodes McpOAuthAuthorizationCode[]
   mcpOAuthTokens          McpOAuthToken[]
   wishlistItems           WishlistItem[]
+  todos                   Todo[]
 }
 
 // Revocable private-proof credentials. Public ChatGPT access will use OAuth 2.1.
@@ -263,6 +264,27 @@ model WishlistItem {
   @@index([userId, stage])
   @@index([userId, priority])
   @@index([userId, updatedAt])
+}
+
+// Lightweight actions that do not need goal structure, projections, or agents.
+model Todo {
+  id        String     @id @default(cuid())
+  userId    String
+  title     String
+  notes     String?    @db.Text
+  status    TodoStatus @default(active)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, updatedAt])
+}
+
+enum TodoStatus {
+  active
+  completed
+  archived
 }
 
 enum WishlistPriority {

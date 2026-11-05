@@ -19,19 +19,24 @@ async function connectedFactory(scopes: string[], overrides: Record<string, unkn
     findAll: mock(async () => []),
     createFromMcp: mock(async () => ({ schemaVersion: '1', item: { id: 'wish-1' }, applied: true })),
   } as any;
-  const server = new McpServerFactory(goals, wishlist).create({ userId: 'user-1', grantId: 'grant-1', scopes });
+  const todos = {
+    findAll: mock(async () => []),
+    createFromMcp: mock(async () => ({ schemaVersion: '1', todo: { id: 'todo-1' }, applied: true })),
+    updateFromMcp: mock(async () => ({ schemaVersion: '1', todo: { id: 'todo-1' }, applied: true })),
+  } as any;
+  const server = new McpServerFactory(goals, wishlist, todos).create({ userId: 'user-1', grantId: 'grant-1', scopes });
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);
-  return { client, server, goals, wishlist };
+  return { client, server, goals, wishlist, todos };
 }
 
 describe('McpServerFactory', () => {
   it('only exposes read tools to a read-only grant', async () => {
     const { client, server } = await connectedFactory(['goals:read']);
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['get_goal', 'list_goals', 'list_wishlist_items']);
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['get_goal', 'list_goals', 'list_todos', 'list_wishlist_items']);
     await client.close();
     await server.close();
   });
@@ -42,14 +47,17 @@ describe('McpServerFactory', () => {
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
       'add_goal_task',
       'create_goal',
+      'create_todo',
       'create_wishlist_item',
       'get_goal',
       'list_goals',
+      'list_todos',
       'list_wishlist_items',
       'remove_goal_task',
       'set_goal_status',
       'update_goal',
       'update_goal_task',
+      'update_todo',
     ]);
     const createGoal = tools.tools.find((tool) => tool.name === 'create_goal');
     expect(createGoal?.inputSchema.type).toBe('object');
@@ -57,6 +65,17 @@ describe('McpServerFactory', () => {
     expect(createGoal?.inputSchema.properties).toHaveProperty('title');
     expect(createGoal?.inputSchema.properties).toHaveProperty('details');
     expect(createGoal?.inputSchema.properties).toHaveProperty('clientRequestId');
+    await client.close();
+    await server.close();
+  });
+
+  it('passes the authenticated user boundary to todo handlers', async () => {
+    const { client, server, todos } = await connectedFactory(['goals:write']);
+    await client.callTool({
+      name: 'create_todo',
+      arguments: { title: 'Dusting', clientRequestId: 'todo-1' },
+    });
+    expect(todos.createFromMcp).toHaveBeenCalledWith('user-1', { title: 'Dusting' }, 'todo-1');
     await client.close();
     await server.close();
   });

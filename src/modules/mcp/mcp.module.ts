@@ -6,9 +6,10 @@ import { McpServerFactory } from './mcp-server.factory';
 import { AuthModule } from '../auth/auth.module';
 import { McpOAuthController } from './mcp-oauth.controller';
 import { WishlistModule } from '../wishlist/wishlist.module';
+import { TodosModule } from '../todos/todos.module';
 
 @Module({
-  imports: [GoalsModule, AuthModule, WishlistModule],
+  imports: [GoalsModule, AuthModule, WishlistModule, TodosModule],
   controllers: [McpController, McpOAuthController],
   providers: [McpAuthGuard, McpServerFactory],
 })
