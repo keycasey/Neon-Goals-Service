@@ -20,6 +20,7 @@ import { validateEnvironment } from './config/env.validation';
 import { HealthController } from './health.controller';
 import { McpModule } from './modules/mcp/mcp.module';
 import { WishlistModule } from './modules/wishlist/wishlist.module';
+import { TodosModule } from './modules/todos/todos.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { WishlistModule } from './modules/wishlist/wishlist.module';
     ProjectionsModule,
     McpModule,
     WishlistModule,
+    TodosModule,
   ],
   controllers: [HealthController],
   providers: [

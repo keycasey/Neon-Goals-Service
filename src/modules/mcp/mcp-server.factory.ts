@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import { GoalApplicationService } from '../goals/application/goal-application.service';
 import { McpPrincipal } from './mcp-auth.guard';
 import { WishlistService } from '../wishlist/wishlist.service';
+import { TodosService } from '../todos/todos.service';
 
 const id = z.string().min(1).max(200);
 const dateTime = z.string().datetime({ offset: true });
@@ -107,6 +108,7 @@ export class McpServerFactory {
   constructor(
     private readonly goals: GoalApplicationService,
     private readonly wishlist: WishlistService,
+    private readonly todos: TodosService,
   ) {}
 
   create(principal: McpPrincipal) {
@@ -147,6 +149,16 @@ export class McpServerFactory {
         schemaVersion: '1',
         items: await this.wishlist.findAll(principal.userId),
       }));
+
+      server.registerTool('list_todos', {
+        title: 'List todos',
+        description: 'List lightweight actions owned by the authenticated Neon Goals user.',
+        inputSchema: z.object({ status: z.enum(['active', 'completed', 'archived']).optional() }).strict(),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      }, async ({ status }) => toolResult({
+        schemaVersion: '1',
+        todos: await this.todos.findAll(principal.userId, status),
+      }));
     }
 
     if (canWrite) {
@@ -172,6 +184,36 @@ export class McpServerFactory {
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       }, async ({ clientRequestId, ...input }) => toolResult(
         await this.wishlist.createFromMcp(principal.userId, input, clientRequestId),
+      ));
+
+      server.registerTool('create_todo', {
+        title: 'Create todo',
+        description: 'Immediately capture a lightweight action that does not need full goal structure. clientRequestId makes retries safe.',
+        inputSchema: z.object({
+          title: z.string().trim().min(1).max(200),
+          notes: z.string().trim().max(5000).optional(),
+          clientRequestId: id,
+        }).strict(),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      }, async ({ clientRequestId, ...input }) => toolResult(
+        await this.todos.createFromMcp(principal.userId, input, clientRequestId),
+      ));
+
+      server.registerTool('update_todo', {
+        title: 'Update todo',
+        description: 'Edit a todo or explicitly set it active, completed, or archived. Archived todos can be restored.',
+        inputSchema: z.object({
+          todoId: id,
+          title: z.string().trim().min(1).max(200).optional(),
+          notes: z.string().trim().max(5000).nullable().optional(),
+          status: z.enum(['active', 'completed', 'archived']).optional(),
+          clientRequestId: id,
+        }).strict().refine((value) => value.title !== undefined || value.notes !== undefined || value.status !== undefined, {
+          message: 'title, notes, or status is required',
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      }, async ({ todoId, clientRequestId, ...input }) => toolResult(
+        await this.todos.updateFromMcp(principal.userId, todoId, input, clientRequestId),
       ));
 
       server.registerTool('update_goal', {
